@@ -64,6 +64,10 @@ export async function apply(ctx) {
     dispatchGuard.dispose(agent.session.id)
   })
 
+  ctx.on('agent/status', ({ agent, status }) => {
+    if (status === 'idle') dispatchGuard.onIdle(agent.session.id)
+  })
+
   ctx.on('session/event', (session, event) => {
     dispatchGuard.onEvent(session, event)
     if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {

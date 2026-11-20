@@ -3,7 +3,7 @@ import { readTask, updateTask } from './task-store.js'
 export function createContinueTool(ctx) {
   return {
     name: 'continue_worker',
-    description: 'Send a follow-up on the same business to its existing worker, including while it is still running. Use a new dispatch for a different task or after publication.',
+    description: 'Send a follow-up on the same business to its existing worker, including while it is still running. This counts as the routing decision for that user input; do not also dispatch the same request. Use a new dispatch for a different task or after publication.',
     parameters: {
       type: 'object',
       additionalProperties: false,

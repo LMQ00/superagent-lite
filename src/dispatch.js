@@ -7,7 +7,7 @@ import { validateDispatchArguments } from './validation.js'
 export function createDispatchTool(ctx) {
   return {
     name: 'dispatch_worker',
-    description: 'Record the dispatch decision for this user input. Set delegate to true and start one isolated worker when the request needs files changed, commands run, a repository inspected, or code delivered; otherwise set delegate to false and give the reason. The full execution instructions reach only the worker.',
+    description: 'Record the routing decision required for every user input before answering. Set delegate to true and start one isolated worker when the request needs files changed, commands run, a repository inspected, or code delivered; otherwise set delegate to false and give the reason. A follow-up on an existing unpublished task uses continue_worker instead. An earlier turn\'s decision never covers a new input. The full execution instructions reach only the worker.',
     parameters: {
       type: 'object',
       additionalProperties: false,

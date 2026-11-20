@@ -101,6 +101,20 @@ async function syncDirectory(path) {
   try { await handle.sync() } finally { await handle.close() }
 }
 
+// Termux/Android refuses hard links on app-private storage (EACCES), so an
+// exclusive create falls back to O_EXCL instead of failing the write.
+const LINK_UNAVAILABLE = new Set(['EACCES', 'EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EMLINK', 'EXDEV'])
+
+async function createExclusive(path, data) {
+  const handle = await open(path, 'wx', 0o600)
+  try {
+    await handle.writeFile(data, 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+}
+
 async function writeDocument(directory, path, value, exclusive = false) {
   const temporary = join(directory, `.${randomUUID()}.tmp`)
   const data = `${JSON.stringify(value)}\n`
@@ -113,8 +127,14 @@ async function writeDocument(directory, path, value, exclusive = false) {
     } finally {
       await handle.close()
     }
-    if (exclusive) await link(temporary, path)
-    else await rename(temporary, path)
+    if (exclusive) {
+      try {
+        await link(temporary, path)
+      } catch (error) {
+        if (!LINK_UNAVAILABLE.has(error.code)) throw error
+        await createExclusive(path, data)
+      }
+    } else await rename(temporary, path)
     published = true
     await syncDirectory(directory)
   } finally {
