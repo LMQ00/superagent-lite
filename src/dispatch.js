@@ -1,29 +1,34 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createTask, readTask, linkWorkerSession, updateTask } from './task-store.js'
 import { buildWorkerPrompt } from './worker-prompt.js'
 import { runCommand } from './process.js'
 import { validateDispatchArguments } from './validation.js'
 
 export function createDispatchTool(ctx) {
-  return defineTool({
+  return {
     name: 'dispatch_worker',
     description: 'Start one isolated worker for a project task. Choose the team responsible for the project; the full execution instructions are sent only to that worker.',
     parameters: {
-      title: { type: 'string', required: true, description: 'Short task title.' },
-      teamId: { type: 'string', required: true, description: 'Project team identifier; one team owns one project.' },
-      task: { type: 'string', required: true, description: 'Complete task and acceptance criteria for the worker.' },
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        title: { type: 'string', description: 'Short task title.' },
+        teamId: { type: 'string', description: 'Project team identifier; one team owns one project.' },
+        task: { type: 'string', description: 'Complete task and acceptance criteria for the worker.' },
+      },
+      required: ['title', 'teamId', 'task'],
     },
     output: {
       schema: {
         type: 'object',
         additionalProperties: false,
         properties: {
-          taskId: { type: 'string', required: true },
-          workerSessionId: { type: 'string', required: true },
-          status: { type: 'string', required: true },
-          teamId: { type: 'string', required: true },
+          taskId: { type: 'string' },
+          workerSessionId: { type: 'string' },
+          status: { type: 'string' },
+          teamId: { type: 'string' },
         },
+        required: ['taskId', 'workerSessionId', 'status', 'teamId'],
       },
       render: (_args, value) => [{
         type: 'text',
@@ -94,5 +99,5 @@ export function createDispatchTool(ctx) {
       const { status } = await readTask(id)
       return { taskId: id, workerSessionId, status, teamId }
     },
-  })
+  }
 }

@@ -13,11 +13,12 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
 }, async (t) => {
   const require = createRequire(join(anchor, 'package.json'))
   const toolsUrl = pathToFileURL(require.resolve('@deepseek-ai/dsh-tools')).href
+  const { assertSupportedJsonSchema } = await import(toolsUrl)
   const hooks = registerHooks({ resolve(specifier, context, next) {
     if (specifier === '@deepseek-ai/dsh-tools') return next(toolsUrl, context)
     return next(specifier, context)
   } })
-  const tmp = fileURLToPath(new URL('../../tmp/', import.meta.url))
+  const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
   await mkdir(tmp, { recursive: true })
   const root = await mkdtemp(join(tmp, 'host-'))
   const originalHome = process.env.HOME
@@ -92,6 +93,10 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const local = mergeCommand(ctx)
   assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'error')
   const review = createReviewTool(ctx, worker, dispatched.taskId)
+  for (const tool of [dispatch, review]) {
+    assertSupportedJsonSchema(tool.parameters)
+    assertSupportedJsonSchema(tool.output.schema)
+  }
   assert.match(await review.execute({}, { agent: worker, signal }), /Approved/)
   assert.equal(reviewCalls, 1)
   assert.equal((await readTask(dispatched.taskId)).review.head, head)
@@ -106,6 +111,8 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
 
   const caller = { role: 'worker', teamId: 'team', projectRoot: repo }
   const memory = createMemoryTool(caller, candidate => candidate === worker)
+  assertSupportedJsonSchema(memory.parameters)
+  assertSupportedJsonSchema(memory.output.schema)
   worker.session.seq = 3
   await assert.rejects(memory.execute({ action: 'list', category: 'team' }, { agent: parent, signal }), /not available/i)
   await memory.execute({ action: 'create', category: 'team', content: 'Use checked-in notes' }, { agent: worker, signal })

@@ -1,22 +1,22 @@
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { taskForSession, updateTask } from './task-store.js'
 
 export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
-  return defineTool({
+  return {
     name: 'create_worktree',
     description: 'Create and enter the isolated checkout assigned to this worker before editing project files.',
-    parameters: {},
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: {
       schema: {
         type: 'object',
         additionalProperties: false,
         properties: {
-          path: { type: 'string', required: true },
-          branch: { type: 'string', required: true },
-          baseCommit: { type: 'string', required: true },
-          projectRoot: { type: 'string', required: true },
-          teamId: { type: 'string', required: true },
+          path: { type: 'string' },
+          branch: { type: 'string' },
+          baseCommit: { type: 'string' },
+          projectRoot: { type: 'string' },
+          teamId: { type: 'string' },
         },
+        required: ['path', 'branch', 'baseCommit', 'projectRoot', 'teamId'],
       },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
     },
@@ -59,5 +59,5 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
         throw new Error(`Worktree created at ${worktree.path}, but task metadata could not be saved: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
-  })
+  }
 }

@@ -1,13 +1,17 @@
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readTask, updateTask } from './task-store.js'
 
 export function createContinueTool(ctx) {
-  return defineTool({
+  return {
     name: 'continue_worker',
     description: 'Send a follow-up on the same business to its existing worker. Use a new dispatch for a different task or after publication.',
     parameters: {
-      taskId: { type: 'string', required: true },
-      task: { type: 'string', required: true, description: 'New instructions for this same task.' },
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        taskId: { type: 'string' },
+        task: { type: 'string', description: 'New instructions for this same task.' },
+      },
+      required: ['taskId', 'task'],
     },
     output: { schema: { type: 'string' }, render: (_args, text) => [{ type: 'text', text }] },
     async execute({ taskId, task }, exec) {
@@ -33,5 +37,5 @@ export function createContinueTool(ctx) {
       }
       return `Follow-up accepted by worker ${record.workerSessionId} for ${taskId}.`
     },
-  })
+  }
 }

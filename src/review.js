@@ -1,4 +1,3 @@
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readTask, updateTask } from './task-store.js'
 import { runCommand } from './process.js'
 
@@ -18,10 +17,10 @@ export async function worktreeHead(ctx, task, signal) {
 }
 
 export function createReviewTool(ctx, agent, taskId) {
-  return defineTool({
+  return {
     name: reviewToolName,
     description: 'Start an independent read-only review of the current clean, committed worker diff. Fix reported issues, commit again, and repeat until approved.',
-    parameters: {},
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: {
       schema: { type: 'string' },
       render: (_args, text) => [{ type: 'text', text }],
@@ -48,5 +47,5 @@ export function createReviewTool(ctx, agent, taskId) {
       await updateTask(taskId, { review: { head, reviewerSessionId: activation.childId, approved: result.structured.approved } })
       return `${result.structured.approved ? 'Approved' : 'Changes requested'} for ${head}: ${result.structured.findings.slice(0, 6000)}`
     },
-  })
+  }
 }
