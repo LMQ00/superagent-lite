@@ -41,7 +41,16 @@ export function mergeCommand(ctx) {
           if (error.exitCode === 1 && !signal.aborted) throw new Error('Merge would conflict; the target was not changed')
           throw error
         }
-        await git(['-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--no-edit', head])
+        await updateTask(id, latest => {
+          if (latest.status !== 'awaiting-merge' || latest.review?.head !== head) throw new Error('The task changed during merge preparation')
+          return { status: 'merging' }
+        })
+        try {
+          await git(['-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--no-edit', '--no-overwrite-ignore', head])
+        } catch (error) {
+          await updateTask(id, { status: 'delivery-blocked' })
+          throw new Error(`Merge did not report success; inspect the target before retrying: ${error.message}`)
+        }
         await updateTask(id, { status: 'merged' })
         return { kind: 'success', text: `Merged ${id} into ${current.baseBranch}.` }
       })
