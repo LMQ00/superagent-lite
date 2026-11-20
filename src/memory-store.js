@@ -110,8 +110,11 @@ async function createExclusive(path, data) {
   try {
     await handle.writeFile(data, 'utf8')
     await handle.sync()
+  } catch (error) {
+    await unlink(path).catch(() => {})
+    throw error
   } finally {
-    await handle.close()
+    await handle.close().catch(() => {})
   }
 }
 

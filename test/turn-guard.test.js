@@ -5,7 +5,7 @@ import { createDispatchGuard } from '../src/turn-guard.js'
 function fixture(preset = 'superagent-lite') {
   const session = { id: 'session-1' }
   const followups = []
-  const agent = { followup: message => followups.push(message) }
+  const agent = { id: session.id, followup: message => followups.push(message) }
   const ctx = {
     agents: { get: id => id === session.id ? agent : undefined },
     agentPresets: { composedPreset: () => preset },
@@ -15,7 +15,7 @@ function fixture(preset = 'superagent-lite') {
   return { guard, session, followups, event }
 }
 
-const input = { type: 'user/message', data: { source: { kind: 'user' } } }
+const input = { type: 'user/message', data: { id: 'input-1', source: { kind: 'user' } } }
 const call = (turn, name = 'dispatch_worker') => ({ type: 'tool/call', data: { turn, step: 1, callId: `${name}-${turn}`, name, arguments: '{}' } })
 const result = (turn, name = 'dispatch_worker', isError = false) => ({ type: 'tool/result', data: { turn, step: 1, message: { role: 'tool', toolCallId: `${name}-${turn}`, isError } } })
 const end = (turn, kind = 'completed') => ({ type: 'turn/end', data: { turn, reason: { kind } } })
@@ -50,14 +50,15 @@ test('a completed turn without a decision is reopened once the agent is idle', (
   assert.equal(followups[0].role, 'user')
   assert.match(followups[0].content[0].text, /dispatch_worker/)
   assert.match(followups[0].content[0].text, /continue_worker/)
-  assert.equal(followups[0].source.kind, 'superagent-lite-reminder')
+  assert.equal(followups[0].source.kind, 'user')
 })
 
-test('the reminder is not repeated for the same input', () => {
-  const { guard, session, followups } = fixture()
+test('the reminder is delivered once and does not arm itself again', () => {
+  const { guard, session, followups, event } = fixture()
   guard.onEvent(session, input)
   guard.onEvent(session, end(1))
   guard.onIdle(session.id)
+  guard.onEvent(session, event('user/message', { id: followups[0].id, source: { kind: 'user' } }))
   guard.onEvent(session, end(2))
   guard.onIdle(session.id)
   assert.equal(followups.length, 1)
@@ -82,6 +83,16 @@ test('a failed decision does not satisfy the requirement', () => {
   guard.onEvent(session, call(2))
   guard.onEvent(session, result(2, 'dispatch_worker', true))
   guard.onEvent(session, end(2))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 1)
+})
+
+test('a failed continue_worker does not satisfy a follow-up either', () => {
+  const { guard, session, followups } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, call(3, 'continue_worker'))
+  guard.onEvent(session, result(3, 'continue_worker', true))
+  guard.onEvent(session, end(3))
   guard.onIdle(session.id)
   assert.equal(followups.length, 1)
 })

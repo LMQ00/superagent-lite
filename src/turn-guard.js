@@ -9,10 +9,16 @@ export function createDispatchGuard(ctx) {
   const decided = new Map()
   const armed = new Set()
   const missing = new Map()
+  const reminders = new Map()
 
   return {
     onEvent(session, event) {
       if (event.type === 'user/message') {
+        if (reminders.get(session.id) === event.data.id) {
+          // The guard's own reminder must not arm a fresh requirement and loop.
+          reminders.delete(session.id)
+          return
+        }
         if (event.data.source?.kind === 'user') {
           armed.add(session.id)
           missing.delete(session.id)
@@ -56,29 +62,33 @@ export function createDispatchGuard(ctx) {
         return
       }
       if (!armed.has(session.id)) return
-      missing.set(session.id, agent)
+      missing.set(session.id, agent.id)
     },
     // Delivering the reminder inside the turn/end publication would make the
-    // inbox append reenter the open Session append (rejected and swallowed).
-    // The dispatcher calls this once the agent has settled to idle.
+    // inbox append reenter the open Session append, which the Session rejects
+    // and the observer containment swallows. The dispatcher calls this after
+    // the agent has settled to idle, where a follow-up can wake a fresh turn.
     onIdle(sessionId) {
       const owner = missing.get(sessionId)
       if (!owner) return
       missing.delete(sessionId)
       const agent = ctx.agents.get(sessionId)
-      if (agent !== owner) return
+      if (!agent || agent.id !== owner) return
       if (!armed.delete(sessionId)) return
+      const id = randomUUID()
+      reminders.set(sessionId, id)
       agent.followup({
-        id: randomUUID(),
+        id,
         role: 'user',
         content: [{ type: 'text', text: REMINDER }],
-        source: { kind: 'superagent-lite-reminder' },
+        source: { kind: 'user' },
       })
     },
     dispose(sessionId) {
       decided.delete(sessionId)
       armed.delete(sessionId)
       missing.delete(sessionId)
+      reminders.delete(sessionId)
       for (const [callId, call] of calls) if (call.sessionId === sessionId) calls.delete(callId)
     },
   }
