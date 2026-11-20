@@ -53,15 +53,20 @@ test('a completed turn without a decision is reopened once the agent is idle', (
   assert.equal(followups[0].source.kind, 'user')
 })
 
-test('the reminder is delivered once and does not arm itself again', () => {
+test('the guard reminds at most twice for one input', () => {
   const { guard, session, followups, event } = fixture()
   guard.onEvent(session, input)
   guard.onEvent(session, end(1))
   guard.onIdle(session.id)
+  assert.equal(followups.length, 1)
   guard.onEvent(session, event('user/message', { id: followups[0].id, source: { kind: 'user' } }))
   guard.onEvent(session, end(2))
   guard.onIdle(session.id)
-  assert.equal(followups.length, 1)
+  assert.equal(followups.length, 2)
+  guard.onEvent(session, event('user/message', { id: followups[1].id, source: { kind: 'user' } }))
+  guard.onEvent(session, end(3))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 2)
 })
 
 test('each new user input needs its own decision', () => {
