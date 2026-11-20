@@ -79,6 +79,8 @@
             name: '@deepseek-ai/dsh-tool-skill'
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
           - id: compaction
             name: cordis:group
             group: true
