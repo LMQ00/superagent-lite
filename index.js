@@ -5,6 +5,7 @@ import { createReviewTool, worktreeHead } from './src/review.js'
 import { deliverGithub, githubOrigin } from './src/github.js'
 import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
+import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
@@ -28,6 +29,10 @@ export async function apply(ctx) {
 
   ctx.on('agent/created', async ({ agent }) => {
     if (agent.session.header.origin !== 'subagent') return
+    if (claimHelper(agent.session.header.parentSession)) {
+      registerReadOnlyGuard(agent)
+      return
+    }
     const task = await taskForSession(undefined, agent.id)
     if (!task || task.parentSessionId !== agent.session.header.parentSession) return
     const active = ['starting', 'resuming', 'running'].includes(task.status)

@@ -9,8 +9,7 @@
     "./router": "./router.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
-    "./client": "./client.js",
-    "./reviewer": "./reviewer.js"
+    "./client": "./client.js"
   },
   "files": [
     "index.js",
@@ -20,8 +19,7 @@
     "locale/*.json",
     "docs",
     "icon.svg",
-    "client.js",
-    "reviewer.js"
+    "client.js"
   ],
   "scripts": {
     "test": "node --test"

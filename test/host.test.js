@@ -71,7 +71,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
           return { childId: spec.childId }
         }
         ++reviewCalls
-        assert.equal(spec.agentPreset, 'superagent-lite-reviewer')
+        assert.equal(spec.agentPreset, undefined)
         assert.match(spec.prompt[0].text, /updated/)
         return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed', structured: { approved: true, findings: '' } }) }
       },

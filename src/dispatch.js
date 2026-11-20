@@ -89,7 +89,7 @@ export function createDispatchTool(ctx) {
           name: `sl-${id}`,
           childId: workerSessionId,
           label: `${teamId}: ${title}`,
-          agentPreset: 'standard',
+          agentPreset: 'superagent-lite-worker',
           prompt: [{ type: 'text', text: buildWorkerPrompt({ title, teamId, task: taskText, baseBranch }) }],
           signal: exec.signal,
           delivery: 'parent',
