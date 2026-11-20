@@ -5,7 +5,7 @@ import { createDispatchGuard } from '../src/turn-guard.js'
 function fixture(preset = 'superagent-lite') {
   const session = { id: 'session-1' }
   const followups = []
-  const agent = { id: session.id, followup: message => followups.push(message) }
+  const agent = { id: session.id, status: 'idle', followup: message => followups.push(message) }
   const ctx = {
     agents: { get: id => id === session.id ? agent : undefined },
     agentPresets: { composedPreset: () => preset },
@@ -67,6 +67,24 @@ test('the guard reminds at most twice for one input', () => {
   guard.onEvent(session, end(3))
   guard.onIdle(session.id)
   assert.equal(followups.length, 2)
+})
+
+test('a user message without an id still arms exactly one requirement', () => {
+  const { guard, session, followups, event } = fixture()
+  guard.onEvent(session, event('user/message', { source: { kind: 'user' } }))
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 1)
+})
+
+test('a host already idle at turn/end still receives the reminder', async () => {
+  const { guard, session, followups } = fixture()
+  guard.onIdle(session.id)
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(1))
+  assert.equal(followups.length, 0)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(followups.length, 1)
 })
 
 test('each new user input needs its own decision', () => {

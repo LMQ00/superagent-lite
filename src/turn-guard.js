@@ -12,11 +12,29 @@ export function createDispatchGuard(ctx) {
   const missing = new Set()
   const reminders = new Map()
 
+  function deliver(sessionId) {
+    if (!missing.delete(sessionId)) return
+    const agent = ctx.agents.get(sessionId)
+    if (!agent) return
+    if (!armed.delete(sessionId)) return
+    const sent = (reminders.get(sessionId)?.sent ?? 0) + 1
+    const id = randomUUID()
+    // The Host appends this exact message into the claimed user/message event,
+    // so the id identifies the guard's own reminder when it comes back.
+    reminders.set(sessionId, { id, sent })
+    agent.followup({
+      id,
+      role: 'user',
+      content: [{ type: 'text', text: REMINDER }],
+      source: { kind: 'user' },
+    })
+  }
+
   return {
     onEvent(session, event) {
       if (event.type === 'user/message') {
         const reminder = reminders.get(session.id)
-        if (reminder?.id === event.data.id) {
+        if (reminder && reminder.id === event.data.id) {
           // Re-arm a bounded number of retries; the reminder itself must not
           // count as a fresh user input beyond that.
           if (reminder.sent < MAX_REMINDERS) armed.add(session.id)
@@ -70,25 +88,19 @@ export function createDispatchGuard(ctx) {
       }
       if (!armed.has(session.id)) return
       missing.add(session.id)
+      for (const [callId, call] of calls) if (call.sessionId === session.id && call.turn === event.data.turn) calls.delete(callId)
+      // Cover a host that announces idle before turn/end, or does not announce
+      // the transition for this turn: settle on the next macrotask if idle.
+      setImmediate(() => {
+        if (ctx.agents.get(session.id)?.status === 'idle') deliver(session.id)
+      })
     },
     // Delivering the reminder inside the turn/end publication would make the
     // inbox append reenter the open Session append, which the Session rejects
     // and the observer containment swallows. The dispatcher calls this after
     // the agent has settled to idle, where a follow-up can wake a fresh turn.
     onIdle(sessionId) {
-      if (!missing.delete(sessionId)) return
-      const agent = ctx.agents.get(sessionId)
-      if (!agent) return
-      if (!armed.delete(sessionId)) return
-      const sent = (reminders.get(sessionId)?.sent ?? 0) + 1
-      const id = randomUUID()
-      reminders.set(sessionId, { id, sent })
-      agent.followup({
-        id,
-        role: 'user',
-        content: [{ type: 'text', text: REMINDER }],
-        source: { kind: 'user' },
-      })
+      deliver(sessionId)
     },
     dispose(sessionId) {
       decided.delete(sessionId)
