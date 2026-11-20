@@ -64,8 +64,10 @@ export async function apply(ctx) {
     dispatchGuard.dispose(agent.session.id)
   })
 
+  // DSH dispatches agent/status as a scoped event with a single { agent, status }
+  // payload, and the loop announces idle only after the turn/end append returns.
   ctx.on('agent/status', ({ agent, status }) => {
-    if (status === 'idle') dispatchGuard.onIdle(agent.session.id)
+    if (status === 'idle' && !lifetime.signal.aborted) dispatchGuard.onIdle(agent.session.id)
   })
 
   ctx.on('session/event', (session, event) => {

@@ -35,17 +35,24 @@ export function createDispatchGuard(ctx) {
     if (!armed.delete(sessionId)) return
     const sent = (reminders.get(sessionId) ?? 0) + 1
     reminders.set(sessionId, sent)
-    agent.followup({
-      id: randomUUID(),
-      role: 'user',
-      content: [{ type: 'text', text: REMINDER }],
-      source: { kind: REMINDER_SOURCE },
-    })
+    try {
+      agent.followup({
+        id: randomUUID(),
+        role: 'user',
+        content: [{ type: 'text', text: REMINDER }],
+        source: { kind: REMINDER_SOURCE },
+      })
+    } catch (error) {
+      reminders.delete(sessionId)
+      ctx.logger?.warn(`superagent-lite dispatch reminder: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   return {
     onEvent(session, event) {
       if (event.type === 'user/message') {
+        // DSH user-role message sources are merge-extensible and consumers fall
+        // through unknown kinds, so this marker cannot be mistaken for input.
         if (event.data.source?.kind === REMINDER_SOURCE) {
           // Re-arm a bounded number of retries; the reminder itself must not
           // count as a fresh user input beyond that.

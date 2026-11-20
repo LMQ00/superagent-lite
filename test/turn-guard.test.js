@@ -110,6 +110,53 @@ test('an aborted input is not reminded, but the next input still needs a decisio
   assert.equal(followups.length, 1)
 })
 
+test('follow-ups may continue the worker turn after turn without a reminder', () => {
+  const { guard, session, followups } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, call(1))
+  guard.onEvent(session, result(1))
+  guard.onEvent(session, end(1))
+  guard.onEvent(session, input)
+  guard.onEvent(session, call(2, 'continue_worker'))
+  guard.onEvent(session, result(2, 'continue_worker'))
+  guard.onEvent(session, end(2))
+  guard.onEvent(session, input)
+  guard.onEvent(session, call(3, 'continue_worker'))
+  guard.onEvent(session, result(3, 'continue_worker', true))
+  guard.onEvent(session, end(3))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 1)
+})
+
+test('idle and the deferred fallback deliver at most once', async () => {
+  const { guard, session, followups } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(followups.length, 1)
+})
+
+test('a new input restarts the reminder budget', () => {
+  const { guard, session, followups, event } = fixture()
+  const reminder = { kind: 'superagent-lite-reminder' }
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  guard.onEvent(session, event('user/message', { source: reminder }))
+  guard.onEvent(session, end(2))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 2)
+  guard.onEvent(session, event('user/message', { source: reminder }))
+  guard.onEvent(session, end(3))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 2)
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(4))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 3)
+})
+
 test('each new user input needs its own decision', () => {
   const { guard, session, followups } = fixture()
   guard.onEvent(session, input)
