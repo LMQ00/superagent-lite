@@ -15,4 +15,5 @@ test('worker prompt is detailed only at dispatch and requires independent review
   assert.match(prompt, /call create_worktree once/)
   assert.match(prompt, /separate read-only subagent/)
   assert.match(prompt, /Do not push or merge/)
+  assert.match(prompt, /call message_router with the final conclusion/)
 })

@@ -5,6 +5,7 @@ import { createReviewTool, worktreeHead } from './src/review.js'
 import { deliverGithub, githubOrigin } from './src/github.js'
 import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
+import { createMessageRouterTool } from './src/message-router.js'
 import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
@@ -52,8 +53,9 @@ export async function apply(ctx) {
     const canUseMemory = candidate => candidate === agent && !state.frozen && state.path === ctx.workingDirectory.get(agent.session)
     const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); extract(); memory(); review(); checkout(); guard() } })
+    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); message(); extract(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {

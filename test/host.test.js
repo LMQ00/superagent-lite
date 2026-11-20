@@ -34,6 +34,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const { createReviewTool } = await import('../src/review.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
   const { archiveWorkerTurn, createMemoryTool } = await import('../src/memory.js')
+  const { createMessageRouterTool } = await import('../src/message-router.js')
   const repo = join(root, 'repo')
   const worktree = join(root, 'worktree')
   await mkdir(repo)
@@ -77,6 +78,8 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
       },
     },
   }
+  const sends = []
+  ctx.subagents.sendMessage = async (sender, targetId, content) => sends.push({ sender: sender.id, targetId, text: content[0].text })
   const dispatch = createDispatchTool(ctx)
   const args = { delegate: true, title: 'Change notes', teamId: 'team', task: 'Update notes' }
   const exec = { agent: parent, signal, callId: 'call' }
@@ -103,6 +106,9 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   }
   assert.match(await review.execute({}, { agent: worker, signal }), /Approved/)
   assert.equal(reviewCalls, 1)
+  const message = createMessageRouterTool(ctx, worker, dispatched.taskId)
+  await message.execute({ message: 'Done on sl-fixture' }, { agent: worker, signal })
+  assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])
   assert.equal((await readTask(dispatched.taskId)).review.head, head)
   await updateTask(dispatched.taskId, { status: 'awaiting-merge' })
   scopeMode = 'read-only'
