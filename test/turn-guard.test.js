@@ -50,7 +50,7 @@ test('a completed turn without a decision is reopened once the agent is idle', (
   assert.equal(followups[0].role, 'user')
   assert.match(followups[0].content[0].text, /dispatch_worker/)
   assert.match(followups[0].content[0].text, /continue_worker/)
-  assert.equal(followups[0].source.kind, 'user')
+  assert.equal(followups[0].source.kind, 'superagent-lite-reminder')
 })
 
 test('the guard reminds at most twice for one input', () => {
@@ -59,12 +59,23 @@ test('the guard reminds at most twice for one input', () => {
   guard.onEvent(session, end(1))
   guard.onIdle(session.id)
   assert.equal(followups.length, 1)
-  guard.onEvent(session, event('user/message', { id: followups[0].id, source: { kind: 'user' } }))
+  guard.onEvent(session, event('user/message', { id: followups[0].id, source: { kind: 'superagent-lite-reminder' } }))
   guard.onEvent(session, end(2))
   guard.onIdle(session.id)
   assert.equal(followups.length, 2)
-  guard.onEvent(session, event('user/message', { id: followups[1].id, source: { kind: 'user' } }))
+  guard.onEvent(session, event('user/message', { id: followups[1].id, source: { kind: 'superagent-lite-reminder' } }))
   guard.onEvent(session, end(3))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 2)
+})
+
+test('a reminder echoes as its own source kind and does not count as a new input', () => {
+  const { guard, session, followups, event } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  guard.onEvent(session, event('user/message', { source: { kind: 'superagent-lite-reminder' } }))
+  guard.onEvent(session, end(2))
   guard.onIdle(session.id)
   assert.equal(followups.length, 2)
 })
@@ -84,6 +95,18 @@ test('a host already idle at turn/end still receives the reminder', async () => 
   guard.onEvent(session, end(1))
   assert.equal(followups.length, 0)
   await new Promise(resolve => setImmediate(resolve))
+  assert.equal(followups.length, 1)
+})
+
+test('an aborted input is not reminded, but the next input still needs a decision', () => {
+  const { guard, session, followups } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(1, 'aborted'))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 0)
+  guard.onEvent(session, input)
+  guard.onEvent(session, end(2))
+  guard.onIdle(session.id)
   assert.equal(followups.length, 1)
 })
 
