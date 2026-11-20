@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { deliverGithub, githubRepository } from '../src/github.js'
+import { deliverGithub, githubOrigin, githubRepository } from '../src/github.js'
 
 const head = 'a'.repeat(40)
 const url = 'https://github.com/example/project/pull/7'
@@ -34,6 +34,15 @@ test('strict GitHub origin parsing rejects credentials and alternate hosts', () 
   for (const url of ['https://github.com.evil.test/example/project.git', 'https://secret@github.com/example/project.git', 'git@github.com:example/..']) {
     assert.equal(githubRepository(url), undefined)
   }
+})
+
+test('projects without a GitHub remote use the explicit local path', async () => {
+  const listing = 'origin\thttps://git.example.org/team/project.git (fetch)\norigin\thttps://git.example.org/team/project.git (push)'
+  const ctx = { subprocess: {
+    async resolveExecutable(name) { return name },
+    spawn() { return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { readFrom: () => ({ text: listing }) } } } },
+  } }
+  assert.equal(await githubOrigin(ctx, '/fixture', new AbortController().signal), undefined)
 })
 
 test('an exact reviewed PR merges only after at least one required check passes', async () => {

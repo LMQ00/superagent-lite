@@ -7,9 +7,11 @@ export function githubRepository(url) {
 }
 
 export async function githubOrigin(ctx, cwd, signal) {
-  const names = (await runCommand(ctx, ['remote'], cwd, signal)).split('\n')
-  if (names.every(name => !name)) return undefined
-  if (!names.includes('origin')) throw new Error('A remote repository must be configured as origin before automated delivery')
+  const listing = await runCommand(ctx, ['remote', '-v'], cwd, signal)
+  const urls = listing.split('\n').filter(Boolean).map(line => line.match(/^\S+\s+(\S+)\s+\((?:fetch|push)\)$/)?.[1])
+  if (urls.some(url => !url)) throw new Error('Could not identify the project remotes')
+  if (!urls.some(url => githubRepository(url) || /(?:^|[/@:])github\.com[:/]/i.test(url))) return undefined
+  if (!listing.split('\n').some(line => /^origin\s/.test(line))) throw new Error('Configure the GitHub repository as origin before automated delivery')
   const fetchUrl = await runCommand(ctx, ['remote', 'get-url', 'origin'], cwd, signal)
   const pushUrl = await runCommand(ctx, ['remote', 'get-url', '--push', '--all', 'origin'], cwd, signal)
   const repo = githubRepository(fetchUrl)
