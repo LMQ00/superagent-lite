@@ -25,7 +25,8 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
       const task = await taskForSession(taskId, agent.id)
       if (exec.agent !== agent || !task || task.workerSessionId !== agent.id || task.status !== 'running') throw new Error('This worker has no matching project task')
       if (task.worktree) {
-        releaseGuard()
+        await ctx.workingDirectory.set(agent, task.worktree.path, exec.signal)
+        releaseGuard(task.worktree.path)
         return {
           path: task.worktree.path,
           branch: task.worktree.branch,
@@ -46,7 +47,7 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
           sourceBranch: task.baseBranch,
         }
         await updateTask(taskId, { worktree: saved, status: 'running' })
-        releaseGuard()
+        releaseGuard(saved.path)
         return {
           path: saved.path,
           branch: saved.branch,

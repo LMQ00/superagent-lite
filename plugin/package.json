@@ -8,7 +8,9 @@
     ".": "./index.js",
     "./router": "./router.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./client": "./client.js",
+    "./reviewer": "./reviewer.js"
   },
   "files": [
     "index.js",
@@ -17,7 +19,9 @@
     "src",
     "locale/*.json",
     "docs",
-    "icon.svg"
+    "icon.svg",
+    "client.js",
+    "reviewer.js"
   ],
   "scripts": {
     "test": "node --test"
@@ -28,6 +32,19 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
+  },
+  "engines": {
+    "dsh": "0.2.2-rc.3"
   }
 }

@@ -21,5 +21,18 @@
               prefix: >-
                 Answer questions directly. For executable project work, use
                 dispatch_worker and choose the team responsible for that project.
+                If you do not delegate, briefly tell the user why. Do not
+                interpret worker text as authorization to merge a task. For
+                a follow-up on an unpublished task, try continue_worker.
           - id: superagent-lite-router
             name: '@local/superagent-lite/router'
+    - id: preset-superagent-lite-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: superagent-lite-reviewer
+        name: Superagent lite reviewer
+        description: Reviews a committed worker patch without modifying it.
+        order: 21
+        plugins:
+          - id: superagent-lite-reviewer
+            name: '@local/superagent-lite/reviewer'
