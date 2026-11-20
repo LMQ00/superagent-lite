@@ -1,0 +1,25 @@
+- insert:
+    - id: superagent-lite-worktree
+      name: '@deepseek-ai/dsh-experimental-worktree'
+      config:
+        directory: .agents/worktrees
+        namePrefix: sl-
+        retainOnArchive: true
+    - id: superagent-lite
+      name: '@local/superagent-lite'
+    - id: preset-superagent-lite
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: superagent-lite
+        name: Superagent lite
+        description: Routes project tasks to isolated workers by team.
+        order: 20
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                Answer questions directly. For executable project work, use
+                dispatch_worker and choose the team responsible for that project.
+          - id: superagent-lite-router
+            name: '@local/superagent-lite/router'

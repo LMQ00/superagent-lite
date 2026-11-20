@@ -1,0 +1,33 @@
+{
+  "name": "@local/superagent-lite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Project-scoped router and worker delegation for DeepSeek Harness",
+  "exports": {
+    ".": "./index.js",
+    "./router": "./router.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "router.js",
+    "cordis.patch.yml",
+    "src",
+    "locale/*.json",
+    "docs",
+    "icon.svg"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.3"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
