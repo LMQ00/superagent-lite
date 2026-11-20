@@ -46,7 +46,12 @@ export async function apply(ctx) {
     const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); extract(); memory(); review(); checkout(); guard() } })
+    const reviewPrompt = agent.ctx.systemPrompt.context({
+      name: 'superagent-lite-review',
+      order: 171,
+      text: () => 'Commit every change, then call review_worker_commit. Fix all reported issues and repeat until it approves. Never push or merge; delivery happens outside your Session.',
+    })
+    workers.set(agent.id, { state, session: agent.session, dispose: () => { reviewPrompt(); profile?.(); extract(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
