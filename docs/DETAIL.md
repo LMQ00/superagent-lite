@@ -1,6 +1,6 @@
 # Superagent 轻量版
 
-Start a new Session and select **Superagent 轻量版**. To install the bundle in DSH Web, open **Plugins → Add plugin** and select the repository’s root directory. Ask a question to get a direct reply, or request executable work in a named team’s Git project. The target checkout must have a branch and a clean working tree. Each worker starts in a separate branch and worktree. Worker instructions enter only the dispatched session, and the independent reviewer sees only the committed patch and task requirements.
+Start a new Session and select **Superagent 轻量版**. To install the bundle in DSH Web, open **Plugins → Add plugin** and select the repository’s root directory. Every user input to the router must produce a `dispatch_worker` decision before an answer: executable project work sets `delegate=true` and starts an isolated worker for the named team, while an input that needs no worker sets `delegate=false` with a reason. An answer that completes without a successful decision is reopened with a reminder. The target checkout must have a branch and a clean working tree. Each worker starts in a separate branch and worktree. Worker instructions enter only the dispatched session, and the independent reviewer sees only the committed patch and task requirements.
 
 The **Project tasks** panel shows task IDs, state, and links to the router, worker, and any GitHub pull request. Refresh the panel to retrieve the latest status. The router can send a follow-up to an unpublished task’s existing worker; a published change is a separate task.
 

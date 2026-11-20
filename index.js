@@ -4,8 +4,9 @@ import { createBoardHandler } from './src/board.js'
 import { createReviewTool, worktreeHead } from './src/review.js'
 import { deliverGithub, githubOrigin } from './src/github.js'
 import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
+import { createDispatchGuard } from './src/turn-guard.js'
 
-export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
+export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
   await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
@@ -15,6 +16,7 @@ export async function apply(ctx) {
       handler: createBoardHandler(web.connection, ctx.agents),
     }))
   })
+  const dispatchGuard = createDispatchGuard(ctx)
   const workers = new Map()
   const jobs = new Set()
   const track = job => {
@@ -46,20 +48,17 @@ export async function apply(ctx) {
     const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    const reviewPrompt = agent.ctx.systemPrompt.context({
-      name: 'superagent-lite-review',
-      order: 171,
-      text: () => 'Commit every change, then call review_worker_commit. Fix all reported issues and repeat until it approves. Never push or merge; delivery happens outside your Session.',
-    })
-    workers.set(agent.id, { state, session: agent.session, dispose: () => { reviewPrompt(); profile?.(); extract(); memory(); review(); checkout(); guard() } })
+    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); extract(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
     workers.get(agent.id)?.dispose()
     workers.delete(agent.id)
+    dispatchGuard.dispose(agent.session.id)
   })
 
   ctx.on('session/event', (session, event) => {
+    dispatchGuard.onEvent(session, event)
     if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {
       track(archiveWorkerTurn(session, event))
     }

@@ -78,10 +78,14 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
     },
   }
   const dispatch = createDispatchTool(ctx)
-  const args = { title: 'Change notes', teamId: 'team', task: 'Update notes' }
+  const args = { delegate: true, title: 'Change notes', teamId: 'team', task: 'Update notes' }
   const exec = { agent: parent, signal, callId: 'call' }
   await assert.rejects(dispatch.execute({ ...args, teamId: '../bad' }, exec), /teamId/)
+  await assert.rejects(dispatch.execute({ delegate: false }, exec), /reason/)
+  const skipped = await dispatch.execute({ delegate: false, reason: 'No project work' }, exec)
+  assert.deepEqual(skipped, { delegated: false, reason: 'No project work' })
   const dispatched = await dispatch.execute(args, exec)
+  assert.equal(dispatched.delegated, true)
   const branch = 'sl-fixture'
   assert.equal(dispatched.workerSessionId, worker.id)
   assert.equal((await readTask(dispatched.taskId)).baseCommit, baseCommit)
