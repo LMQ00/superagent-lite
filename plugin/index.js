@@ -3,10 +3,12 @@ import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler } from './src/board.js'
 import { createReviewTool, worktreeHead } from './src/review.js'
 import { deliverGithub, githubOrigin } from './src/github.js'
+import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
 
-export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'sandboxPolicy', 'workingDirectory']
+export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
-export function apply(ctx) {
+export async function apply(ctx) {
+  await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
@@ -14,7 +16,12 @@ export function apply(ctx) {
     }))
   })
   const workers = new Map()
-  const deliveries = new Set()
+  const jobs = new Set()
+  const track = job => {
+    const tracked = job.catch(error => { ctx.logger.warn(String(error)) })
+    jobs.add(tracked)
+    void tracked.finally(() => jobs.delete(tracked))
+  }
   const lifetime = new AbortController()
 
   ctx.on('agent/created', async ({ agent }) => {
@@ -34,7 +41,12 @@ export function apply(ctx) {
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
       when: () => !state.frozen && state.path === ctx.workingDirectory.get(agent.session),
     })
-    workers.set(agent.id, { state, dispose: () => { review(); checkout(); guard() } })
+    const caller = { role: 'worker', teamId: task.teamId, projectRoot: task.projectRoot }
+    const canUseMemory = candidate => candidate === agent && !state.frozen && state.path === ctx.workingDirectory.get(agent.session)
+    const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
+    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); extract(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -42,11 +54,17 @@ export function apply(ctx) {
     workers.delete(agent.id)
   })
 
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {
+      track(archiveWorkerTurn(session, event))
+    }
+  })
+
   ctx.on('subagent/end', (info) => {
     const worker = workers.get(info.id)
     if (worker) worker.state.frozen = true
     if (lifetime.signal.aborted) return
-    const job = (async () => {
+    track((async () => {
       const task = await taskForSession(undefined, info.id)
       if (!task || task.parentSessionId !== info.parentSessionId || task.status !== 'running') return
       const publish = changes => updateTask(task.id, changes)
@@ -79,15 +97,13 @@ export function apply(ctx) {
       } catch (error) {
         await publish({ ...stopped, status: 'delivery-blocked', failure: error.message })
       }
-    })().catch(error => { ctx.logger.warn(String(error)) })
-    deliveries.add(job)
-    void job.finally(() => deliveries.delete(job))
+    })())
   })
 
   ctx.effect(() => async () => {
     lifetime.abort()
     for (const worker of workers.values()) worker.dispose()
     workers.clear()
-    await Promise.allSettled(deliveries)
+    await Promise.allSettled(jobs)
   }, 'superagent-lite: worker lifecycle and delivery')
 }
