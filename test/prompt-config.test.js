@@ -35,6 +35,15 @@ test('merge authorization policy is consistent across the router prompt, worker 
   assert.match(texts.readme, /未授权时 router 和 worker 都不会合并/)
 })
 
+test('bundled router prompt answers objectively without rewriting the user opinion', async () => {
+  const config = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+
+  assert.match(config, /Answer objectively and logically/)
+  assert.match(config, /do not agree with, praise, restate or rewrite the user's opinion/)
+  assert.match(config, /Routing does not authorize rewriting the request/)
+  assert.match(config, /do not add requirements, implementation plans, acceptance criteria or repeated policy checklists/)
+})
+
 test('router preset mounts the same compaction group as the worker preset', async () => {
   const config = (await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
   const start = config.indexOf('id: preset-superagent-lite\n')
