@@ -28,7 +28,7 @@ test('continue_worker asks the worker to judge follow-up scope before applying i
   assert.match(sends[0].text, /restart only if the change requires it/)
   assert.match(sends[0].text, /New requirement/)
   assert.equal((await readTask(id)).status, 'running')
-  assert.match((await readTask(id)).task, /Follow-up:\nNew requirement/)
+  assert.equal((await readTask(id)).task, 'Do it')
 
   await updateTask(id, current => ({ ...current, status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } }))
   const resumed = await tool.execute({ taskId: id, task: 'More work' }, { agent: { id: 'router' }, signal: new AbortController().signal })
@@ -38,6 +38,6 @@ test('continue_worker asks the worker to judge follow-up scope before applying i
   assert.match(sends[1].text, /as BLOCKED instead of applying it/)
   assert.match(sends[1].text, /After committing changes, call review_worker_commit again/)
   assert.equal((await readTask(id)).status, 'resuming')
-  assert.match((await readTask(id)).task, /Follow-up:\nMore work/)
+  assert.equal((await readTask(id)).task, 'Do it')
   t.after(() => rm(home, { recursive: true, force: true }))
 })

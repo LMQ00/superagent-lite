@@ -1,10 +1,5 @@
 import { readTask, updateTask } from './task-store.js'
 
-function withFollowUp(task, followUp) {
-  const combined = `${task}\n\nFollow-up:\n${followUp}`
-  return combined.length > 20000 ? combined.slice(-20000) : combined
-}
-
 export function createContinueTool(ctx) {
   return {
     name: 'continue_worker',
@@ -30,14 +25,13 @@ export function createContinueTool(ctx) {
           type: 'text',
           text: `Follow-up for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it and report the mismatch with message_router as BLOCKED. Otherwise apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
-        await updateTask(taskId, current => ({ task: withFollowUp(current.task, text) }))
         return `Follow-up delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
       await updateTask(taskId, current => {
         if (!current.worktree || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
           throw new Error('Only settled, unpublished worktrees can be resumed')
         }
-        return { status: 'resuming', review: undefined, task: withFollowUp(current.task, text) }
+        return { status: 'resuming', review: undefined }
       })
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{

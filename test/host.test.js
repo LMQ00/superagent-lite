@@ -74,7 +74,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
         ++reviewCalls
         assert.equal(spec.agentPreset, undefined)
         assert.match(spec.prompt[0].text, /updated/)
-        assert.match(spec.prompt[0].text, /do not assume repository state beyond them/)
+        assert.match(spec.prompt[0].text, /Judge the committed diff/)
         assert.match(spec.prompt[0].text, /Approve only when the change is correct/)
         assert.match(spec.prompt[0].text, /Block for a concrete correctness/)
         assert.match(spec.prompt[0].text, /do not block on style preferences/)
