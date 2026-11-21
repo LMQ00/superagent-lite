@@ -154,3 +154,4 @@ To roll back, stop the bundle, check out the previous commit of this repository,
 | `Only the active worker for this task can message its router` | `message_router` is a worker tool; the router cannot call it |
 | `Memory is not available to this Session` | The Session is frozen or outside its Worktree; memory tools need an active worker or the router |
 | `The reviewer did not return a usable verdict` | Run `review_worker_commit` again; the review subagent must return `approved` and `findings` |
+| `git output exceeded the plugin limit` | The committed diff is larger than the 65,536-byte tool-output cap. Split the change into smaller tasks |

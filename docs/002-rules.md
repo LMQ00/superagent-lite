@@ -82,6 +82,7 @@ The Router Session runs the `superagent-lite` preset. The turn guard applies to 
 - The tool records the reviewed head only after the reviewer returns a usable `approved` boolean and a `findings` string. It re-reads HEAD after the review; a head that moved during review fails the call.
 - The reviewer is a separate subagent. It receives the stored requirements, recorded follow-up texts, the reviewed head and the patch. It judges the committed diff, treats follow-ups as context, and blocks only on concrete correctness, regression or missing-test problems.
 - The reviewer runs read-only. It may use `structured_output`, `read`, `read_image`, `glob`, `grep`, `read_page`, `web_fetch`, `web_search`, `x_search`, `job_output` and `job_list`.
+- The committed patch is read through the plugin's bounded process output. A patch larger than 65,536 bytes fails with `git output exceeded the plugin limit` before a reviewer starts.
 - `bash` and `pwsh` are admitted only when the mounted shell confines file writes, the helper session resolves to the read-only sandbox mode, and the call requests no wider sandbox permissions. File writes, mutating tools and control tools are denied. Network and process effects are outside the sandbox vocabulary.
 - A review that blocks does not change the Task status by itself. The worker fixes the findings, commits again and requests another review. The Task settles as `review-required` if the worker ends without an approved review.
 
