@@ -291,7 +291,7 @@ test('filters pull requests by state and search, and opens a row into commits, f
         canPublish: false, publishReason: 'The review has not approved this branch' } },
     { ...base, id: 'c', title: 'Merged feature', status: 'merged',
       git: { branch: 'sl-c', baseBranch: 'master', approved: true, reviewed: true, merged: true, unmerged: false,
-        pr: { url: 'https://github.com/owner/repo/pull/11', state: 'MERGED', exact: true, draft: false, author: 'octocat', comments: 1, checks: { state: 'success', total: 2 } },
+        pr: { url: 'https://github.com/owner/repo/pull/11/', state: 'MERGED', exact: true, draft: false, author: 'octocat', comments: 1, checks: { state: 'success', total: 2 } },
         canMerge: false, canPublish: false } },
     { ...base, id: 'd', title: 'Abandoned branch', status: 'delivery-blocked',
       git: { branch: 'sl-d', baseBranch: 'master', approved: true, reviewed: true, merged: false, unmerged: true,
@@ -345,6 +345,7 @@ test('filters pull requests by state and search, and opens a row into commits, f
   assert.equal(text(tab('已关闭')), '已关闭1')
   tab('已合并').props.onClick()
   assert.match(gitText(), /Merged feature/)
+  assert.match(gitText(), /#11/)
   assert.doesNotMatch(gitText(), /Add dashboard/)
   gitNodes().find(node => node.type === 'button' && node.props.className === 'sl-pr__row').props.onClick()
   await flush()
@@ -353,7 +354,7 @@ test('filters pull requests by state and search, and opens a row into commits, f
   assert.match(gitText(), /assets\/logo\.png/)
   assert.equal(gitNodes().find(node => node.type === 'button' && text(node) === '合并到 master'), undefined)
   assert.deepEqual(gitNodes().filter(node => node.type === 'a').map(node => node.props.href),
-    ['https://github.com/owner/repo/pull/11'])
+    ['https://github.com/owner/repo/pull/11/'])
 
   tab('已关闭').props.onClick()
   assert.match(gitText(), /Abandoned branch/)

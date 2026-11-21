@@ -177,7 +177,8 @@ window.__ModuleLoader__.load({
     function pullRequestNumber(raw) {
       const href = pullRequestHref(raw)
       if (!href) return undefined
-      const last = href.slice(href.lastIndexOf('/') + 1)
+      const path = href.endsWith('/') ? href.slice(0, -1) : href
+      const last = path.slice(path.lastIndexOf('/') + 1)
       return /^\d+$/.test(last) ? last : undefined
     }
 
