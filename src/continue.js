@@ -1,4 +1,15 @@
 import { readTask, updateTask } from './task-store.js'
+import { buildWorkerPrompt } from './worker-prompt.js'
+
+/** Reuse the dispatch task message so every follow-up carries the same fields and phase sections. */
+function followUpPrompt(record, text, instruction) {
+  return buildWorkerPrompt({
+    title: record.title,
+    teamId: record.teamId,
+    baseBranch: record.baseBranch,
+    task: `${record.task}\n\nFollow-up:\n${text}\n\n${instruction}`,
+  })
+}
 
 export function createContinueTool(ctx) {
   return {
@@ -23,7 +34,7 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Requirements update for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
+          text: followUpPrompt(record, text, 'Apply it to your current work; restart only if the change requires it.'),
         }], { signal: exec.signal })
         return `Update delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
@@ -36,7 +47,7 @@ export function createContinueTool(ctx) {
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
+          text: followUpPrompt(record, text, 'Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again.'),
         }], { signal: exec.signal })
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
