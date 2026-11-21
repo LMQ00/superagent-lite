@@ -77,6 +77,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
         assert.match(spec.prompt[0].text, /Judge the committed diff/)
         assert.match(spec.prompt[0].text, /uncommitted local changes/)
         assert.match(spec.prompt[0].text, /Follow-ups are context only/)
+        assert.match(spec.prompt[0].text, /An applied follow-up is in scope/)
         assert.match(spec.prompt[0].text, /"followUps":\["Add a changelog entry"\]/)
         assert.match(spec.prompt[0].text, /"requirements":"Update notes"/)
         assert.match(spec.prompt[0].text, /Approve only when the change is correct/)
