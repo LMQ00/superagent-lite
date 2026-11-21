@@ -3,7 +3,7 @@ import { taskForSession } from './task-store.js'
 export function createMessageRouterTool(ctx, agent, taskId) {
   return {
     name: 'message_router',
-    description: 'Send a progress note or the final conclusion to the router Session that dispatched this task. Use it when a requirement blocks progress and when the work is finished.',
+    description: 'Send the router a progress note or final conclusion when a requirement blocks progress and when the work is finished.',
     parameters: {
       type: 'object',
       additionalProperties: false,

@@ -4,7 +4,7 @@ const ROUTER_PRESET = 'superagent-lite'
 const DECISION_TOOLS = new Set(['dispatch_worker', 'continue_worker'])
 const MAX_REMINDERS = 2
 const REMINDER_SOURCE = 'superagent-lite-reminder'
-const REMINDER = '[superagent-lite] 这轮用户输入还没有调度决定。现在必须调用 dispatch_worker（项目工作用 delegate=true；不派 worker 则用 delegate=false 并写明理由），或对既有未发布任务调用 continue_worker。没有决定之前不要给出最终回答。'
+const REMINDER = '[superagent-lite] 系统提醒，不是新的用户输入：这轮输入还没有调度决定。现在调用 dispatch_worker（项目工作用 delegate=true；不派 worker 用 delegate=false 并写明理由），或对既有未发布任务调用 continue_worker。给出最终回答前必须先决定。'
 
 export function createDispatchGuard(ctx) {
   const calls = new Map()
