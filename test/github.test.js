@@ -118,11 +118,14 @@ test('merging a pull request pins the reviewed head and records the merged state
   assert.ok(merge.includes('--merge'))
 })
 
-test('merging refuses a moved or conflicting pull request without calling merge', async () => {
+test('merging refuses a moved, conflicting or foreign pull request without calling merge', async () => {
   for (const { ctx, calls } of [fixture({ existing: true, exact: false }), fixture({ existing: true, mergeable: 'CONFLICTING' })]) {
     await assert.rejects(mergeGithub(ctx, task, origin, new AbortController().signal))
     assert.ok(!calls.some(args => args[0] === 'gh' && args[2] === 'merge'))
   }
+  const foreign = fixture({ existing: true })
+  await assert.rejects(mergeGithub(foreign.ctx, { ...task, prUrl: 'https://github.com/other/repo/pull/7' }, origin, new AbortController().signal), /does not belong/)
+  assert.ok(!foreign.calls.some(args => args[0] === 'gh' && args[2] === 'merge'))
 })
 
 test('a merge blocked by GitHub reports the CLI reason', async () => {

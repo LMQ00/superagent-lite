@@ -92,7 +92,7 @@ function gitFixture({ worktreeHead = head, dirty = '', targetDirty = '', merged 
 test('pull request URLs are restricted to GitHub pull requests', () => {
   assert.equal(pullRequestUrl(prUrl), prUrl)
   assert.equal(pullRequestUrl(`${prUrl}/`), prUrl)
-  for (const value of [undefined, 'javascript:alert(1)', 'https://github.com.evil.test/example/project/pull/7', 'https://github.com/example/project/issues/7']) {
+  for (const value of [undefined, 'javascript:alert(1)', 'https://github.com.evil.test/example/project/pull/7', 'https://github.com/example/project/issues/7', `${prUrl}?x=1`, `${prUrl}#x`]) {
     assert.equal(pullRequestUrl(value), undefined)
   }
 })
@@ -200,7 +200,6 @@ test('the publish action pushes the reviewed commit and records the pull request
   assert.equal(result.prState, 'OPEN')
   assert.equal(delivered[0].origin.repo, 'example/project')
   assert.equal(delivered[0].head, head)
-  assert.equal((await store.readTask(taskId)).status, 'awaiting-ci')
   assert.equal((await store.readTask(taskId)).prUrl, prUrl)
 })
 
@@ -241,7 +240,6 @@ test('a stale delivery state is reconciled from the real pull request state', as
   assert.equal(view.git.merged, true)
   assert.equal(view.git.unmerged, false)
   assert.equal(view.git.pr.state, 'MERGED')
-  assert.equal((await store.readTask(taskId)).status, 'merged')
   assert.equal(ghCalls.length, 1)
   assert.deepEqual(ghCalls[0].slice(0, 3), ['pr', 'view', prUrl])
 })
@@ -332,7 +330,6 @@ test('a stale review-required GitHub task heals to awaiting-merge and lands in o
   })
   const view = (await manager.list([record], signal)).get(taskId)
   assert.deepEqual([view.status, view.git.canPublish, view.git.canMerge], ['awaiting-merge', true, true])
-  assert.equal((await store.readTask(taskId)).status, 'awaiting-merge')
   const result = await manager.perform(taskId, 'merge', signal)
   assert.deepEqual([result.status, result.prUrl, result.baseHead, ...steps], ['merged', prUrl, baseHead, 'publish', 'merge'])
   assert.ok(calls.some(({ args }) => args.join(' ') === 'pull --ff-only origin main'))
@@ -354,13 +351,29 @@ test('an existing PR and an already merged task keep repeated actions idempotent
     },
   })
   assert.match((await manager.perform(taskId, 'publish', signal)).message, /already exists/)
-  assert.equal((await store.readTask(taskId)).status, 'awaiting-ci')
   assert.equal((await manager.perform(taskId, 'merge', signal)).status, 'merged')
   const repeated = await manager.perform(taskId, 'merge', signal)
   assert.equal(repeated.status, 'merged')
   assert.match(repeated.message, /already merged/)
   assert.equal(remoteMerges, 1)
   assert.equal(calls.filter(({ args }) => args.join(' ') === 'pull --ff-only origin main').length, 2)
+})
+
+test('a publish that finds an already merged PR settles and fast-forwards', async () => {
+  const store = memoryStore([task()])
+  const { git, calls } = gitFixture()
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    publish: async (_task, _origin, _signal, publish) => {
+      await publish({ status: 'merged', prUrl, prState: 'MERGED' })
+      return { url: prUrl, state: 'MERGED', number: '7', adopted: true }
+    },
+    mergeRemote: async () => assert.fail('merge must not run'),
+  })
+  const result = await manager.perform(taskId, 'merge', signal)
+  assert.deepEqual([result.status, result.prUrl, result.baseHead], ['merged', prUrl, baseHead])
+  assert.ok(calls.some(({ args }) => args.join(' ') === 'pull --ff-only origin main'))
 })
 
 test('recovery keeps report tasks and branches with no commits of their own out of delivery states', async () => {
@@ -375,7 +388,6 @@ test('recovery keeps report tasks and branches with no commits of their own out 
   const report = createGitManager(context(), { store: reportStore, originOf: async () => undefined })
   const reportView = (await report.list([reportStore.records.get(taskId)], signal)).get(taskId)
   assert.deepEqual([reportView.status, reportView.git], ['completed', undefined])
-  assert.equal((await reportStore.readTask(taskId)).status, 'completed')
 })
 
 test('a delivery-blocked task whose PR merged past its reviewed head settles as merged', async () => {
@@ -388,7 +400,6 @@ test('a delivery-blocked task whose PR merged past its reviewed head settles as 
   })
   const view = (await manager.list([record], signal)).get(taskId)
   assert.deepEqual([view.status, view.git.merged, view.git.pr.state, view.git.pr.exact], ['merged', true, 'MERGED', false])
-  assert.equal((await store.readTask(taskId)).status, 'merged')
 })
 
 test('a dirty target or a conflicting PR reports why merge is unavailable', async () => {

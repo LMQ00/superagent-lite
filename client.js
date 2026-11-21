@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
         unmergedChanges: 'Unmerged commits', noUnmergedChanges: 'No unmerged commits',
         reviewApproved: 'Review approved', reviewNotApproved: 'Review not approved', reviewStale: 'Review record is stale',
         mergeInto: 'Merge into', publishPullRequest: 'Send pull request', gitWorking: 'Working…',
-        gitFailed: 'The Git action failed.', gitSucceeded: 'Git action completed.',
+        gitFailed: 'The Git action failed.',
         mergeUnavailable: 'Merge unavailable:', publishUnavailable: 'Send pull request unavailable:',
         'pr.open': 'Open', 'pr.merged': 'Merged', 'pr.closed': 'Closed', 'pr.unknown': 'Unknown',
       },
@@ -44,7 +44,7 @@ window.__ModuleLoader__.load({
         unmergedChanges: '有未合并改动', noUnmergedChanges: '无未合并改动',
         reviewApproved: '审查已通过', reviewNotApproved: '审查未通过', reviewStale: '审查记录已过期',
         mergeInto: '合并到', publishPullRequest: '发送 PR', gitWorking: '处理中…',
-        gitFailed: 'Git 操作失败。', gitSucceeded: 'Git 操作已完成。',
+        gitFailed: 'Git 操作失败。',
         mergeUnavailable: '无法合并：', publishUnavailable: '无法发送 PR：',
         'pr.open': '打开', 'pr.merged': '已合并', 'pr.closed': '已关闭', 'pr.unknown': '未知',
       },
@@ -100,7 +100,6 @@ window.__ModuleLoader__.load({
       const [openFailed, setOpenFailed] = useState(false)
       const [gitPending, setGitPending] = useState('')
       const [gitError, setGitError] = useState('')
-      const [gitNotice, setGitNotice] = useState('')
       const active = useRef(null)
       const headingId = useId()
       const gitHeadingId = useId()
@@ -142,7 +141,6 @@ window.__ModuleLoader__.load({
         setPhase('loading')
         setOpenFailed(false)
         setGitError('')
-        setGitNotice('')
         setRevision(value => value + 1)
       }
       const filter = (label, empty, key, value, set) => h('label', null, t(label),
@@ -165,7 +163,6 @@ window.__ModuleLoader__.load({
       const gitAction = async (taskId, action) => {
         setGitPending(`${taskId}:${action}`)
         setGitError('')
-        setGitNotice('')
         try {
           const response = await fetch('/superagent-lite/git', {
             method: 'POST', credentials: 'same-origin',
@@ -180,7 +177,6 @@ window.__ModuleLoader__.load({
           }
           if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('gitFailed'))
           refresh()
-          setGitNotice(typeof value?.message === 'string' && value.message ? value.message : t('gitSucceeded'))
         } catch (error) {
           setGitError(typeof error?.message === 'string' && error.message ? error.message : t('gitFailed'))
         } finally {
@@ -250,7 +246,6 @@ window.__ModuleLoader__.load({
           phase === 'ready' && h('section', { className: 'sl-board__git', 'aria-labelledby': gitHeadingId },
             h('h2', { id: gitHeadingId }, t('gitTitle')),
             gitError && h('p', { role: 'alert', className: 'sl-board__error' }, gitError),
-            gitNotice && h('p', { role: 'status', className: 'sl-board__meta' }, gitNotice),
             branches.length === 0
               ? h('p', { role: 'status', className: 'sl-board__meta' }, t('gitEmpty'))
               : h('ul', { className: 'sl-board__list' }, ...branches.map(branchRow)))))

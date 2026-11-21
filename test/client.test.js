@@ -256,7 +256,7 @@ test('shows why a Git action is unavailable and reports the completed action', a
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
       return path === '/superagent-lite/git'
-        ? { ok: true, json: async () => ({ message: 'Published the reviewed commit as pull request 7.' }) }
+        ? { ok: true, json: async () => ({}) }
         : { ok: true, json: async () => ({ tasks }) }
     },
     language: 'en',
@@ -267,9 +267,7 @@ test('shows why a Git action is unavailable and reports the completed action', a
   assert.match(text(tree), /Merge unavailable: The target checkout has uncommitted changes/)
   assert.equal(nodes(tree).find(node => node.type === 'button' && text(node) === 'Merge into master').props.disabled, true)
   nodes(tree).find(node => node.type === 'button' && text(node) === 'Send pull request').props.onClick()
-  for (let step = 0; step < 4; step += 1) { board.render(); await flush() }
-  tree = board.render()
-  assert.match(text(tree), /Published the reviewed commit as pull request 7\./)
+  for (let step = 0; step < 2; step += 1) { board.render(); await flush() }
   assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
   assert.deepEqual(JSON.parse(requests.find(request => request.path === '/superagent-lite/git').options.body), { taskId: 'a', action: 'publish' })
   board.dispose()

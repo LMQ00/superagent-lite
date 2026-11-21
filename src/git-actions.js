@@ -343,15 +343,16 @@ export function createGitManager(ctx, dependencies = {}) {
 
   async function alreadyMerged(task, action, project, signal) {
     let message = `Task ${task.id} is already merged`
+    let baseHead
     if (project.origin && !project.error) {
       try {
-        const baseHead = await syncBaseCheckout(task, signal)
+        baseHead = await syncBaseCheckout(task, signal)
         message = `${message}; the project checkout is at ${baseHead}`
       } catch (error) {
         throw new Error(`Task ${task.id} is already merged, but the project checkout could not be fast-forwarded: ${error.message}`)
       }
     }
-    return result(task, action, { status: 'merged', prUrl: task.prUrl, message: `${message}.` })
+    return result(task, action, { status: 'merged', prUrl: task.prUrl, ...(baseHead ? { baseHead } : {}), message: `${message}.` })
   }
 
   async function publishAction(task, project, signal) {
@@ -414,7 +415,12 @@ export function createGitManager(ctx, dependencies = {}) {
       current = await store.readTask(task.id)
       const url = pullRequestUrl(current.prUrl)
       if (url) pullRequests.delete(url)
+      if (current.status === 'merged') return alreadyMerged(current, 'merge', project, signal)
       pr = await syncPullRequest(current, signal)
+      if (pr?.exact && pr.state === 'MERGED') {
+        await settle(current, { status: 'merged', prState: 'MERGED' })
+        return alreadyMerged({ ...current, status: 'merged' }, 'merge', project, signal)
+      }
       if (!pr?.exact || pr.state !== 'OPEN') throw new Error('The pull request could not be opened for the reviewed commit')
     }
     await store.updateTask(task.id, { status: 'merging' })

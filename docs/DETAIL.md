@@ -10,11 +10,9 @@ Prompt text and its editing rules are in [PROMPTS](PROMPTS.md).
 
 The **Project tasks** panel shows task IDs, state, and links to the router, worker, and any GitHub pull request. Its **Git branches** area lists each worker branch with the task ID, branch name, base branch, review state, and whether its commits are still unmerged. Refresh the panel to retrieve the latest status. The router can steer a running worker, or continue an unpublished settled worker, with `continue_worker`. A worker sends its final conclusion, or a concrete blocker, to the router with `message_router`; the conclusion is `COMPLETED`, `INCOMPLETE` or `BLOCKED`, routine progress is not sent, and a published change is a separate task.
 
-A worker that finishes with a clean approved commit settles as `awaiting-merge`; the Git area then delivers it. A local merge needs the router Session; GitHub delivery runs from the panel. Pull-request state is read from `gh pr view` and stale records are corrected.
+A worker that finishes with a clean approved commit settles as `awaiting-merge`; it does not publish automatically. The Git area delivers reviewed branches; a local merge needs the router Session with full access while GitHub delivery runs from the panel. Pull-request state is read back from GitHub (`gh pr view`) and the task record is corrected when that state disagrees, so a merged or closed PR is not left showing a stale status.
 
-- **Send pull request:** pushes the reviewed commit, creates or reuses the exact open PR, and records `awaiting-ci`; repeating it does not duplicate the PR.
-- **Merge:** for GitHub, runs `gh pr merge --merge --match-head-commit <reviewed head>` on the exact PR, records `merged`, then runs `git pull --ff-only origin <base branch>` in the main checkout; for local projects it runs the `/merge-worker` merge on a clean target.
-- Both refuse a stale review, moved head, closed or conflicting PR, unclean target, or non-full-access policy, and show why. Stale review-approved tasks become `awaiting-merge`; already merged branches or PRs become `merged`.
+- **Actions:** publish pushes the reviewed commit and creates or reuses the PR; merge runs `gh pr merge --merge --match-head-commit <head>` and fast-forwards the main checkout, or `/merge-worker` locally. Both refuse stale reviews, moved heads, conflicts, closed PRs, unclean targets or limited policy with the reason shown.
 
 The worktree service retains worker branches and checkouts for recovery. Worktrees separate working files, not OS accounts or credentials. This bundle targets DSH `0.2.2-rc.3` and should not be enabled alongside another bundle that mounts the same `worktrees` service.
 
