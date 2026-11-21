@@ -7,16 +7,16 @@ import { validateDispatchArguments } from './validation.js'
 export function createDispatchTool(ctx) {
   return {
     name: 'dispatch_worker',
-    description: 'Record the routing decision required for every user input before answering. Set delegate to true and start one isolated worker when the request needs files changed, commands run, a repository inspected, or code delivered; otherwise set delegate to false and give the reason. A follow-up on an existing unpublished task uses continue_worker instead. An earlier turn\'s decision never covers a new input. The full execution instructions reach only the worker.',
+    description: 'Record this input\'s routing decision before answering; earlier turns never count. Set delegate=true to start one isolated worker when the request needs files changed, commands run, a repository inspected, or code delivered. Use delegate=false with a reason when no project work is needed. Decide from the input alone; do not inspect the repository. Pass the request and stated acceptance criteria; never add a plan or requirements. Use continue_worker for a follow-up on an existing unpublished task. Execution instructions reach only the worker.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        delegate: { type: 'boolean', description: 'true starts a worker for executable project work; false handles this turn without one.' },
+        delegate: { type: 'boolean', description: 'true starts a worker; false answers this turn without one.' },
         reason: { type: 'string', description: 'Required when delegate is false: why no worker is needed.' },
         title: { type: 'string', description: 'For delegate true: short task title.' },
-        teamId: { type: 'string', description: 'For delegate true: project team identifier; one team owns one project.' },
-        task: { type: 'string', description: 'For delegate true: complete task and acceptance criteria for the worker.' },
+        teamId: { type: 'string', description: 'For delegate true: the team that owns the project; one team owns one project.' },
+        task: { type: 'string', description: 'For delegate true: the user\'s request and any acceptance criteria they stated; do not add a plan or requirements.' },
       },
       required: ['delegate'],
     },
