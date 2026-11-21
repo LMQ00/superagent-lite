@@ -23,7 +23,7 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Follow-up for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it and report the mismatch with message_router as BLOCKED. Otherwise apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nFollow-up:\n${text}`,
+          text: `Follow-up for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it; keep working on the current task and include the unapplied follow-up in your final report. Otherwise apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
         return `Follow-up delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
@@ -36,7 +36,7 @@ export function createContinueTool(ctx) {
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Continue the same task in your assigned worktree. Decide whether this follow-up belongs to the task; apply it if it stays within the task's goal, and if it is a different task or conflicts with an existing constraint, report the mismatch with message_router as BLOCKED instead of applying it. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
+          text: `Continue the same task in your assigned worktree. Decide whether this follow-up belongs to the task; apply it if it stays within the task's goal, and if it is a different task or conflicts with an existing constraint, do not apply it; report in your final conclusion that the follow-up does not belong, without expanding the task. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
