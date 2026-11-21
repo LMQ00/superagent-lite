@@ -59,6 +59,8 @@ export function buildWorkerPrompt({ title, teamId, task, baseBranch, mode = 'cha
     'Reporting:',
     '- Work silently; send no routine progress.',
     '- Before ending the turn, call message_router once with the final conclusion: COMPLETED, INCOMPLETE or BLOCKED, task id, branch, reviewed commit when one exists, checks actually run, and remaining risk.',
+    '- Report COMPLETED only for a reviewed implementation with relevant checks passed.',
+    '- Do not report COMPLETED while a job whose result you need runs.',
     '- Report INCOMPLETE when review is not approved or required work remains, naming what remains; never present it as complete.',
     '- Include any unapplied follow-up in the final conclusion. A running task that stays complete is COMPLETED with that note; a resumed task whose follow-up does not belong is BLOCKED.',
     '- If you cannot proceed, report BLOCKED with the concrete blocker, what you tried, and the one decision or resource a person must provide. Resolve routine problems yourself.',
