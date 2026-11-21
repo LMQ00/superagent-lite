@@ -36,8 +36,9 @@ export async function apply(ctx) {
 
   ctx.on('agent/created', async ({ agent }) => {
     if (agent.session.header.origin !== 'subagent') return
-    if (claimHelper(agent.session.header.parentSession)) {
-      registerReadOnlyGuard(agent)
+    const helper = claimHelper(agent.session.header.parentSession)
+    if (helper) {
+      registerReadOnlyGuard(agent, helper.scope)
       return
     }
     const task = await taskForSession(undefined, agent.id)
