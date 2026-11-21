@@ -69,6 +69,10 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
         if (spec.delivery === 'parent') {
           worker = { id: spec.childId, session: { id: spec.childId } }
           assert.equal(spec.cwd, repo)
+          assert.match(spec.prompt[0].text, /^Project team: team\nBase branch: main\nTask: Change notes\n\nRequirements:\nUpdate notes/)
+          assert.match(spec.prompt[0].text, /Before:/)
+          assert.match(spec.prompt[0].text, /During:/)
+          assert.match(spec.prompt[0].text, /After:/)
           return { childId: spec.childId }
         }
         ++reviewCalls
