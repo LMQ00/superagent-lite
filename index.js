@@ -1,8 +1,8 @@
 import { taskForSession, updateTask } from './src/task-store.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
-import { createBoardHandler } from './src/board.js'
+import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, worktreeHead } from './src/review.js'
-import { deliverGithub, githubOrigin } from './src/github.js'
+import { createGitManager } from './src/git-actions.js'
 import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
@@ -13,10 +13,15 @@ export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents'
 
 export async function apply(ctx) {
   await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
+  const gitManager = createGitManager(ctx)
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
-      handler: createBoardHandler(web.connection, ctx.agents),
+      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/git',
+      handler: createGitActionHandler(web.connection, gitManager),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -117,17 +122,7 @@ export async function apply(ctx) {
           await publish({ ...stopped, status: 'review-required' })
           return
         }
-        const origin = await githubOrigin(ctx, task.projectRoot, signal)
-        if (!origin) {
-          await publish({ ...stopped, status: 'awaiting-merge' })
-          return
-        }
-        const parent = ctx.agents.get(task.parentSessionId)
-        if (!parent || ctx.sandboxPolicy.resolve({ session: parent.session }).mode !== 'danger-full-access') {
-          throw new Error('GitHub publication is unavailable under the router Session file policy')
-        }
-        await publish({ ...stopped, status: 'publishing' })
-        await deliverGithub(ctx, task, origin, signal, publish)
+        await publish({ ...stopped, status: 'awaiting-merge' })
       } catch (error) {
         await publish({ ...stopped, status: 'delivery-blocked', failure: error.message })
       }

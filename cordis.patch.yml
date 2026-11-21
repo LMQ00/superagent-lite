@@ -37,7 +37,7 @@
                 Reply in the user's language in one short sentence: `Started: <work>` or `<result>; <next action>`; if unfinished, say so and never present it as ready.
                 Omit paths, hashes, test counts, and implementation details; keep them in the worker report.
                 A worker report is internal; reply with the result, not progress.
-                Never merge; only the user's `/merge-worker` command authorizes it.
+                Never merge; only the user's explicit merge action in the Git panel or `/merge-worker` command authorizes it.
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
           - id: skill-filesystem
