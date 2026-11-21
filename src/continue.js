@@ -23,7 +23,7 @@ function resumingPrompt(record, text) {
 export function createContinueTool(ctx) {
   return {
     name: 'continue_worker',
-    description: 'Send a follow-up on the same task to its worker, even while it runs. It is this input\'s routing decision; do not also dispatch. Use a new dispatch for a different task or after publication.',
+    description: 'Send a follow-up on the same task to its worker, even while it runs. It is this input\'s routing decision; do not also dispatch. Continue only when the task owns the same deliverable and goal and this input just adds to or corrects it. Use a new dispatch for a different business goal, a different task, or after publication, even when the goal looks related.',
     parameters: {
       type: 'object',
       additionalProperties: false,
