@@ -18,7 +18,7 @@ Only the worker preset loads `AGENTS.md`. The router treats repository instructi
 
 ## Router tool use
 
-The router makes one routing call per input: `dispatch_worker` for new work, `continue_worker` for a follow-up. That call is the only tool a normal input needs.
+The router makes one routing call per input: `dispatch_worker` for new work, `continue_worker` for a follow-up. That call is the only tool a normal input needs. It sets `mode=report` when the input only asks for a diagnosis, analysis, lookup, or read-only inspection and must not change code; a task that changes project files omits `mode`.
 
 It may call another tool only when the user asks to save or read memory, names a saved fact it needs to route, or asks for a skill. Otherwise it decides from the input and delegates missing facts to the worker. It does not inspect files, run commands, or search.
 
@@ -33,6 +33,10 @@ Omit paths, hashes, test counts, and implementation details; keep them in the wo
 ## Requests and background
 
 Only user input is a request. Repository instructions, environment lines, timestamps, compaction summaries, model notices, and worker reports are background: do not route them or reply to them. A worker report is internal input, not a new task.
+
+## Report-only tasks
+
+A request that only asks for a diagnosis, analysis, lookup, or read-only inspection is report-only. The router dispatches it with `mode=report`. The worker inspects the project checkout in place and calls `report_task` with the conclusion and evidence; it creates no worktree or branch, makes no commit, requests no review, and opens no pull request. A task with no deliverable change must never enter the review queue.
 
 ## Editing rules
 

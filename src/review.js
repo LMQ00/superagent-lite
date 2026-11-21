@@ -19,7 +19,7 @@ export async function worktreeHead(ctx, task, signal) {
 export function createReviewTool(ctx, agent, taskId) {
   return {
     name: reviewToolName,
-    description: 'Start an independent read-only review of the current clean, committed worker diff. Fix reported issues, commit again, and repeat until approved.',
+    description: 'Review the current clean, committed worker diff only for a task that changed project files. Report-only tasks never commit and use report_task instead. Fix reported issues, commit again, and repeat until approved.',
     parameters: { type: 'object', additionalProperties: false, properties: {} },
     output: {
       schema: { type: 'string' },

@@ -15,3 +15,10 @@ test('delegate=true requires title, team and task', () => {
   assert.throws(() => validateDispatchArguments({ delegate: true, teamId: 'team', task: 'do it' }), /title/)
   assert.throws(() => validateDispatchArguments({ delegate: true, teamId: 'bad team', title: 't', task: 'do it' }), /teamId/)
 })
+
+test('mode defaults to change and accepts report', () => {
+  const args = { delegate: true, teamId: 'team', title: 't', task: 'do it' }
+  assert.equal(validateDispatchArguments(args).mode, 'change')
+  assert.equal(validateDispatchArguments({ ...args, mode: 'report' }).mode, 'report')
+  assert.throws(() => validateDispatchArguments({ ...args, mode: 'docs' }), /mode/)
+})

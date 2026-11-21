@@ -6,6 +6,7 @@ import { deliverGithub, githubOrigin } from './src/github.js'
 import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
+import { createReportTool } from './src/report-tool.js'
 import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
@@ -39,23 +40,35 @@ export async function apply(ctx) {
     const active = ['starting', 'resuming', 'running'].includes(task.status)
     if (task.status === 'starting' || task.status === 'resuming') await updateTask(task.id, { status: 'running' })
     const state = { frozen: !active, path: task.worktree?.path }
+    const reportOnly = task.mode === 'report'
+    const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
+    const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
+    const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write'])
     const guard = agent.ctx.tools.guard(({ name }) => {
       if (state.frozen) return 'This worker is frozen.'
-      if (state.path !== ctx.workingDirectory.get(agent.session) && name !== 'create_worktree') return 'Create the assigned project worktree before using any other tool.'
+      if (reportOnly) {
+        if (name === 'report_task' || (inspectingProject() && inspectionTools.has(name))) return
+        return 'Report-only tasks inspect the project checkout read-only and end with report_task.'
+      }
+      if (name === 'create_worktree' || inCheckout()) return
+      return 'Create the assigned project worktree before using any other tool.'
     })
     const checkout = agent.ctx.tools.register(createWorktreeTool(ctx, agent, task.id, path => { state.path = path }), {
-      when: () => !state.frozen,
+      when: () => !state.frozen && !reportOnly,
     })
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
-      when: () => !state.frozen && state.path === ctx.workingDirectory.get(agent.session),
+      when: () => !state.frozen && !reportOnly && inCheckout(),
     })
     const caller = { role: 'worker', teamId: task.teamId, projectRoot: task.projectRoot }
-    const canUseMemory = candidate => candidate === agent && !state.frozen && state.path === ctx.workingDirectory.get(agent.session)
+    const canUseMemory = candidate => candidate === agent && !state.frozen && inCheckout()
     const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
+      when: () => reportOnly && !state.frozen,
+    })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); message(); extract(); memory(); review(); checkout(); guard() } })
+    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); report(); message(); extract(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -86,6 +99,10 @@ export async function apply(ctx) {
       if (!task || task.parentSessionId !== info.parentSessionId || task.status !== 'running') return
       const publish = changes => updateTask(task.id, changes)
       const stopped = { stopReason: info.stopReason, finishedAt: new Date().toISOString() }
+      if (task.mode === 'report') {
+        await publish({ ...stopped, status: 'failed', failure: 'Report-only task ended without report_task' })
+        return
+      }
       if (info.stopReason !== 'completed' || !task.worktree) {
         await publish({ ...stopped, status: 'failed' })
         return
