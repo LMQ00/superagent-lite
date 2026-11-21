@@ -8,6 +8,21 @@ const originalHome = process.env.HOME
 const home = await mkdtemp(join(tmpdir(), 'superagent-lite-helper-wiring-'))
 process.env.HOME = home
 
+function context() {
+  const listeners = new Map()
+  return {
+    listeners,
+    ctx: {
+      logger: { warn() {} },
+      inject() {},
+      effect() { return () => {} },
+      on(name, handler) { listeners.set(name, handler) },
+      agents: { get() {} },
+      agentPresets: { composedPreset() {} },
+    },
+  }
+}
+
 test('agent/created installs the read-only helper guard', async (t) => {
   t.after(async () => {
     if (originalHome === undefined) delete process.env.HOME
@@ -16,15 +31,7 @@ test('agent/created installs the read-only helper guard', async (t) => {
   })
   const { apply } = await import('../index.js')
   const { expectHelper } = await import('../src/helper-guard.js')
-  const listeners = new Map()
-  const ctx = {
-    logger: { warn() {} },
-    inject() {},
-    effect() { return () => {} },
-    on(name, handler) { listeners.set(name, handler) },
-    agents: { get() {} },
-    agentPresets: { composedPreset() {} },
-  }
+  const { ctx, listeners } = context()
   await apply(ctx)
   let mode
   let check
@@ -49,4 +56,19 @@ test('agent/created installs the read-only helper guard', async (t) => {
   assert.equal(check({ name: 'glob' }), undefined)
   assert.equal(check({ name: 'bash' }), undefined)
   assert.match(check({ name: 'write' }), /Read-only helpers cannot use/)
+})
+
+test('a subagent without an expectation is not treated as a read-only helper', async () => {
+  const { apply } = await import('../index.js')
+  const { ctx, listeners } = context()
+  await apply(ctx)
+  const agent = {
+    id: 'other',
+    session: { id: 'other', header: { origin: 'subagent', parentSession: 'worker' } },
+    ctx: {
+      get() { throw new Error('read-only helper setup must not run') },
+      tools: { guard() { throw new Error('read-only helper setup must not run') } },
+    },
+  }
+  await listeners.get('agent/created')({ agent })
 })
