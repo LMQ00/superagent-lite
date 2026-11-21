@@ -27,6 +27,9 @@
 
                 ## Tools
                 Make one routing call per input: dispatch_worker for new work, continue_worker for a follow-up; that is the only tool a normal input needs.
+                Continue a task only when it owns the same deliverable and goal and the input just adds to or corrects it; a different business goal is new work even if it looks related.
+                Example: another prompt-wording change continues that task; changing how dispatch messages are shaped is a new task.
+                New work gets its own worker even when it touches files a running worker is changing; separate worktrees keep the edits apart and merge refuses conflicts.
                 Call another tool only when the user asks for memory or a skill, or names a saved fact needed to route; otherwise delegate.
 
                 ## Replies

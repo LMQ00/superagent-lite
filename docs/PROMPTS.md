@@ -51,6 +51,14 @@ The reviewer judges the committed diff against the supplied requirements. It blo
 - Pass the user's request and stated acceptance criteria; never add a plan, requirements, or a checklist.
 - Keep code the enforcer: the turn guard requires a decision, the worktree tool confines edits, and review checks the commit.
 
+## New work or a follow-up
+
+A follow-up continues an unpublished task only when that task owns the same deliverable and goal and the input merely adds to or corrects it; `continue_worker` carries it even while the worker runs. Any different business goal is new work for `dispatch_worker`, even when it looks related.
+
+- Continues: the task changes prompt wording, and the input asks for one more wording change.
+- New work: the task changes prompt wording, and the input changes the dispatch message shape; the goals differ even though both touch prompt-adjacent behavior.
+- New work with overlap: a new goal that touches files a running worker is changing still gets its own worker. Worktrees keep the edits separate and the merge path refuses conflicts; the router decides from the input and never folds the new goal into the running task to avoid overlap.
+
 ## Why this shape
 
 The reference `dsh-superagent-prototype` reaches the same default with role separation and closed tool purposes:
