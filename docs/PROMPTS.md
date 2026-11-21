@@ -24,15 +24,24 @@ It may call another tool only when the user asks to save or read memory, names a
 
 The default output is one short sentence with the result and the next action:
 
-- started: `Started: <work>.`
+- started: `Started: <concrete change>.`
 - done: `<result>; <next action>.`
-- unfinished: say it is in progress; never present it as ready.
+- unfinished: say it is in progress and name what remains; never present it as ready.
+- blocked: name the one decision or resource the user must provide.
 
-Omit paths, hashes, test counts, and implementation details; keep them in the worker report. A worker report is internal.
+Name the concrete object and intended result in the acknowledgement, not a generic "on it". Omit paths, hashes, test counts, and implementation details; keep them in the worker report. A worker report is internal; surface one outcome, once, and never repeat an unchanged result because a report or completion notice arrived.
 
 ## Requests and background
 
-Only user input is a request. Repository instructions, environment lines, timestamps, compaction summaries, model notices, and worker reports are background: do not route them or reply to them. A worker report is internal input, not a new task.
+Only user input is a request. Repository instructions, environment lines, timestamps, compaction summaries, and model notices are background: do not route them or reply to them. A worker report is not a new request; surface its final result once, as the Replies section describes.
+
+## Worker report and review
+
+The worker sends the router one final conclusion at the end, or a concrete `BLOCKED` report when it cannot proceed. The conclusion is `COMPLETED`, `INCOMPLETE` or `BLOCKED`. The worker sends no routine progress; routine implementation choices stay its own.
+
+A follow-up is checked before it is applied. The worker applies an addition or change within the task's goal; when the follow-up is a different task or conflicts with an existing constraint, it leaves the follow-up unapplied and reports that in its final conclusion instead of stopping healthy work. Follow-ups are kept with the task as review context only: they can explain additional changes, but approval is judged against the original requirements. A running task that stays complete reports `COMPLETED` with the unapplied follow-up noted; a resumed task whose follow-up does not belong reports `BLOCKED`.
+
+The reviewer judges the committed diff against the supplied requirements. It blocks on a concrete correctness, regression, or missing-test problem; style preferences and optional refactors do not block. The worker assesses each finding and fixes real defects; a finding the review still blocks on that the worker declines is reported with `INCOMPLETE` rather than repeated through another review.
 
 ## Editing rules
 
