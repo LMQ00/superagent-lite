@@ -70,9 +70,12 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
           worker = { id: spec.childId, session: { id: spec.childId } }
           assert.equal(spec.cwd, repo)
           assert.match(spec.prompt[0].text, /^Project team: team\nBase branch: main\nTask: Change notes\n\nRequirements:\nUpdate notes/)
-          assert.match(spec.prompt[0].text, /Before:/)
-          assert.match(spec.prompt[0].text, /During:/)
-          assert.match(spec.prompt[0].text, /After:/)
+          let previous = -1
+          for (const section of ['Project team:', 'Base branch:', 'Task:', 'Requirements:', 'Before:', 'During:', 'After:', 'Reporting:']) {
+            const index = section === 'Project team:' ? spec.prompt[0].text.indexOf(section) : spec.prompt[0].text.indexOf(`\n${section}`)
+            assert.ok(index > previous, `${section} is missing or out of order`)
+            previous = index
+          }
           return { childId: spec.childId }
         }
         ++reviewCalls

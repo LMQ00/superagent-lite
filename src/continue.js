@@ -37,7 +37,7 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: followUpPrompt(record, text, 'Apply it to your current work; restart only if the change requires it. Your worktree already exists: create_worktree re-enters it and never creates a second checkout. Do not push or merge.'),
+          text: followUpPrompt(record, text, 'Requirements update for the same task. Apply it to your current work; restart only if the change requires it. If you have not created your worktree yet, call create_worktree once; otherwise it re-enters the existing checkout instead of creating another. Do not push or merge.'),
         }], { signal: exec.signal })
         return `Update delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
