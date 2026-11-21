@@ -18,7 +18,7 @@
 
 | 字段 | 写入点 | 读取点 / 含义 |
 | --- | --- | --- |
-| `review = { head, reviewerSessionId, approved }` | `src/review.js:53`（review 子代理返回结构化结论且 HEAD 未变时） | `src/merge.js:25` 要求 `review.approved === true`（与 `status`、`worktree` 三个条件合取）；`src/merge.js:36-37` 再校验 worktree HEAD 与 `review.head` 相等 |
+| `review = { head, reviewerSessionId, approved }` | `review_worker_commit` 工具：名称常量 `reviewToolName`（`src/review.js:5`），工具定义 `createReviewTool`（`src/review.js:19`），`execute` 在子代理返回结构化结论且 HEAD 未变时写 `src/review.js:53` | `src/merge.js:25` 要求 `review.approved === true`（与 `status`、`worktree` 三个条件合取）；`src/merge.js:36-37` 再校验 worktree HEAD 与 `review.head` 相等 |
 | `status = 'awaiting-merge'` | **唯一写入点** `index.js:105`：worker 结束、review approved、HEAD 未变、且 `githubOrigin` 为 undefined | `src/merge.js:25` 的门槛；`src/merge.js:45` 合并准备期再校验一次 |
 | `status = 'delivery-blocked'` | `index.js:115`（GitHub 投递抛错）、`src/merge.js:51`（本地 merge 命令失败） | 终止态；`src/continue.js:31` 不接受它 |
 | `worktree = { path, branch }` | `src/worktree-tool.js`（dispatch 后创建） | `src/merge.js:25` 要求存在 |
@@ -56,7 +56,7 @@
 | `0c6e6374369b8933` | `14a59798979ab694939eee9f7af5fbdb47237330` | 同左 | 是 | 0 | 同左 |
 | `df729be001a6c1a5` | `d9539f40023ed2038da1a462377fd48235941251` | 同左 | 是 | 0 | 同左 |
 
-其他：`git merge-tree --write-tree master <head>` 四个分支均 exit 0；master 当前 `8d572fa360c075fed73e564b766a5248db0bdbf9`，无 `MERGE_HEAD`，工作区干净（0 行）。
+其他：`git merge-tree --write-tree master <head>` 四个分支均 exit 0；master 当前 `8d572fa360c075fed73e564b766a5248db0bdbf9`，无 `MERGE_HEAD`，工作区干净（0 行）。组合预检也用 `merge-tree` 链式做过：#4 得到 tree `35b5e27…`，再以 `8d572fa` 为 merge-base 合 #2 得到 tree `5244ac2…`（exit 0）；反向（先 #2 后 #4）同样 exit 0。所以按顺序合 #4、#2 不会冲突，但合并后仍应按下一步复核下一个 PR 的 `mergeable`。
 
 ### GitHub 证据（PR 已建成，失败点在 required checks）
 
@@ -113,13 +113,15 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 
 ## 用户下一步（最短路径）
 
+**先明确：本仓库不能用 `/merge-worker`，验收看 `gh pr view <n> --json state`，不要反复试该命令。**
+
 1. **合并已审核的 PR**（推荐；只用 reviewed head 对应的 PR）：
    - `gh pr merge 4 --repo LMQ00/superagent-lite --merge --match-head-commit aaad3e0ae56d41920bc933fb995b3b6d96195a38`
    - `gh pr merge 2 --repo LMQ00/superagent-lite --merge --match-head-commit 9ccc191d2f24f3ecea0139d096dc5657f939d425`（放在 #4 合并、`git pull` 之后执行）
    - `--match-head-commit` 与 Host 的 `src/github.js:47` 做法一致：即使校验后分支前移，GH 也会拒绝合并，不会合入未审核提交。合并前仍可复核：`gh pr view 4 --repo LMQ00/superagent-lite --json baseRefName,headRefOid,state,isDraft` 应为 `master` / `aaad3e0ae56d41920bc933fb995b3b6d96195a38` / `OPEN` / `false`。
    - 用 `--merge` 会保留 reviewed commit 本身进入 master 历史；若改用 `--squash`，master 上只会得到一个新的 squash 提交（内容等价、SHA 不同），reviewed SHA 不会出现在历史里。仓库无分支保护、无 required checks，不需要 `--admin`。
-   - **串行合并**：先合 #4，再 `git pull`，然后按上面的命令合 #2；每次合并后重新检查下一个 PR 的 `mergeable,mergeStateStatus,headRefOid`（多个分支同源改动，前一次合并可能让后一个变成 `CONFLICTING`）。
-   - 合并后本地要 `git pull` 才会看到 master 前进（当前仍是 `8d572fa`）。
+   - **串行合并**：先合 #4，然后在主工作区执行 `git -C /home/LMQ/work/superagent-lite pull --ff-only`（主工作区当前在 `master` 且干净），再按上面的命令合 #2；每次合并后重新检查下一个 PR 的 `mergeable,mergeStateStatus,headRefOid`。组合预检已通过，但仍可能因后续新提交变化。
+   - 合并后主工作区要 `git -C /home/LMQ/work/superagent-lite pull --ff-only` 才会看到 master 前进（当前仍是 `8d572fa`）。
 2. **PR 合并不会更新任务状态**（已知缺口）：任务 JSON 仍是 `delivery-blocked`，面板不会自动变成 `merged`，再执行 `/merge-worker` 仍报同一句。验收口径以 `gh pr view <n> --json state` 的 `MERGED` 为准，不要看面板。证据：全仓检索 `deliverGithub` 只有 `index.js:113` 一个调用点（`subagent/end` 收尾流程）；`src/github.js:36` 的 `gh pr view` 与 `publish({ status: 'awaiting-ci' })`、GitHub 路径的 `merged`/`merge-queued` 写入都只在该函数内部（本地路径的 `merged` 写于 `src/merge.js:54`）；`src/continue.js:31` 不接受 `delivery-blocked`。因此 `delivery-blocked` 之后没有再次读取 PR 状态并回写任务的入口，不要手工伪造 `merged`（原因见附录）。
 3. **不要重新 `review_worker_commit`**：review 结论仍有效且已钉住 head；worker 已结束被冻结，review 工具要求 `task.status === 'running'`（`src/review.js:30`），当前也调不动。即便能调，也会再次走同一条 GitHub 投递路径，在同一个 required-checks 门禁再次失败。
 4. **不要重启宿主**：状态在磁盘，重启不会把 `delivery-blocked` 变回 `awaiting-merge`，也没有启动重试。
@@ -130,14 +132,14 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 
 1. **`src/merge.js:25` 三种原因共用一句错误文案**（状态不对 / review 未通过 / 无 worktree）。建议按条件分别报错并附 `status`、`review.approved`、`failure`、`prUrl`：`delivery-blocked && prUrl` 提示“已投递为 PR #n，请走 PR 合并”；`review-required` 提示“提交尚未通过 review”；无 `worktree` 单独报。测试：新增 `test/merge.test.js`（或扩展 `test/host.test.js`），分别构造三种任务，断言错误文案互不相同且包含各自字段。
 2. **状态分类优先，不要 origin 优先**：若先探测 GitHub origin 就统一指 PR，会把 `0258beac`（`review-required`、无 PR）误导去合 PR。建议只在 `delivery-blocked && prUrl` 时给 PR 指引，其余仍报真实原因（与缺陷 1 合并实现）。测试：GitHub origin + `delivery-blocked`+`prUrl` 断言指向 PR；GitHub origin + `review-required` 且 `prUrl=null` 断言提示 review。
-3. **`src/github.js:40-44` 把“required checks 非空且全绿”作为硬门禁**，而本仓库**完全没有 checks**（无 `.github/workflows`，`gh pr checks` 加不加 `--required` 都是 `no checks reported` + exit 1），导致“分支已推、PR 已建”之后必然 `delivery-blocked`，且错误只剩 `gh pr exited with status 1`。此外还有时序问题：即使仓库有 CI，`gh pr create` 之后立刻查询时 check run 往往尚未注册，同样会得到 `no checks reported`。三种情况要区分：(a) 仓库没有 CI/没有任何 checks；(b) 有 checks 但没有 required checks；(c) 有 required checks 但尚未注册/尚未完成。建议：对 (a) 要求先配置 CI 或在显式配置下跳过该门禁，对 (c) 给宽限/重试，并在错误里区分三者；`gh` 失败时保留子命令与 stderr 片段。测试：扩展 `test/github.test.js`，覆盖“完全无 checks”“无 required checks”“`pr create` 后首次查询为空而重试后出现检查”“检查失败”四个用例，断言错误信息包含子命令与 stderr。
+3. **`src/github.js:40-44` 把“required checks 非空且全绿”作为硬门禁**，而本仓库**完全没有 checks**（无 `.github/workflows`，`gh pr checks` 加不加 `--required` 都是 `no checks reported` + exit 1），导致“分支已推、PR 已建”之后必然 `delivery-blocked`，且错误只剩 `gh pr exited with status 1`。此外还有时序问题：即使仓库有 CI，`gh pr create` 之后立刻查询时 check run 往往尚未注册，同样会得到 `no checks reported`。三种情况要区分：(a) 仓库没有 CI/没有任何 checks；(b) 有 checks 但没有 required checks；(c) 有 required checks 但尚未注册/尚未完成。建议：对 (a) 要求先配置 CI 或在显式配置下跳过该门禁，对 (b) 提供显式配置（把 required checks 视为可选，或明确要求仓库配置 required checks），对 (c) 给宽限/重试，并在错误里区分三者；`gh` 失败时保留子命令与 stderr 片段。测试：扩展 `test/github.test.js`，覆盖“完全无 checks”“无 required checks”“`pr create` 后首次查询为空而重试后出现检查”“检查失败”四个用例，断言错误信息包含子命令与 stderr。
 4. **`delivery-blocked` 是死状态**：`src/continue.js:31` 不接受它，也没有重试投递命令，一次 `gh` 失败会把已 approved 的提交永久搁置。建议增加受控重试入口（如 `/publish-worker <id>` 或允许 `continue_worker` 从 `delivery-blocked` 恢复并复用已有 PR），并记录失败步骤；另建议在面板/命令中按 PR 实际状态回收 `merged`。测试：`test/continue.test.js` 断言 `delivery-blocked` 可重试；`test/github.test.js` 断言投递失败后重试复用同一 PR；PR 已合并时任务状态回收为 `merged`。
 5. **approved 后的 HEAD 变化缺少复审入口**：worker 结束前 HEAD 变化会被降级为 `review-required`（`index.js:99-101`），合并前 `src/merge.js:36-37` 也会拒绝 HEAD 不匹配，GitHub 路径用 `src/github.js:28` 的 reviewed head 推送和 `src/github.js:47` 的 `--match-head-commit` 钉住，因此不会误合未审核提交；但任务一旦进入 `delivery-blocked`，HEAD 再变化既不会自动复审也没有入口，只能等人发现。建议为该状态提供重新 review 的路径。测试：扩展 `test/host.test.js`，approved 后新增提交，断言本地合并拒绝且 PR 路径不会合入新提交。
 6. **有 GitHub origin 时 `awaiting-merge` 永不写入，`/merge-worker` 对该类仓库整体不可用**：`index.js:103-107` 的本地分支以 `!githubOrigin` 为前提，因此 GitHub 项目的 approved 任务只会走 PR 路径；但 `src/merge.js:27` 的“GitHub 项目走 PR”提示排在状态校验之后，用户永远先看到 `No reviewed local commit is ready for merge`，而不是“该仓库走 PR”。`docs/DETAIL.md` 只写了 Local-only 与 GitHub 两种仓库，命令层没有对应提示。建议：在缺陷 1/2 的“状态优先分类”里补一条 GitHub 项目专用的拒绝文案（只对 `delivery-blocked && prUrl` 指向 PR，其余报真实原因），并把“GitHub 仓库不走 `/merge-worker`”写进 `docs/DETAIL.md` 与 router 提示词；不要改成 origin 优先。测试：`test/merge.test.js` 断言 GitHub origin + approved 任务得到指向 PR 的提示，GitHub origin + `review-required` 仍报 review 原因。
 
-## 附录：手工改状态的本地合并 workaround（强烈不推荐）
+## 附录：为什么不要手工改状态或删 origin（反例说明）
 
-**不要通过删除 origin、手工改写任务状态来绕过判定链。** 这类做法会让仓库远端配置与面板状态偏离真实交付，且宿主随时可能用 `updateTask` 的读改写覆盖手工修改；即使强行合并成功，任务记录与真实交付来源（PR #n）也不一致。如果只是想让面板与 PR 一致，那是已知缺口（见“用户下一步”第 2 条），应等后续版本提供状态回收，不要手工伪造 `merged`。
+本节只说明反例，不提供可执行步骤。**不要通过删除 origin、手工改写任务状态来绕过判定链。** 这类做法会让仓库远端配置与面板状态偏离真实交付，且宿主随时可能用 `updateTask` 的读改写覆盖手工修改；即使强行合并成功，任务记录与真实交付来源（PR #n）也不一致。如果只是想让面板与 PR 一致，那是已知缺口（见“用户下一步”第 2 条），应等后续版本提供状态回收，不要手工伪造 `merged`。
 
 若确实需要本地合并语义，正确做法是修改代码/流程（例如新增区分 GitHub 与本地仓库的显式开关），而不是改运行时数据。
 
@@ -149,3 +151,19 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 - [ ] 状态回收：按 PR 实际状态把任务回写为 `merged`/`merge-queued`（缺陷 4）。
 - [ ] `docs/DETAIL.md`：写明 `/merge-worker` 只适用于本地仓库，GitHub 仓库走 PR（缺陷 6）。
 - [ ] 测试：`test/merge.test.js`（错误文案分类、GitHub 项目提示）、`test/github.test.js`（四类 checks 场景）、`test/continue.test.js`（`delivery-blocked` 重试）、`test/host.test.js`（approved 后 HEAD 变化、GitHub 端到端）。
+
+## 复现命令（基线 `8d572fa`，2026-11-21）
+
+```bash
+# 任务状态
+node -e 'const t=require(process.env.HOME+"/.dsh/superagent-lite/tasks/7ca2bbe11a9d6cec.json");console.log(t.status,t.review,t.failure,t.prUrl)'
+# HEAD 与 reviewed commit
+git -C /home/LMQ/work/superagent-lite/.agents/worktrees/sl-superagent-lite-7ca2bbe11a9d6cec rev-parse HEAD
+# PR 状态与 base
+gh pr view 4 --repo github.com/LMQ00/superagent-lite --json state,baseRefName,headRefOid,isDraft,mergeable,mergeStateStatus
+# checks（有/无 --required 都 exit 1）
+gh pr checks 4 --repo github.com/LMQ00/superagent-lite --required; echo $?
+# 组合预检
+T1=$(git -C /home/LMQ/work/superagent-lite merge-tree --write-tree master aaad3e0ae56d41920bc933fb995b3b6d96195a38)
+git -C /home/LMQ/work/superagent-lite merge-tree --write-tree --merge-base 8d572fa360c075fed73e564b766a5248db0bdbf9 "$T1" 9ccc191d2f24f3ecea0139d096dc5657f939d425; echo $?
+```
