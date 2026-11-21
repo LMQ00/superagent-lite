@@ -14,7 +14,9 @@ export function validateDispatchArguments(args) {
   const task = args.task.trim()
   if (!title || title.length > 120) throw new RangeError('title must be 1-120 characters')
   if (!task || task.length > 20000) throw new RangeError('task must be 1-20000 characters')
-  return { delegate: true, title, teamId: args.teamId, task }
+  const mode = args.mode ?? 'change'
+  if (mode !== 'change' && mode !== 'report') throw new TypeError('mode must be change or report')
+  return { delegate: true, title, teamId: args.teamId, task, mode }
 }
 
 export function validTeamId(value) {

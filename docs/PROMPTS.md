@@ -18,7 +18,7 @@ Only the worker preset loads `AGENTS.md`. The router treats repository instructi
 
 ## Router tool use
 
-The router makes one routing call per input: `dispatch_worker` for new work, `continue_worker` for a follow-up. That call is the only tool a normal input needs.
+The router makes one routing call per input: `dispatch_worker` for new work, `continue_worker` for a follow-up. That call is the only tool a normal input needs. It sets `mode=report` when the input only asks for a diagnosis, analysis, lookup, or read-only inspection and must not change code; a task that changes project files omits `mode`.
 
 It may call another tool only when the user asks to save or read memory, names a saved fact it needs to route, or asks for a skill. Otherwise it decides from the input and delegates missing facts to the worker. It does not inspect files, run commands, or search.
 
@@ -42,6 +42,10 @@ The worker sends the router one final conclusion at the end, or a concrete `BLOC
 A follow-up is checked before it is applied. The worker applies an addition or change within the task's goal; when the follow-up is a different task or conflicts with an existing constraint, it leaves the follow-up unapplied and reports that in its final conclusion instead of stopping healthy work. Follow-ups are kept with the task as review context only: they can explain additional changes, but approval is judged against the original requirements. A running task that stays complete reports `COMPLETED` with the unapplied follow-up noted; a resumed task whose follow-up does not belong reports `BLOCKED`.
 
 The reviewer judges the committed diff against the supplied requirements. It blocks on a concrete correctness, regression, or missing-test problem; style preferences and optional refactors do not block. The worker assesses each finding and fixes real defects; a finding the review still blocks on that the worker declines is reported with `INCOMPLETE` rather than repeated through another review.
+
+## Report-only tasks
+
+A request that only asks for a diagnosis, analysis, lookup, or read-only inspection is report-only. The router dispatches it with `mode=report`. The worker inspects the project checkout in place and calls `report_task` with the conclusion and evidence; it creates no worktree or branch, makes no commit, requests no review, and opens no pull request. A task with no deliverable change must never enter the review queue.
 
 ## Editing rules
 
