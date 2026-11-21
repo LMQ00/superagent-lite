@@ -64,7 +64,7 @@ The panel has no settings group. The bundle composition and prompt text live in 
 ## Principles
 
 1. **Answer the three questions or leave it out.** Every block maps to one of them; a number or row that changes no decision is removed.
-2. **Read-only supervision.** Loading uses one GET; the only writes are the merge and publish buttons, and each is the user's explicit action.
+2. **Read-only supervision.** Loading uses one GET; the panel's only writes are the merge and publish buttons, and each is the user's explicit action.
 3. **One action per row, with its reason.** A disabled button states what is missing; the user does not have to open a document to learn why.
 4. **Honest state.** A missing worker Session shows `未确认`; a merged Pull request shows `已合并`; no row claims progress that the stored state does not support.
 5. **Link, do not duplicate.** Conversations live in their Sessions and reviews live in GitHub, so the panel links to them instead of copying their content.

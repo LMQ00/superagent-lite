@@ -7,7 +7,7 @@ export function mergeCommand(ctx) {
   const byRepository = new Map()
   return {
     name: 'merge-worker',
-    description: 'Authorize merging a reviewed local worker commit into its original branch',
+    description: 'Merge a reviewed local worker commit into its original branch after the user\'s explicit authorization',
     input: { hint: '<task ID>' },
     async handler({ agent, rawInput, signal }) {
       const id = rawInput.trim()

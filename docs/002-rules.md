@@ -44,7 +44,7 @@ A user input gets one `dispatch_worker` call from the router. The call records t
 | Edit | `create_worktree` during an active change task | Work from the Task's Worktree; project tools are blocked until the worker is there | No; the worker is blocked from other tools until it creates or enters the Worktree |
 | Review | `review_worker_commit` after a commit | Read the committed diff and start one read-only reviewer | No; needs a clean committed Worktree |
 | Report | `report_task` during a report-only task | End the Task with a conclusion | No; report tasks only |
-| Merge | The user's panel action or `/merge-worker <task ID>` | Merge the reviewed commit into its base branch | No; needs a reviewed local branch |
+| Merge | A direct user instruction, the user's panel merge action or `/merge-worker <task ID>` | Merge the reviewed commit into its base branch after explicit user authorization | No; needs explicit user authorization and a reviewed local branch |
 | Publish | The user's panel action | Push the reviewed head and open or adopt the Pull request for it | No; needs a reviewed GitHub branch |
 
 ## Admission by mode
@@ -88,7 +88,7 @@ The Router Session runs the `superagent-lite` preset. The turn guard applies to 
 
 ## Git action rules
 
-Only the user's explicit action authorizes a Git action: the panel buttons or the `/merge-worker <task ID>` command. The router does not merge. The worker is instructed to stop after the reviewed commit and to push or merge nothing.
+A merge runs only after the user explicitly authorizes it from a direct instruction, the Git panel merge action, or the `/merge-worker <task ID>` command. With that authorization, the router or worker may merge the reviewed commit; without it, neither merges and the worker stops after the reviewed commit without pushing or merging. Publish still requires the user's panel action.
 
 | Action | Required Task state | Additional conditions |
 | --- | --- | --- |

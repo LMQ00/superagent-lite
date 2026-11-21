@@ -12,13 +12,13 @@ function resumingPrompt(record, text) {
       title: record.title,
       teamId: record.teamId,
       baseBranch: record.baseBranch,
-      task: `${record.task}\n\nFollow-up:\n${text}\n\nTreat this as a follow-up within the existing task; apply it only if it stays within the task's goal. Do not push or merge.`,
+      task: `${record.task}\n\nFollow-up:\n${text}\n\nTreat this as a follow-up within the existing task; apply it only if it stays within the task's goal. Do not push. Merge only after the user explicitly authorizes it.`,
     }),
     '',
     'Resume:',
     '- If you have not created your worktree yet, call create_worktree once; otherwise re-enter the existing checkout instead of creating another.',
     '- Decide whether the follow-up belongs to this task. If it is a different task or conflicts with an existing constraint, do not apply it and report BLOCKED with the mismatch instead of requesting another review.',
-    '- Do not redo completed work or repeat the dispatch setup phases. If the follow-up applies, commit and call review_worker_commit. Do not push or merge.',
+    '- Do not redo completed work or repeat the dispatch setup phases. If the follow-up applies, commit and call review_worker_commit. Do not push; merge only after the user explicitly authorizes it.',
   ].join('\n')
 }
 
@@ -71,7 +71,7 @@ export function createContinueTool(ctx) {
         try {
           await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
             type: 'text',
-            text: `Requirements update for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it; keep working on the current task and include the unapplied follow-up in your final report. Otherwise apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
+            text: `Requirements update for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it; keep working on the current task and include the unapplied follow-up in your final report. Otherwise apply it to your current work; restart only if the change requires it. Do not push; merge only after the user explicitly authorizes it.\n\nUpdate:\n${text}`,
           }], { signal: exec.signal })
         } catch (error) {
           if (followUpId) await dropFollowUp(ctx, taskId, followUpId)

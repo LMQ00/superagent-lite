@@ -4,7 +4,7 @@
 
 - router 收到输入后调用 `dispatch_worker` 派工，或调用 `continue_worker` 追加要求；不需要项目工作时直接回答并写明理由。
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。
-- 审查通过的分支由你在面板里合并或发送 PR：GitHub 项目按审查过的 SHA 合并 PR；没有 GitHub origin 的项目用 `/merge-worker` 本地合并。
+- 审查通过的分支经你明确授权后合并或发送 PR：GitHub 项目按审查过的 SHA 合并 PR；没有 GitHub origin 的项目用 `/merge-worker` 本地合并。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 
 ## 安装
@@ -40,14 +40,14 @@ npm test
 
 - 任务行显示标题、任务 ID、状态、团队、项目、更新时间和 router/worker 会话按钮；有 PR 时给出链接。状态是「未确认」表示记录还在进行中，但对应的 worker 会话已经不在了。
 - 下方「Pull requests」按 Open / Merged / Closed 分栏列出 worker 分支的 PR：状态图标、编号、作者、分支、审查与未合并标记、评论/检查角标；展开行可看提交、改动文件和合并/发送按钮，按钮被禁用时给出原因。
-- 「合并到 <基础分支>」要求审查提交仍是分支 HEAD。GitHub 项目会复用或新开该 HEAD 的 PR 再合并它；没有 GitHub origin 的项目走本地合并：目标分支已检出、工作区干净、预检无冲突。合并由你点击触发，router 和 worker 都不会合并。
+- 「合并到 <基础分支>」要求审查提交仍是分支 HEAD。GitHub 项目会复用或新开该 HEAD 的 PR 再合并它；没有 GitHub origin 的项目走本地合并：目标分支已检出、工作区干净、预检无冲突。合并只在你明确授权后执行：直接指示、在面板点击合并，或发送 `/merge-worker`；未授权时 router 和 worker 都不会合并。
 - 「发送 PR」只适用于 GitHub 项目：`origin` 必须是同一个 GitHub fetch/push 仓库，`gh` 已登录。推送固定在审查过的 SHA 上；PR 被关闭或分支头变动都会停在「交付受阻」，不会自动重试。必需检查与分支保护在合并 PR 时仍然生效。
-- 面板读取任务时不写文件；合并和发送 PR 由你点击触发。面板不会自动刷新，操作失败时错误文本显示在 Git 区域。
+- 面板读取任务时不写文件；合并和发送 PR 只在你的明确动作后执行。面板不会自动刷新，操作失败时错误文本显示在 Git 区域。
 
 ## 当前限制
 
 - 绑定 DSH `0.2.2-rc.3`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。
-- router 与 worker 都不推送、不合并；只有你在面板里的操作或 `/merge-worker` 命令能授权本地合并。
+- router 与 worker 默认不推送、不合并；合并必须获得你的明确授权（直接指示、面板合并动作或 `/merge-worker`），未授权不得合并。
 - GitHub 项目通过 PR 合并；没有 GitHub origin 的项目走 `/merge-worker` 本地合并。
 - GitHub 发送要求 `origin`、`gh` 登录、必需的 CI 检查，以及账号的合并权限；分支保护仍然生效。
 - 插件自身没有暂停、队列或任务数上限；每个任务一个 Worktree，多个任务可以同时跑。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。

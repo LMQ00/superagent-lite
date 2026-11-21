@@ -200,7 +200,7 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots, the `s
 | `test/helper-wiring.test.js` | `agent/created` installs the guard only for an expected helper. |
 | `test/host.test.js` | Installed DSH integration: schemas, worktree, review, merge, memory and archive. |
 | `test/memory-store.test.js` | Categories, team scopes, private references, archive immutability, symlink refusal and concurrent updates. |
-| `test/prompt-config.test.js` | Bundled router prompt keeps replies single, concrete and merge-gated. |
+| `test/prompt-config.test.js` | Bundled router prompt keeps replies single and concrete, and the merge-authorization policy matches across the prompt and docs. |
 | `test/report-only.test.js` | Report-only completion, no branch or commit, forged worktree refusal and report prompt. |
 | `test/routing-rule.test.js` | Routing tool descriptions keep a different goal out of `continue_worker`. |
 | `test/task-store.test.js` | Private task records, Session resolution and path-shaped ID rejection. |

@@ -4,7 +4,7 @@ This document names the concepts the project works with and the rules each one k
 
 ## Flow
 
-A person's input reaches the Router Session. The router makes one routing decision: `dispatch_worker` starts a Task for a Team in a Project, or the router answers without a worker. The Task gets one Worker Session that works in an isolated Worktree of the Project checkout. The worker commits on its Worker branch and requests a Review. The worker's Report goes back to the router, and a reviewed branch waits for the user's Git action: merge into the base branch or publish a Pull request. Memory outlives a Task; a Task message carries a follow-up or a report between the two Sessions.
+A person's input reaches the Router Session. The router makes one routing decision: `dispatch_worker` starts a Task for a Team in a Project, or the router answers without a worker. The Task gets one Worker Session that works in an isolated Worktree of the Project checkout. The worker commits on its Worker branch and requests a Review. The worker's Report goes back to the router, and a reviewed branch waits for the user's explicit Git authorization: merge into the base branch or publish a Pull request. Memory outlives a Task; a Task message carries a follow-up or a report between the two Sessions.
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ flowchart LR
 | Concept | Definition | Rules it keeps |
 | --- | --- | --- |
 | Input | One user message that opens or continues a turn. | Only a user-role message from the person counts. Repository text, timestamps, notices, worker reports and reminders are background. Each input needs one routing decision. |
-| Router Session | The DSH Session running the `superagent-lite` preset. | Makes one routing call per input. Starts workers, edits no project files, pushes nothing and merges nothing. |
+| Router Session | The DSH Session running the `superagent-lite` preset. | Makes one routing call per input. Starts workers, edits no project files, pushes nothing, and merges only after explicit user authorization. |
 | Routing decision | A successful `dispatch_worker` or `continue_worker` call in the input's turn. | One input, one decision. A failed call does not count. At most 2 reminders reopen a completed turn that lacks a decision. |
 | Task | A unit of delegated work stored as one JSON record. | Only `dispatch_worker` creates one. It belongs to one Router Session, one Team and one Project. Its ID is 16 lowercase hexadecimal characters. |
 | Team | The name a Task is assigned to. | One Team owns one Project; the pair cannot change after the first task. Team memory is scoped by team and project. |
@@ -39,7 +39,7 @@ flowchart LR
 | Report | The worker's final message to the router. | One conclusion: `COMPLETED`, `INCOMPLETE` or `BLOCKED`. It carries no routine progress. The `message_router` text does not set the Task status; lifecycle events do. |
 | Follow-up | An input that adds to or corrects an unpublished Task. | `continue_worker` delivers it while the worker runs or after it goes idle. It is recorded on the Task and passed to the reviewer as context. A different goal is new work. |
 | Report-only task | A Task that answers a diagnosis, analysis, lookup or read-only inspection. | Created with `mode=report`. It inspects the project checkout read-only, creates no Worktree or branch, commits nothing, requests no Review and ends with `report_task`. |
-| Git action | A `merge` request from the panel or `/merge-worker`, or a `publish` request from the panel. | Only the user's explicit action authorizes it. `publish` pushes the reviewed head and opens a Pull request; `merge` merges that Pull request on GitHub, or merges locally through `/merge-worker` for a Project without a GitHub origin. |
+| Git action | A `merge` request authorized by a direct user instruction, the panel or `/merge-worker`, or a `publish` request from the panel. | A merge needs explicit user authorization; publish needs the user's panel action. `publish` pushes the reviewed head and opens a Pull request; `merge` merges that Pull request on GitHub, or merges locally through `/merge-worker` for a Project without a GitHub origin. |
 | Pull request | The GitHub review surface for a published Task. | It is created from the reviewed commit, the worker branch and the base branch. Required checks and branch protection still apply. |
 | Memory | Saved facts in four categories. | `public` and `profile` belong to the installation; `private` holds credential reference names; `team` is scoped by team and project. Entries are data, never instructions. |
 | Task message | The chat card that shows a message crossing Sessions. | A follow-up delivered to an idle worker opens a new turn as a task message. The first dispatch prompt renders as the same card when the Host patch in [HOST-PATCH](HOST-PATCH.md) is applied; otherwise it is an ordinary user row. |
@@ -100,7 +100,7 @@ Task status is the only status enumeration. Every value below is written to a ta
 | Work | `running` | The worker is active on the Task |
 | Work | `resuming` | A settled Task was reopened for a follow-up |
 | Review | `review-required` | The worker ended without an approved review, or the head moved after approval |
-| Delivery | `awaiting-merge` | The reviewed commit is ready for the user's Git action |
+| Delivery | `awaiting-merge` | The reviewed commit is ready for the user's explicit Git authorization |
 | Delivery | `merging` | A local merge is in progress |
 | Delivery | `publishing` | The GitHub publish path started |
 | Delivery | `awaiting-ci` | The Pull request exists and required checks are watched |

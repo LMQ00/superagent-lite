@@ -108,7 +108,7 @@ test('continue_worker resumes a settled worker with the dispatch task message', 
   assert.match(sends[0].text, /Requirements:\nImplement it\.\n\nAcceptance: tests pass\./)
   assert.match(sends[0].text, /Follow-up:\nNew requirement/)
   assert.match(sends[0].text, /Do not redo completed work or repeat the dispatch setup phases\./)
-  assert.match(sends[0].text, /Do not push or merge/)
+  assert.match(sends[0].text, /Do not push; merge only after the user explicitly authorizes it/)
   assertSectionOrder(sends[0].text, continuationSections)
   assert.equal((await readTask(id)).status, 'resuming')
   assert.equal((await readTask(id)).task, originalTask)

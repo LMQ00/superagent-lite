@@ -76,7 +76,7 @@ A change Task ends its worker turn in one of three ways:
 | The worker ends without an approved review, or the head moved after approval | `review-required` |
 | The worker ends without `completed`, without a Worktree, or the head check throws | `failed`, or `delivery-blocked` when the post-review head check throws |
 
-`awaiting-merge` is the end of the worker's work, not of the Task. The Task reaches `merged` only through the user's local merge or an exact merged Pull request. A report-only Task ends at `completed` when `report_task` runs; a report-only turn that ends without it becomes `failed` with `Report-only task ended without report_task`.
+`awaiting-merge` is the end of the worker's work, not of the Task. The Task reaches `merged` only through a merge the user explicitly authorized (a direct instruction, the panel merge action or `/merge-worker`) or an exact merged Pull request. A report-only Task ends at `completed` when `report_task` runs; a report-only turn that ends without it becomes `failed` with `Report-only task ended without report_task`.
 
 An input that needs no worker is not a Task: `dispatch_worker` returns `delegate=false` with a reason and the turn answers.
 

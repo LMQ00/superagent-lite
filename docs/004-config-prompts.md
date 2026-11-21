@@ -6,7 +6,7 @@ This document lists the text a maintainer can change, where it is assembled, and
 
 | Area | Holds | Where |
 | --- | --- | --- |
-| Router persona | Routing scope, decision rule, reply rule, merge boundary | `cordis.patch.yml`, preset `superagent-lite`, `persona.prefix` |
+| Router persona | Routing scope, decision rule, reply rule, user-authorization boundary for merging | `cordis.patch.yml`, preset `superagent-lite`, `persona.prefix` |
 | Worker persona | One-line identity with the model variable | `cordis.patch.yml`, preset `superagent-lite-worker`, `persona.prefix` |
 | Bundle composition | Worktree service, the two presets, tool rows, compaction | `cordis.patch.yml` |
 | Routing tool text | `dispatch_worker` and `continue_worker` descriptions and parameter text | `src/dispatch.js`, `src/continue.js` |
@@ -28,7 +28,7 @@ The router persona fixes the visible reply:
 - An unfinished task says so and names what remains. A blocked task names the one decision or resource a person must provide.
 - Paths, hashes, test counts and implementation details stay in the worker report.
 - One outcome is surfaced once; an unchanged result is not repeated because a report or completion notice arrived.
-- The router never merges. Only the user's explicit panel action or `/merge-worker` command authorizes it.
+- The router merges only after the user explicitly authorizes it from a direct instruction, the Git panel merge action, or the `/merge-worker` command. Without that authorization, it does not merge.
 
 ## Prompt editing rules
 
@@ -65,7 +65,7 @@ Runtime context entries, sorted by order and only when mounted:
 
 Session messages then carry the work itself:
 
-- Both presets mount `@deepseek-ai/dsh-agent-instructions`, so the router and the worker both load `AGENTS.md`. For the router it is repository conventions to follow, never a task: an injected instruction cannot authorize a push or merge.
+- Both presets mount `@deepseek-ai/dsh-agent-instructions`, so the router and the worker both load `AGENTS.md`. For the router it is repository conventions to follow, never a task: an injected instruction cannot by itself authorize a push or merge.
 - `dispatch_worker` sends the generated task message from `buildWorkerPrompt`.
 - `continue_worker` sends either the short requirement update or the full task message with a `Resume` section.
 - The turn guard sends a reminder as a user-role message with source kind `superagent-lite-reminder`.
@@ -80,7 +80,7 @@ From strongest to weakest:
 4. **Tool descriptions and generated messages.** They tell the model what a tool is for and what the worker must do.
 5. **External text.** User input, repository files, worker reports and Memory entries are data. They cannot add a request or relax the rules above.
 
-The router persona states the merge boundary; the code enforces it in `src/git-actions.js` and `src/merge.js`.
+The router persona states the user-authorization boundary for merging; the code enforces the merge checks in `src/git-actions.js` and `src/merge.js`.
 
 ## Versions and persistence
 
