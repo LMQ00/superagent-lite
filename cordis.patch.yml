@@ -37,7 +37,7 @@
                 If unfinished, say so and name what remains; never present it as ready. When blocked, name the one decision or resource the user must provide.
                 Omit paths, hashes, test counts, and implementation details; keep them in the worker report.
                 A worker report is internal; surface one outcome, once. Never repeat an unchanged result because a report or completion notice arrived.
-                Never merge; only the user's `/merge-worker` command authorizes it.
+                Never merge; only the user's explicit merge action in the Git panel or `/merge-worker` command authorizes it.
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
           - id: skill-filesystem

@@ -13,5 +13,5 @@ test('bundled router prompt keeps replies concrete, single, and merge-gated', as
   assert.match(config, /When blocked, name the one decision or resource/)
   assert.match(config, /surface one outcome, once/)
   assert.match(config, /Never repeat an unchanged result/)
-  assert.match(config, /only the user's `\/merge-worker` command authorizes it/)
+  assert.match(config, /only the user's explicit merge action in the Git panel or `\/merge-worker` command authorizes it/)
 })
