@@ -31,7 +31,7 @@ export function createReviewTool(ctx, agent, taskId) {
       const head = await worktreeHead(ctx, task, exec.signal)
       if (head === task.baseCommit) throw new Error('No new commits to review')
       await runCommand(ctx, ['merge-base', '--is-ancestor', task.baseCommit, head], task.worktree.path, exec.signal)
-      const patch = await runCommand(ctx, ['diff', '--no-ext-diff', '--no-textconv', '--binary', task.baseCommit, head, '--'], task.worktree.path, exec.signal)
+      const patch = await runCommand(ctx, ['diff', '--no-ext-diff', '--no-textconv', task.baseCommit, head, '--'], task.worktree.path, exec.signal, 262144)
       if (!patch) throw new Error('The commit contains no net changes')
       expectHelper(agent.session.id)
       let activation
