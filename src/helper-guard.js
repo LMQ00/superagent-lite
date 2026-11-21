@@ -94,6 +94,9 @@ export function registerReadOnlyGuard(agent, reviewScope) {
         return `Read-only helpers cannot run "${name}" because this composition does not confine shell file writes.`
       }
       if (!reviewScope) return undefined
+      if (input?.run_in_background === true) {
+        return `Review scope: run "${name}" synchronously so its output is in the review; background commands are not allowed.`
+      }
       const workdirProblem = reviewScope.checkWorkdir(input?.workdir)
       if (workdirProblem) return workdirProblem
       return reviewScope.checkCommand(input?.command)

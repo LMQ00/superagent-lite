@@ -143,6 +143,10 @@ test('the helper guard refuses out-of-scope reads and records admitted evidence'
   assert.match(check({ name: 'bash', arguments: { command: 'git log --all' } }), /widen/)
   assert.match(check({
     name: 'bash',
+    arguments: { command: `git diff ${base}..${head}`, run_in_background: true },
+  }), /background commands are not allowed/)
+  assert.match(check({
+    name: 'bash',
     arguments: { command: `git diff ${base}..${head}`, workdir: root },
   }), /omit workdir/)
 
