@@ -54,15 +54,30 @@ The worker is frozen when its subagent ends. A frozen worker keeps no tool acces
 
 The reviewer returns `approved` and `findings`. The tool records `review.head`, `review.reviewerSessionId` and `review.approved` only when the verdict is usable and the worker head has not moved.
 
-### Memory extractor
+### Memory conversation
 
-`extract_team_memory` starts a separate subagent with label `Distill team memory`, delivery `caller` and depth 2. It receives selected findings, returns one conclusion, and the worker's tool saves that conclusion to team memory. The same helper guard claims it.
+The memory conversation is a separate subagent with label `Distill memory`, delivery `caller` and depth 2. Its role prompt lives in `src/memory-extractor.js`; it receives selected findings, returns four arrays, and the plugin writes each fact to its category. The same helper guard claims it and installs the read-only boundary.
+
+| Property | Value |
+| --- | --- |
+| Trigger | A change worker calls `extract_memory` after a finding, or its final `message_router` report triggers the conversation once when no explicit extraction ran in that worker Session |
+| Input | Selected non-secret findings, 1–5,000 characters; the automatic trigger uses the delivered report text |
+| Extract | Up to 1 private reference, 3 public conclusions, 1 durable profile or environment fact and 3 team facts; each at most 500 characters |
+| Omit | Secrets, personal data, individual conversation details, task status, and instructions |
+| Output | Records in the matching four categories. Private, public and profile use the Host memory role; team is scoped by the Task's Team and normalized project root. Every record keeps the triggering Session and sequence as `source` |
+| No fact | Empty arrays write no record; a profile write refreshes the injected context; an extraction failure is logged and the final report stands |
+
+The trigger belongs to the worker Session, not the Task status: extraction runs before the worker is frozen, after the report is sent, and it never changes the Task's status or review record.
+
+### Raw archive
+
+Every worker turn is archived when it ends, before the worker is frozen. The Host writes one immutable record under `memory/archive/` keyed by the Session and the turn-end sequence. The record holds all turn events plus a `references` list that numbers each event in order with its Session `seq` and event type, so the full conversation stays available as the original reference. The archive is Host-only; model tools cannot read it.
 
 ## Concurrency
 
 - One Task has exactly one Worker Session. A follow-up reuses that Session instead of taking another slot.
 - The plugin has no queue and no task limit. Each dispatch starts a worker immediately; Tasks on one Project can run at once because each has its own Worktree.
-- Dispatch nesting is bounded by the Host's maximum subagent depth. The reviewer and the memory extractor are started with depth 2.
+- Dispatch nesting is bounded by the Host's maximum subagent depth. The reviewer and the memory conversation are started with depth 2.
 - Local merges for one Project root are serialized. A panel Git action is one HTTP request with a 15-minute timeout.
 - The worktree service keeps worker branches and checkouts after a worker ends, so a resumed Task and a later delivery can still read them.
 

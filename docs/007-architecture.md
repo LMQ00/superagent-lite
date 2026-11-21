@@ -4,7 +4,7 @@ This document maps the concepts to files and services, and names the rules that 
 
 ## Core flow
 
-The Host plugin `index.js` owns the worker lifecycle and the panel routes. The router plugin `router.js` registers the routing tools, the merge command and the router memory tool. Both entry points sit on DSH services; no source file imports a DSH package.
+The Host plugin `index.js` owns the worker lifecycle and the panel routes. The raw diagrams are [001 terms and main flow](diagrams/001-terms-and-flow.md), [002 preset flow](diagrams/002-preset-flow.md) and [003 memory system](diagrams/003-memory-system.md). The router plugin `router.js` registers the routing tools, the merge command and the router memory tool. Both entry points sit on DSH services; no source file imports a DSH package.
 
 ```mermaid
 flowchart TB
@@ -23,7 +23,11 @@ flowchart TB
   GH --> PR[Pull request]
   T --> B[src/board.js]
   B --> C[client.js panel]
+  MP[src/memory-panel.js] --> C
   R --> TG[src/turn-guard.js]
+  W -->|history| RA[(Raw archive)]
+  W -->|final report or extract_memory| ME[Memory conversation]
+  ME --> MS[src/memory.js]
   W --> MS[src/memory.js]
   MS --> MF[(Memory files)]
 ```
@@ -32,7 +36,7 @@ flowchart TB
 
 ### `index.js`
 
-Owns the Host lifecycle. On `agent/created` it finds the Task for the new worker Session, marks `starting` or `resuming` as `running`, installs the tool guard, and registers `create_worktree`, `review_worker_commit`, memory, extraction, message and report tools under `when` conditions. On `subagent/end` it settles the Task as `review-required`, `awaiting-merge`, `failed` or `delivery-blocked`. It registers the two panel HTTP routes and the profile context refresh. It does not decide routing and does not edit project files.
+Owns the Host lifecycle. On `agent/created` it finds the Task for the new worker Session, marks `starting` or `resuming` as `running`, installs the tool guard, and registers `create_worktree`, `review_worker_commit`, memory, extraction, message and report tools under `when` conditions. The `message_router` callback starts the memory conversation with the final report when the worker did not already call `extract_memory` in that worker Session. On `subagent/end` it settles the Task as `review-required`, `awaiting-merge`, `failed` or `delivery-blocked`. It registers the three panel HTTP routes and the profile context refresh. It does not decide routing and does not edit project files.
 
 ### `router.js`
 
@@ -76,11 +80,19 @@ Keeps the pending-helper counter and installs the read-only guard. It appends th
 
 ### `src/memory.js`
 
-Builds `superagent_memory`, `extract_team_memory`, the profile context and the turn archive. It maps the Session role to the allowed categories, records the source event for every write, refreshes the profile after a profile write, and sends only selected findings to the extraction helper.
+Builds `superagent_memory`, `extract_memory`, `createMemoryPanel`, the profile context and the turn archive. It maps the Session role to the allowed categories, records the source event for every tool and extraction write, refreshes the profile after a profile write, and sends only selected findings to the memory conversation and writes each returned category to its scope. Panel reads use a Host-only operator role; panel edits and deletes use the record's category and, for team memory, the echoed Team and Project, and they keep the record's original source.
+
+### `src/memory-extractor.js`
+
+Defines the memory conversation role: the label, the 5,000-character findings limit, the 500-character per-fact limit, the four-category caps, the output schema and `memoryExtractorPrompt`. The prompt states what each category extracts, what to omit, that findings are data, and that empty arrays write nothing.
+
+### `src/memory-panel.js`
+
+Serves `GET /superagent-lite/memory` and `POST /superagent-lite/memory`. It admits only the installation owner, validates the action, category, record ID and body fields, owns the 32 KB body limit, maps a missing record to `404` and a store refusal to `400` or `409`, and returns the updated record or the deleted ID.
 
 ### `src/memory-store.js`
 
-Stores memory records and raw turn archives. It owns category and scope checks, team partition hashing, atomic `0600` writes, serialized updates, symlink refusal and the immutable archive keyed by Session and sequence.
+Stores memory records and raw turn archives. It owns category and scope checks, team partition hashing, atomic `0600` writes, serialized updates, symlink refusal and the immutable archive keyed by Session and sequence. Its `panel.teams()` view reads one saved scope from each team partition for the owner panel; the model-facing `memory` facade stays separate.
 
 ### `src/merge.js`
 
@@ -100,7 +112,7 @@ Runs `git` and `gh` through `ctx.subprocess` with a filtered environment, prompt
 
 ### `src/board.js`
 
-Serves `GET /superagent-lite/tasks` and `POST /superagent-lite/git`. It admits only the installation owner, projects the public task fields, overlays the Git view, computes `unconfirmed`, enforces the JSON body limit and maps a refused action to `409`.
+Serves `GET /superagent-lite/tasks` and `POST /superagent-lite/git`. It admits only the installation owner, projects the public task fields, overlays the Git view, computes `unconfirmed`, enforces the JSON body limit, maps a refused action to `409`, and exports the body reader the memory endpoint reuses.
 
 ### `src/report-tool.js`
 
@@ -108,11 +120,11 @@ Ends a report-only Task. It checks the active worker, report mode, absence of a 
 
 ### `src/message-router.js`
 
-Sends the worker's one final conclusion to the router. It requires the active worker for the Task and a message of 1–4,000 characters.
+Sends the worker's one final conclusion to the router. It requires the active worker for the Task and a message of 1–4,000 characters. After delivery it calls the optional `onReported` callback, which starts the memory conversation with that report for a change worker that did not already extract.
 
 ### `client.js`
 
-The browser panel. It registers the `main` and `sidebar.panellist` slots and the `superagent-lite` locale dictionaries, loads the task list, groups and filters tasks by the five status categories, filters by team and project, renders session and Pull request links, and posts the Git actions. Git delivery is a supporting list with no second state model. It imports no Node module and holds no state outside React.
+The browser panel. It registers the `main` and `sidebar.panellist` slots and the `superagent-lite` locale dictionaries, loads the task list and the memory list, groups and filters tasks by the five status categories, filters by team and project, renders session and Pull request links, and posts the Git actions. The memory block filters by category and text and edits or deletes a record after the owner's click. Git delivery is a supporting list with no second state model. It imports no Node module and holds no state outside React.
 
 ## Dependency rules
 
@@ -121,6 +133,9 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 - No source file imports an `@deepseek-ai/*` package. Host capabilities arrive through `ctx` services: `subagents`, `tools`, `worktrees`, `subprocess`, `agents`, `agentPresets`, `sandboxPolicy`, `workingDirectory`, `systemPrompt`, `webServer`, `connection`, `commands`.
 - `src/process.js` is the only process spawner. Every git and gh call goes through it.
 - `src/task-store.js` is the only task-record writer. Every other module calls `createTask`, `updateTask`, `readTask`, `listTasks`, `linkWorkerSession` or `taskForSession`.
+- `src/memory-store.js` is the only memory-record and archive writer. The model tools, the memory conversation and the panel all go through its facades.
+- `src/memory-panel.js` is the only panel memory endpoint. It reuses `readJsonBody` from `src/board.js` and never reads a path from the request.
+- `src/memory-extractor.js` holds only the helper-role prompt and limits; it owns no store or Session.
 - `src/helper-guard.js` is the only helper counter and the only read-only guard installer.
 - `src/github.js` and `src/merge.js` are the only delivery paths. No other module pushes, creates a Pull request or merges.
 
@@ -160,10 +175,12 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 | `src/git-actions.js` | Builds the Git branch view and performs the merge and publish actions. |
 | `src/github.js` | Detects a GitHub origin and delivers a reviewed commit through a Pull request. |
 | `src/helper-guard.js` | Counts expected helper subagents and confines them to read-only tools. |
-| `src/memory.js` | Registers the memory tools, profile context and turn archive. |
+| `src/memory.js` | Registers the memory tools, profile context, memory conversation runner, panel facade and turn archive. |
+| `src/memory-extractor.js` | Defines the memory conversation role prompt, labels, four category caps and output schema. |
+| `src/memory-panel.js` | Serves the owner-only memory list, edit and delete HTTP endpoint. |
 | `src/memory-store.js` | Persists memory records and raw archives with scope and secret checks. |
 | `src/merge.js` | Implements the `/merge-worker` command and the local `--no-ff` merge. |
-| `src/message-router.js` | Sends one final worker conclusion to the router Session. |
+| `src/message-router.js` | Sends one final worker conclusion to the router Session and triggers the final-report memory extraction. |
 | `src/process.js` | Spawns git and gh with a filtered environment and bounded output. |
 | `src/report-tool.js` | Ends a report-only Task with its conclusion and evidence. |
 | `src/review.js` | Checks the committed diff, runs the read-only reviewer and records the verdict. |
@@ -191,7 +208,7 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 | Test | Covers |
 | --- | --- |
 | `test/board.test.js` | Owner admission, public task projection, Git overlay, endpoint status codes. |
-| `test/client.test.js` | Slot registration, localized rendering, five-category grouping and filters, session navigation, Git delivery actions and errors. |
+| `test/client.test.js` | Slot registration, localized rendering, five-category grouping and filters, session navigation, Git delivery actions and errors, memory search, edit and delete. |
 | `test/continue.test.js` | Running, idle and settled follow-up paths, record order and delivery failures. |
 | `test/git-actions.test.js` | Branch view, merge and publish eligibility, PR reconciliation and router access. |
 | `test/github.test.js` | Strict origin parsing, required checks and reviewed-SHA pinning. |
@@ -199,7 +216,10 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 | `test/helper-guard.test.js` | Helper claims, read-only tool allowlist and shell confinement. |
 | `test/helper-wiring.test.js` | `agent/created` installs the guard only for an expected helper. |
 | `test/host.test.js` | Installed DSH integration: schemas, worktree, review, merge, memory and archive. |
-| `test/memory-store.test.js` | Categories, team scopes, private references, archive immutability, symlink refusal and concurrent updates. |
+| `test/memory-extractor.test.js` | Memory conversation role prompt, four-category extraction, empty and oversized facts, the final-report trigger, and real panel edits and deletes. |
+| `test/memory-panel.test.js` | Owner admission, memory projection, update and delete paths, body validation and status mapping. |
+| `test/memory-wiring.test.js` | Worker wiring: final-report extraction, explicit-extraction suppression and report survival on extraction failure. |
+| `test/memory-store.test.js` | Categories, team scopes, private references, panel team scopes, archive immutability, symlink refusal and concurrent updates. |
 | `test/prompt-config.test.js` | Bundled router prompt keeps replies single and concrete, and the merge-authorization policy matches across the prompt and docs. |
 | `test/report-only.test.js` | Report-only completion, no branch or commit, forged worktree refusal and report prompt. |
 | `test/routing-rule.test.js` | Routing tool descriptions keep a different goal out of `continue_worker`. |
@@ -217,11 +237,11 @@ Task and Memory records live under `~/.dsh/superagent-lite/`. Worktrees live und
 | --- | --- | --- |
 | Task | `tasks/<id>.json` | `src/task-store.js` |
 | Worker Session link | `tasks/sessions/<sha256(sessionId)>.json` | `src/dispatch.js` through `linkWorkerSession` |
+| Private memory | `memory/private/<uuid>.json` | `src/memory-store.js` |
 | Public memory | `memory/public/<uuid>.json` | `src/memory-store.js` |
 | Profile memory | `memory/profile/<uuid>.json` | `src/memory-store.js` |
-| Private memory | `memory/private/<uuid>.json` | `src/memory-store.js` |
 | Team memory | `memory/team/<hash>/<uuid>.json` | `src/memory-store.js` |
-| Raw turn archive | `memory/archive/<hash>.json` | `src/memory.js` through `archiveWorkerTurn` |
+| Raw turn archive | `memory/archive/<hash>.json`, numbered event references | `src/memory.js` through `archiveWorkerTurn` |
 | Worktree | `<project>/.agents/worktrees/` | The worktree service |
 
 The team partition hash covers the Team ID and the normalized project root. The archive hash covers the Session ID and the turn-end sequence. Directories are created at mode `0700` and records at `0600`.
@@ -237,13 +257,14 @@ The team partition hash covers the Team ID and the normalized project root. The 
 | `create_worktree` | Change worker | Create or enter the Task's Worktree |
 | `review_worker_commit` | Change worker | Review the clean committed diff |
 | `report_task` | Report worker | End a report-only Task |
-| `message_router` | Worker | Send the final conclusion to the router |
-| `extract_team_memory` | Worker | Distill selected findings into team memory |
+| `message_router` | Worker | Send the final conclusion to the router and trigger the final-report memory extraction |
+| `extract_memory` | Worker | Distill selected findings into the four memory categories with the memory conversation role |
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
 | `/superagent-lite/tasks` | `GET` | Return the task list and Git view for the owner |
-| `/superagent-lite/git` | `POST` | Run a `merge` or `publish` action for the owner |
+| `/superagent-lite/git` | `GET`, `POST` | Read branch detail or run a `merge` or `publish` action for the owner |
+| `/superagent-lite/memory` | `GET`, `POST` | List memory records or run an `update` or `delete` action for the owner |
 
 | Surface | Value |
 | --- | --- |
@@ -260,9 +281,11 @@ The team partition hash covers the Team ID and the normalized project root. The 
 | --- | --- |
 | `cordis.patch.yml` | At the next bundle load |
 | Tool text in `src/` | To the next assembled turn after the bundle loads |
+| `src/memory-extractor.js` role text | At the next memory extraction start |
 | `client.js` dictionaries | At the next client bundle load |
 | A profile memory write | Immediately refreshes the injected profile context |
 | A task or memory record | On the next panel load or tool call |
+| A panel memory edit or delete | Immediately in the panel and on disk; the next tool call reads the new record |
 | GitHub origin and Pull request facts | Cached for 30 seconds; a panel refresh reads them again after the cache expires |
 
 The profile context is registered with order `170` and is read when the Host assembles the runtime context for a model call.

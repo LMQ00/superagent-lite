@@ -83,6 +83,20 @@ test('private entries accept only credential references or explicit non-secret c
   }
 })
 
+test('panel lists the saved team scopes without exposing them to the memory facade', async t => {
+  const { memory, panel, root } = await fixture(t)
+  assert.deepEqual(await panel.teams(), [])
+  const core = { role: 'worker', teamId: 'core', projectRoot: join(root, 'project-a') }
+  const other = { role: 'worker', teamId: 'other', projectRoot: join(root, 'project-b') }
+  await memory.create(core, { category: 'team', source: origin, content: 'Core convention.' })
+  await memory.create(other, { category: 'team', source: origin, content: 'Other convention.' })
+  assert.deepEqual(await panel.teams(), [
+    { teamId: 'core', projectRoot: resolve(core.projectRoot) },
+    { teamId: 'other', projectRoot: resolve(other.projectRoot) },
+  ])
+  assert.deepEqual(Object.keys(memory).sort(), ['create', 'delete', 'list', 'read', 'update'])
+})
+
 test('raw archive is a separate immutable host capability keyed by the source coordinate', async t => {
   const { memory, archive, directory } = await fixture(t)
   const value = { type: 'assistant/message', data: { text: '\n raw text ' } }

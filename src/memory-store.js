@@ -55,6 +55,15 @@ function hash(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
+function storedScope(value) {
+  const { teamId, projectRoot } = object(value, ['teamId', 'projectRoot'])
+  if (typeof teamId !== 'string' || !TEAM_PATTERN.test(teamId) ||
+      typeof projectRoot !== 'string' || !isAbsolute(projectRoot) || projectRoot.includes('\0')) {
+    throw new TypeError('Invalid stored team memory scope')
+  }
+  return { teamId, projectRoot: resolve(projectRoot) }
+}
+
 function scopeOf(caller, category) {
   if (!CATEGORIES.has(category)) throw new TypeError('Invalid memory category')
   if (!ROLES.has(caller?.role)) throw new TypeError('A trusted memory caller role is required')
@@ -165,6 +174,48 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     if (scope === null) return parent
     const partition = join(parent, hash([scope.teamId, normalize(scope.projectRoot)]))
     return await directoryExists(partition, create) ? partition : undefined
+  }
+
+  // Host panel only, never model tools: read the saved scope from one record in
+  // each team partition so the panel can list memory across teams without
+  // knowing the partition hash in advance.
+  async function listTeamScopes() {
+    const parent = join(root, 'team')
+    if (!await directoryExists(parent, false)) return []
+    const scopes = new Map()
+    for (const partition of (await readdir(parent)).sort()) {
+      const directory = join(parent, partition)
+      let info
+      try {
+        info = await lstat(directory)
+      } catch {
+        continue
+      }
+      if (!info.isDirectory()) continue
+      for (const name of (await readdir(directory)).sort()) {
+        if (!name.endsWith('.json')) continue
+        const id = name.slice(0, -5)
+        if (!ID_PATTERN.test(id)) continue
+        let document
+        try {
+          document = await readDocument(join(directory, name))
+        } catch {
+          continue
+        }
+        if (document?.version !== VERSION || document.record?.id !== id ||
+            document.record.category !== 'team') continue
+        let scope
+        try {
+          scope = storedScope(document.scope)
+        } catch {
+          continue
+        }
+        scopes.set(partition, scope)
+        break
+      }
+    }
+    return [...scopes.values()].sort((a, b) =>
+      a.teamId.localeCompare(b.teamId) || a.projectRoot.localeCompare(b.projectRoot))
   }
 
   function recordPath(directory, id) {
@@ -291,5 +342,6 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
   return {
     memory: Object.freeze({ create, read, list, update, delete: deleteRecord }),
     archive: Object.freeze({ write: writeArchive, read: readArchive }),
+    panel: Object.freeze({ teams: listTeamScopes }),
   }
 }

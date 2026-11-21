@@ -35,6 +35,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
   const { archiveWorkerTurn, createMemoryTool } = await import('../src/memory.js')
+  const { memoryExtractorOutputSchema } = await import('../src/memory-extractor.js')
   const { createMessageRouterTool } = await import('../src/message-router.js')
   const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
   const repo = join(root, 'repo')
@@ -180,6 +181,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const memory = createMemoryTool(caller, candidate => candidate === worker)
   assertSupportedJsonSchema(memory.parameters)
   assertSupportedJsonSchema(memory.output.schema)
+  assertSupportedJsonSchema(memoryExtractorOutputSchema)
   worker.session.seq = 3
   await assert.rejects(memory.execute({ action: 'list', category: 'team' }, { agent: parent, signal }), /not available/i)
   await memory.execute({ action: 'create', category: 'team', content: 'Use checked-in notes' }, { agent: worker, signal })
@@ -188,5 +190,12 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const events = [{ type: 'turn/start', seq: 0, data: { turn: 1 } }, { type: 'turn/end', seq: 1, data: { turn: 1 } }]
   const archive = []
   await archiveWorkerTurn({ id: worker.id, firstLiveSeq: 0, eventAt: i => events[i], snapshotEvents: (a, b) => events.slice(a, b) }, events[1], { write: (source, snapshot) => archive.push([source, snapshot]) })
-  assert.deepEqual(archive[0], [{ sessionId: worker.id, seq: 1 }, { turn: 1, startSeq: 0, endSeq: 1, events }])
+  assert.deepEqual(archive[0], [{ sessionId: worker.id, seq: 1 }, {
+    turn: 1, startSeq: 0, endSeq: 1,
+    references: [
+      { reference: 1, seq: 0, type: 'turn/start' },
+      { reference: 2, seq: 1, type: 'turn/end' },
+    ],
+    events,
+  }])
 })

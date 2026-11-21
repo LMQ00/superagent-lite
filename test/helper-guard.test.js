@@ -62,7 +62,7 @@ test('the helper guard allows read-only inspection and confines its shell', () =
   }
   for (const name of [
     'write', 'edit', 'create_worktree', 'review_worker_commit', 'message_router',
-    'superagent_memory', 'extract_team_memory', 'subagent', 'job_kill', 'present',
+    'superagent_memory', 'extract_memory', 'subagent', 'job_kill', 'present',
     'skill', 'todo_write', 'working_directory',
   ]) {
     assert.match(check({ name }), /Read-only helpers cannot use/, name)

@@ -113,6 +113,7 @@ test('registers matching slots and renders a localized, status-filtered read-onl
   const board = setup({
     fetch: async (path, options) => {
       requests.push({ path, options })
+      if (path === '/superagent-lite/memory') return { ok: true, json: async () => ({ records: [] }) }
       return { ok: true, json: async () => ({ tasks }) }
     },
     openSession: target => opened.push(target),
@@ -168,9 +169,10 @@ test('registers matching slots and renders a localized, status-filtered read-onl
   assert.match(text(board.render()), /正在加载任务/)
   await flush()
   assert.match(text(board.render()), /Task A/)
-  assert.equal(requests.length, 2)
+  const taskRequests = requests.filter(request => request.path === '/superagent-lite/tasks')
+  assert.equal(taskRequests.length, 2)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/memory').length, 2)
   for (const request of requests) {
-    assert.equal(request.path, '/superagent-lite/tasks')
     assert.equal(request.options.method, 'GET')
     assert.equal(request.options.credentials, 'same-origin')
   }
@@ -187,7 +189,10 @@ test('groups and filters tasks by the five categories, and carries report-only t
     { id: 'e', title: 'Answer only', teamId: 'alpha', projectRoot: '/one', status: 'completed', mode: 'report' },
   ]
   const board = setup({
-    fetch: async () => ({ ok: true, json: async () => ({ tasks: categoryTasks }) }),
+    fetch: async path => ({
+      ok: true,
+      json: async () => path === '/superagent-lite/memory' ? { records: [] } : { tasks: categoryTasks },
+    }),
     language: 'zh',
   })
   board.render()
@@ -216,9 +221,11 @@ test('groups and filters tasks by the five categories, and carries report-only t
 
 test('reports a load error and can refresh without workspace navigation', async () => {
   let attempt = 0
-  const board = setup({ fetch: async () => ++attempt === 1 ? { ok: false } : {
-    ok: true, json: async () => ({ tasks: [{ ...tasks[0], status: 'unconfirmed' }] }),
-  } })
+  const board = setup({ fetch: async path => path === '/superagent-lite/memory'
+    ? { ok: true, json: async () => ({ records: [] }) }
+    : ++attempt === 1 ? { ok: false } : {
+      ok: true, json: async () => ({ tasks: [{ ...tasks[0], status: 'unconfirmed' }] }),
+    } })
   board.render()
   await flush()
   let tree = board.render()
@@ -249,6 +256,7 @@ test('lists branches under Git delivery without a second status system and sends
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
+      if (path === '/superagent-lite/memory') return { ok: true, json: async () => ({ records: [] }) }
       if (path === '/superagent-lite/git') {
         assert.equal(options.method, 'POST')
         assert.equal(options.credentials, 'same-origin')
@@ -277,7 +285,7 @@ test('lists branches under Git delivery without a second status system and sends
   assert.match(text(tree), /sl-a.*master/s)
   assert.match(text(tree), /dsh/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'tab').length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'input' && node.props.type === 'search').length, 0)
+  assert.equal(nodes(byClass(tree, 'sl-git-section')[0]).filter(node => node.type === 'input').length, 0)
   assert.doesNotMatch(text(byClass(tree, 'sl-git-section')[0]), /打开|已关闭/)
   byClass(tree, 'sl-git__head')[0].props.onClick()
   await flush()
@@ -306,15 +314,17 @@ test('lists branches under Git delivery without a second status system and sends
 
 test('shows the Git action error returned by the host', async () => {
   const board = setup({
-    fetch: async (path) => path === '/superagent-lite/git'
-      ? { ok: false, json: async () => ({ error: 'Merge would conflict' }) }
-      : path.startsWith('/superagent-lite/git?taskId=')
-        ? { ok: true, json: async () => ({ commits: [], files: [] }) }
-        : { ok: true, json: async () => ({ tasks: [{
-          id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'awaiting-merge', mode: 'change',
-          workerSessionId: 'worker-a', parentSessionId: 'parent-a',
-          git: { branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true, canMerge: true, canPublish: false },
-        }] }) },
+    fetch: async (path) => path === '/superagent-lite/memory'
+      ? { ok: true, json: async () => ({ records: [] }) }
+      : path === '/superagent-lite/git'
+        ? { ok: false, json: async () => ({ error: 'Merge would conflict' }) }
+        : path.startsWith('/superagent-lite/git?taskId=')
+          ? { ok: true, json: async () => ({ commits: [], files: [] }) }
+          : { ok: true, json: async () => ({ tasks: [{
+            id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'awaiting-merge', mode: 'change',
+            workerSessionId: 'worker-a', parentSessionId: 'parent-a',
+            git: { branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true, canMerge: true, canPublish: false },
+          }] }) },
     language: 'en',
   })
   board.render()
@@ -347,9 +357,11 @@ test('does not show pull request state tabs, counts or search, and keeps review 
         canMerge: false, canPublish: false } },
   ]
   const board = setup({
-    fetch: async (path) => path.startsWith('/superagent-lite/git?taskId=')
-      ? { ok: true, json: async () => ({ commits: [], files: [{ path: 'src/panel.js', additions: 4, deletions: 2 }] }) }
-      : { ok: true, json: async () => ({ tasks: rows }) },
+    fetch: async (path) => path === '/superagent-lite/memory'
+      ? { ok: true, json: async () => ({ records: [] }) }
+      : path.startsWith('/superagent-lite/git?taskId=')
+        ? { ok: true, json: async () => ({ commits: [], files: [{ path: 'src/panel.js', additions: 4, deletions: 2 }] }) }
+        : { ok: true, json: async () => ({ tasks: rows }) },
     language: 'zh',
   })
   board.render()
@@ -362,7 +374,7 @@ test('does not show pull request state tabs, counts or search, and keeps review 
   assert.match(gitText(), /#11/)
   assert.doesNotMatch(gitText(), /打开|已关闭/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'tab').length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'input').length, 0)
+  assert.equal(nodes(byClass(tree, 'sl-git-section')[0]).filter(node => node.type === 'input').length, 0)
   byClass(tree, 'sl-git__head')[0].props.onClick()
   await flush()
   tree = board.render()
@@ -375,5 +387,126 @@ test('does not show pull request state tabs, counts or search, and keeps review 
   assert.equal(publish.props.disabled, true)
   assert.match(gitText(), /GitHub projects must merge through a pull request/)
   assert.match(gitText(), /All required CI checks must pass/)
+  board.dispose()
+})
+
+test('shows saved memory, searches it, edits a fact, deletes a private reference and refreshes profile injection', async () => {
+  const times = {
+    profile: '2026-01-04T00:00:00.000Z',
+    team: '2026-01-03T00:00:00.000Z',
+    private: '2026-01-02T00:00:00.000Z',
+    public: '2026-01-01T00:00:00.000Z',
+  }
+  let records = [
+    { id: 'a', category: 'profile', content: 'Prefers concise replies', source: { sessionId: 'router', seq: 2 },
+      createdAt: times.profile, updatedAt: times.profile },
+    { id: 'b', category: 'team', content: 'Run tests before review', teamId: 'alpha', projectRoot: '/one',
+      source: { sessionId: 'worker', seq: 5 }, createdAt: times.team, updatedAt: times.team },
+    { id: 'c', category: 'private', credentialRef: 'DEEPSEEK_API_KEY', source: { sessionId: 'router', seq: 3 },
+      createdAt: times.private, updatedAt: times.private },
+    { id: 'd', category: 'public', content: 'Checked-in notes are the source of truth', source: { sessionId: 'router', seq: 4 },
+      createdAt: times.public, updatedAt: times.public },
+  ]
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path !== '/superagent-lite/memory') return { ok: true, json: async () => ({ tasks: [] }) }
+      if (options.method === 'POST') {
+        const body = JSON.parse(options.body)
+        if (body.action === 'update') {
+          records = records.map(record => record.id === body.id ? { ...record, content: body.content } : record)
+          return { ok: true, json: async () => ({ record: records.find(record => record.id === body.id) }) }
+        }
+        records = records.filter(record => record.id !== body.id)
+        return { ok: true, json: async () => ({ deleted: body.id }) }
+      }
+      return { ok: true, json: async () => ({
+        records,
+        injection: { profile: {
+          everyChat: true, limit: 6, maxChars: 500,
+          recordIds: records.filter(record => record.category === 'profile').slice(0, 6).map(record => record.id),
+        } },
+      }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /记忆/)
+  assert.match(text(tree), /按需调用，只记结论/)
+  assert.match(text(tree), /每轮注入 router 和 worker/)
+  assert.match(text(tree), /仅同团队 worker 可读/)
+  assert.match(text(tree), /当前注入/)
+  assert.match(text(tree), /每轮注入 1\/6/)
+  assert.match(text(tree), /私有1/)
+  assert.match(text(tree), /公共1/)
+  assert.match(text(tree), /用户画像与环境1/)
+  assert.match(text(tree), /团队1/)
+  assert.match(text(tree), /Prefers concise replies/)
+  assert.match(text(tree), /Checked-in notes are the source of truth/)
+  assert.match(text(tree), /Run tests before review/)
+  assert.match(text(tree), /DEEPSEEK_API_KEY/)
+  assert.equal(nodes(tree).filter(node => node.type === 'input' && node.props.type === 'search').length, 1)
+
+  const search = nodes(tree).find(node => node.type === 'input' && node.props.type === 'search')
+  search.props.onChange({ target: { value: 'review' } })
+  tree = board.render()
+  assert.match(text(tree), /Run tests before review/)
+  assert.doesNotMatch(text(tree), /Prefers concise replies/)
+  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY/)
+  search.props.onChange({ target: { value: 'zzz-no-match' } })
+  tree = board.render()
+  assert.match(text(tree), /没有符合筛选条件的记忆/)
+
+  const input = nodes(tree).find(node => node.type === 'input' && node.props.type === 'search')
+  input.props.onChange({ target: { value: '' } })
+  tree = board.render()
+  const profileRow = byClass(tree, 'sl-memory').find(row => text(row).includes('Prefers concise replies'))
+  nodes(profileRow).find(node => node.type === 'button' && text(node) === '编辑').props.onClick()
+  tree = board.render()
+  const textarea = nodes(tree).find(node => node.type === 'textarea')
+  assert.equal(textarea.props.value, 'Prefers concise replies')
+  textarea.props.onChange({ target: { value: 'Prefers short answers' } })
+  tree = board.render()
+  nodes(tree).find(node => node.type === 'button' && text(node) === '保存').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Prefers short answers/)
+  assert.match(text(tree), /记忆已更新/)
+  const update = requests.find(request => request.options.method === 'POST')
+  assert.deepEqual(JSON.parse(update.options.body), {
+    action: 'update', category: 'profile', id: 'a', content: 'Prefers short answers',
+  })
+
+  tree = board.render()
+  const privateRow = byClass(tree, 'sl-memory').find(row => text(row).includes('DEEPSEEK_API_KEY'))
+  nodes(privateRow).find(node => node.type === 'button' && text(node) === '删除').props.onClick()
+  tree = board.render()
+  const confirmRow = byClass(tree, 'sl-memory').find(row => text(row).includes('DEEPSEEK_API_KEY'))
+  nodes(confirmRow).find(node => node.type === 'button' && text(node) === '确认删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY/)
+  assert.match(text(tree), /记忆已删除/)
+  const removal = requests.filter(request => request.options.method === 'POST').at(-1)
+  assert.deepEqual(JSON.parse(removal.options.body), { action: 'delete', category: 'private', id: 'c' })
+
+  tree = board.render()
+  const injectedProfile = byClass(tree, 'sl-memory').find(row => text(row).includes('Prefers short answers'))
+  assert.match(text(injectedProfile), /当前注入/)
+  nodes(injectedProfile).find(node => node.type === 'button' && text(node) === '删除').props.onClick()
+  tree = board.render()
+  const profileConfirm = byClass(tree, 'sl-memory').find(row => text(row).includes('Prefers short answers'))
+  nodes(profileConfirm).find(node => node.type === 'button' && text(node) === '确认删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Prefers short answers/)
+  assert.match(text(tree), /每轮注入 0\/6/)
+  assert.match(text(tree), /记忆已删除/)
+  assert.deepEqual(JSON.parse(requests.filter(request => request.options.method === 'POST').at(-1).options.body), {
+    action: 'delete', category: 'profile', id: 'a',
+  })
   board.dispose()
 })
