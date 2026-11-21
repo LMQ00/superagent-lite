@@ -4,6 +4,7 @@ import { checksRollup, createGitManager, pullRequestUrl } from '../src/git-actio
 
 const head = 'b'.repeat(40)
 const baseTip = 'a'.repeat(40)
+const baseHead = 'e'.repeat(40)
 const signal = new AbortController().signal
 const taskId = 'abcdef0123456789'
 const prUrl = 'https://github.com/example/project/pull/7'
@@ -31,7 +32,8 @@ function memoryStore(initial) {
       return record && { ...record }
     },
     async updateTask(id, changes) {
-      const next = { ...records.get(id), ...changes }
+      const record = records.get(id)
+      const next = { ...record, ...(typeof changes === 'function' ? changes(record) : changes) }
       records.set(id, next)
       return next
     },
@@ -63,9 +65,11 @@ function gitFixture({
       if (key === 'rev-parse --show-toplevel') return '/repo'
       if (key === 'symbolic-ref --quiet HEAD') return 'refs/heads/main'
       if (key === 'rev-parse --verify refs/heads/main^{commit}') return baseTip
+      if (key === 'rev-parse --verify HEAD^{commit}') return baseHead
       if (key === 'status --porcelain --untracked-files=all') return targetDirty
       if (key.startsWith('log --reverse --format=%H%x1f%an%x1f%aI%x1f%s ')) return commits
       if (key.startsWith('diff --numstat ')) return numstat
+      if (key === 'pull --ff-only origin main') return 'Already up to date.'
       if (key === 'rev-parse --verify --quiet MERGE_HEAD') {
         const error = new Error('missing MERGE_HEAD')
         error.exitCode = 1
@@ -93,7 +97,8 @@ function gitFixture({
 
 test('pull request URLs are restricted to GitHub pull requests', () => {
   assert.equal(pullRequestUrl(prUrl), prUrl)
-  for (const value of [undefined, 'javascript:alert(1)', 'https://github.com.evil.test/example/project/pull/7', 'https://github.com/example/project/issues/7']) {
+  assert.equal(pullRequestUrl(`${prUrl}/`), prUrl)
+  for (const value of [undefined, 'javascript:alert(1)', 'https://github.com.evil.test/example/project/pull/7', 'https://github.com/example/project/issues/7', `${prUrl}?x=1`, `${prUrl}#x`]) {
     assert.equal(pullRequestUrl(value), undefined)
   }
 })
@@ -132,7 +137,7 @@ test('a moved worker head is no longer mergeable and its review record is stale'
   assert.match(view.git.mergeReason, /no longer matches its reviewed commit/)
 })
 
-test('a GitHub project refuses the local merge action and offers publication', async () => {
+test('a GitHub project offers both publication and merge for a reviewed branch', async () => {
   const record = task()
   const { git } = gitFixture()
   const manager = createGitManager(context(), {
@@ -142,9 +147,10 @@ test('a GitHub project refuses the local merge action and offers publication', a
   })
   const view = (await manager.list([record], signal)).get(taskId)
   assert.equal(view.git.repository, 'example/project')
-  assert.equal(view.git.canMerge, false)
-  assert.match(view.git.mergeReason, /must merge through a pull request/)
+  assert.equal(view.git.canMerge, true)
+  assert.equal(view.git.mergeReason, undefined)
   assert.equal(view.git.canPublish, true)
+  assert.equal(view.git.publishReason, undefined)
 })
 
 test('the merge action delegates to the existing merge command with the router agent', async () => {
@@ -181,7 +187,7 @@ test('the merge action reports command refusals and unpublishable tasks', async 
   await assert.rejects(refused.perform(taskId, 'merge', signal), /Merge would conflict/)
 })
 
-test('the publish action uses the GitHub delivery path and records its status', async () => {
+test('the publish action pushes the reviewed commit and records the pull request', async () => {
   const record = task()
   const store = memoryStore([record])
   const delivered = []
@@ -189,18 +195,19 @@ test('the publish action uses the GitHub delivery path and records its status', 
   const manager = createGitManager(context(), {
     store, git, checkedHead: async () => head,
     originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
-    deliver: async (_ctx, current, origin, _signal, publish) => {
-      delivered.push({ origin, head: current.review.head })
-      await publish({ status: 'awaiting-ci', prUrl })
-      await publish({ status: 'merged' })
+    publish: async (_task, origin, _signal, publish) => {
+      delivered.push({ origin, head })
+      await publish({ status: 'awaiting-ci', prUrl, prState: 'OPEN' })
+      return { url: prUrl, state: 'OPEN', number: '7', adopted: false }
     },
   })
   const result = await manager.perform(taskId, 'publish', signal)
-  assert.equal(result.status, 'merged')
+  assert.equal(result.status, 'awaiting-ci')
   assert.equal(result.prUrl, prUrl)
+  assert.equal(result.prState, 'OPEN')
   assert.equal(delivered[0].origin.repo, 'example/project')
   assert.equal(delivered[0].head, head)
-  assert.equal((await store.readTask(taskId)).status, 'merged')
+  assert.equal((await store.readTask(taskId)).prUrl, prUrl)
 })
 
 test('a failed publication is recorded as delivery-blocked while keeping the PR link', async () => {
@@ -210,8 +217,8 @@ test('a failed publication is recorded as delivery-blocked while keeping the PR 
   const manager = createGitManager(context(), {
     store, git, checkedHead: async () => head,
     originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
-    deliver: async (_ctx, _task, _origin, _signal, publish) => {
-      await publish({ status: 'awaiting-ci', prUrl })
+    publish: async (_task, _origin, _signal, publish) => {
+      await publish({ status: 'awaiting-ci', prUrl, prState: 'OPEN' })
       throw new Error('All required CI checks must pass')
     },
   })
@@ -412,22 +419,152 @@ test('a closed pull request settles an in-flight task as delivery-blocked', asyn
   assert.equal(view.git.pr.state, 'CLOSED')
 })
 
-test('actions require a live router session with full access', async () => {
+test('GitHub delivery works without a running router but a read-only live router blocks it', async () => {
   const record = task()
   const { git } = gitFixture()
-  for (const [ctx, pattern] of [
-    [context({ agent: false }), /router Session is not running/],
-    [context({ full: false }), /file policy/],
-  ]) {
-    const manager = createGitManager(ctx, {
-      store: memoryStore([record]), git, checkedHead: async () => head, originOf: async () => undefined,
-      merge: { handler: async () => assert.fail('merge must not run') },
-    })
-    const view = (await manager.list([record], signal)).get(taskId)
-    assert.equal(view.git.canMerge, false)
-    assert.match(view.git.mergeReason, pattern)
-    await assert.rejects(manager.perform(taskId, 'merge', signal), pattern)
-  }
+  const origin = async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' })
+  const withoutRouter = createGitManager(context({ agent: false }), {
+    store: memoryStore([record]), git, checkedHead: async () => head, originOf: origin,
+    publish: async () => assert.fail('must not publish'),
+  })
+  let view = (await withoutRouter.list([record], signal)).get(taskId)
+  assert.deepEqual([view.git.canMerge, view.git.canPublish], [true, true])
+  const readOnly = createGitManager(context({ full: false }), {
+    store: memoryStore([record]), git, checkedHead: async () => head, originOf: origin,
+    publish: async () => assert.fail('must not publish'),
+  })
+  view = (await readOnly.list([record], signal)).get(taskId)
+  assert.deepEqual([view.git.canMerge, view.git.canPublish], [false, false])
+  assert.match(view.git.mergeReason, /file policy/)
+  assert.match(view.git.publishReason, /file policy/)
+  await assert.rejects(readOnly.perform(taskId, 'publish', signal), /file policy/)
+})
+
+test('local merge still requires a running router session', async () => {
+  const record = task()
+  const manager = createGitManager(context({ agent: false }), {
+    store: memoryStore([record]), git: gitFixture().git, checkedHead: async () => head,
+    originOf: async () => undefined,
+    merge: { handler: async () => assert.fail('merge must not run') },
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.git.canMerge, false)
+  assert.match(view.git.mergeReason, /router Session is not running/)
+  await assert.rejects(manager.perform(taskId, 'merge', signal), /router Session is not running/)
+})
+
+test('a stale review-required GitHub task heals to awaiting-merge and lands in one merge action', async () => {
+  const record = task({ status: 'review-required' })
+  const store = memoryStore([record])
+  const { git, calls } = gitFixture()
+  const steps = []
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    gh: async () => JSON.stringify({ state: 'OPEN', headRefOid: head, headRefName: 'sl-feature', baseRefName: 'main', isCrossRepository: false }),
+    publish: async (_task, _origin, _signal, publish) => {
+      steps.push('publish')
+      await publish({ status: 'awaiting-ci', prUrl, prState: 'OPEN' })
+      return { url: prUrl, state: 'OPEN', number: '7', adopted: false }
+    },
+    mergeRemote: async (_task, _origin, _signal, publish) => {
+      steps.push('merge')
+      await publish({ status: 'merged', prUrl, prState: 'MERGED' })
+      return { url: prUrl, state: 'MERGED', number: '7' }
+    },
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.deepEqual([view.status, view.git.canPublish, view.git.canMerge], ['awaiting-merge', true, true])
+  const result = await manager.perform(taskId, 'merge', signal)
+  assert.deepEqual([result.status, result.prUrl, result.baseHead, ...steps], ['merged', prUrl, baseHead, 'publish', 'merge'])
+  assert.ok(calls.some(({ args }) => args.join(' ') === 'pull --ff-only origin main'))
+})
+
+test('an existing PR and an already merged task keep repeated actions idempotent', async () => {
+  const store = memoryStore([task({ status: 'awaiting-merge', prUrl })])
+  const { git, calls } = gitFixture()
+  let remoteMerges = 0
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    gh: async () => JSON.stringify({ state: 'OPEN', headRefOid: head, headRefName: 'sl-feature', baseRefName: 'main', isCrossRepository: false }),
+    publish: async () => assert.fail('must not publish again'),
+    mergeRemote: async (_task, _origin, _signal, publish) => {
+      ++remoteMerges
+      await publish({ status: 'merged', prUrl, prState: 'MERGED' })
+      return { url: prUrl, state: 'MERGED', number: '7' }
+    },
+  })
+  assert.match((await manager.perform(taskId, 'publish', signal)).message, /already exists/)
+  assert.equal((await manager.perform(taskId, 'merge', signal)).status, 'merged')
+  const repeated = await manager.perform(taskId, 'merge', signal)
+  assert.equal(repeated.status, 'merged')
+  assert.match(repeated.message, /already merged/)
+  assert.equal(remoteMerges, 1)
+  assert.equal(calls.filter(({ args }) => args.join(' ') === 'pull --ff-only origin main').length, 2)
+})
+
+test('a publish that finds an already merged PR settles and fast-forwards', async () => {
+  const store = memoryStore([task()])
+  const { git, calls } = gitFixture()
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    publish: async (_task, _origin, _signal, publish) => {
+      await publish({ status: 'merged', prUrl, prState: 'MERGED' })
+      return { url: prUrl, state: 'MERGED', number: '7', adopted: true }
+    },
+    mergeRemote: async () => assert.fail('merge must not run'),
+  })
+  const result = await manager.perform(taskId, 'merge', signal)
+  assert.deepEqual([result.status, result.prUrl, result.baseHead], ['merged', prUrl, baseHead])
+  assert.ok(calls.some(({ args }) => args.join(' ') === 'pull --ff-only origin main'))
+})
+
+test('recovery keeps report tasks and branches with no commits of their own out of delivery states', async () => {
+  const untouchedStore = memoryStore([task({ status: 'review-required', review: undefined, baseCommit: baseTip, worktree: { path: '/wt', branch: 'sl-feature', baseCommit: baseTip } })])
+  const untouched = createGitManager(context(), {
+    store: untouchedStore, git: gitFixture({ worktreeHead: baseTip, merged: true }).git,
+    checkedHead: async () => baseTip, originOf: async () => undefined,
+  })
+  assert.equal((await untouched.list([untouchedStore.records.get(taskId)], signal)).get(taskId).status, 'review-required')
+
+  const reportStore = memoryStore([task({ mode: 'report', status: 'review-required', review: undefined, worktree: undefined })])
+  const report = createGitManager(context(), { store: reportStore, originOf: async () => undefined })
+  const reportView = (await report.list([reportStore.records.get(taskId)], signal)).get(taskId)
+  assert.deepEqual([reportView.status, reportView.git], ['completed', undefined])
+})
+
+test('a delivery-blocked task whose PR merged past its reviewed head settles as merged', async () => {
+  const record = task({ status: 'delivery-blocked', prUrl, review: { head: 'c'.repeat(40), approved: true } })
+  const store = memoryStore([record])
+  const manager = createGitManager(context(), {
+    store, git: gitFixture({ merged: true }).git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    gh: async () => JSON.stringify({ state: 'MERGED', headRefOid: head, headRefName: 'sl-feature', baseRefName: 'main', isCrossRepository: false }),
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.deepEqual([view.status, view.git.merged, view.git.pr.state, view.git.pr.exact], ['merged', true, 'MERGED', false])
+})
+
+test('a dirty target or a conflicting PR reports why merge is unavailable', async () => {
+  const dirty = createGitManager(context(), {
+    store: memoryStore([task()]), git: gitFixture({ targetDirty: ' M file.txt' }).git,
+    checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+  })
+  let view = (await dirty.list([task()], signal)).get(taskId)
+  assert.equal(view.git.canMerge, false)
+  assert.match(view.git.mergeReason, /uncommitted changes/)
+  await assert.rejects(dirty.perform(taskId, 'merge', signal), /uncommitted changes/)
+  const conflict = createGitManager(context(), {
+    store: memoryStore([task({ prUrl })]), git: gitFixture().git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    gh: async () => JSON.stringify({ state: 'OPEN', headRefOid: head, headRefName: 'sl-feature', baseRefName: 'main', isCrossRepository: false, mergeable: 'CONFLICTING' }),
+  })
+  view = (await conflict.list([task({ prUrl })], signal)).get(taskId)
+  assert.equal(view.git.canMerge, false)
+  assert.match(view.git.mergeReason, /merge conflicts/)
 })
 
 test('merged pull requests keep their author, comment and check indicators', async () => {

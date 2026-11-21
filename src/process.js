@@ -17,7 +17,10 @@ export async function runProcess(ctx, command, args, cwd, signal, maxBytes = 655
   signal?.throwIfAborted()
   const stdout = child.collected.stdout?.readFrom(0)
   if (outcome.exitCode !== 0) {
-    const error = new Error(`${command} ${args[0]} exited with status ${outcome.exitCode ?? outcome.signal}`)
+    const stderr = child.collected.stderr?.readFrom(0)?.text?.trim()
+    const detail = stderr?.split(/\r?\n/).filter(Boolean).at(-1)
+    const suffix = detail ? `: ${detail.length > 500 ? `${detail.slice(0, 500)}…` : detail}` : ''
+    const error = new Error(`${command} ${args[0]} exited with status ${outcome.exitCode ?? outcome.signal}${suffix}`)
     error.exitCode = outcome.exitCode
     throw error
   }

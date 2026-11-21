@@ -1,31 +1,66 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { deliverGithub, githubOrigin, githubRepository } from '../src/github.js'
+import { githubOrigin, githubRepository, mergeGithub, publishGithub } from '../src/github.js'
 
 const head = 'a'.repeat(40)
+const oldHead = 'b'.repeat(40)
 const url = 'https://github.com/example/project/pull/7'
 const task = { id: 'abcdef0123456789', title: 'Change', baseBranch: 'main', worktree: { path: '/fixture', branch: 'sl-feature' }, review: { head } }
 const origin = { repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }
 
-function fixture(buckets, moved = false) {
+function fixture({ existing = false, exact = true, mergeable = 'MERGEABLE', mergeFails = false } = {}) {
   const calls = []
-  let views = 0
+  const view = {
+    url,
+    state: 'OPEN',
+    headRefOid: exact ? head : oldHead,
+    headRefName: 'sl-feature',
+    baseRefName: 'main',
+    isCrossRepository: false,
+    mergeable,
+  }
   const ctx = { subprocess: {
     async resolveExecutable(name) { return name },
     spawn({ argv }) {
       calls.push(argv)
-      const [, domain, action] = argv
       let output = ''
-      if (domain === 'pr' && action === 'create') output = url
-      if (domain === 'pr' && action === 'view') {
-        ++views
-        output = JSON.stringify({ headRefOid: moved && views === 2 ? 'b'.repeat(40) : head, headRefName: 'sl-feature', baseRefName: 'main', isCrossRepository: false, state: views === 3 ? 'MERGED' : 'OPEN' })
+      let exitCode = 0
+      let stderr = ''
+      if (argv[0] === 'git') {
+        if (argv.includes('push')) {
+          view.headRefOid = head
+        } else {
+          exitCode = 1
+        }
+      } else {
+        const [, domain, action, reference] = argv
+        if (domain === 'auth') {
+          // authenticated
+        } else if (domain === 'pr' && action === 'view') {
+          if (reference === 'sl-feature' && !existing) exitCode = 1
+          else output = JSON.stringify(view)
+        } else if (domain === 'pr' && action === 'create') {
+          if (existing) exitCode = 1
+          output = url
+        } else if (domain === 'pr' && action === 'merge') {
+          if (mergeFails) {
+            exitCode = 1
+            stderr = 'Pull request is not mergeable: required checks have not passed'
+          } else {
+            view.state = 'MERGED'
+          }
+        }
       }
-      if (domain === 'pr' && action === 'checks' && argv.includes('--json')) output = JSON.stringify(buckets.map(bucket => ({ bucket })))
-      return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { readFrom: () => ({ text: output, lossy: false }) } } }
+      return {
+        done: Promise.resolve({ exitCode }),
+        collected: {
+          stdout: { readFrom: () => ({ text: output, lossy: false }) },
+          stderr: { readFrom: () => ({ text: stderr, lossy: false }) },
+        },
+      }
     },
   } }
-  return { ctx, calls }
+  return { ctx, calls, view }
 }
 
 test('strict GitHub origin parsing rejects credentials and alternate hosts', () => {
@@ -45,21 +80,55 @@ test('projects without a GitHub remote use the explicit local path', async () =>
   assert.equal(await githubOrigin(ctx, '/fixture', new AbortController().signal), undefined)
 })
 
-test('an exact reviewed PR merges only after at least one required check passes', async () => {
-  const { ctx, calls } = fixture(['pass'])
-  const states = []
-  await deliverGithub(ctx, task, origin, new AbortController().signal, next => states.push(next.status))
-  assert.deepEqual(states, ['awaiting-ci', 'merged'])
-  const merge = calls.find(args => args[2] === 'merge')
-  assert.ok(merge)
-  assert.deepEqual(merge.slice(-2), ['--match-head-commit', head])
-  assert.ok(calls.find(args => args.includes(`${head}:refs/heads/sl-feature`)))
+test('publishing pushes the reviewed head, creates a pull request and records it', async () => {
+  const { ctx, calls } = fixture()
+  const recorded = []
+  const result = await publishGithub(ctx, task, origin, new AbortController().signal, next => recorded.push(next))
+  assert.equal(result.state, 'OPEN')
+  assert.equal(result.number, '7')
+  assert.deepEqual(recorded, [{ status: 'awaiting-ci', prUrl: url, prState: 'OPEN' }])
+  assert.ok(calls.some(args => args[0] === 'git' && args.includes(`${head}:refs/heads/sl-feature`)))
+  assert.ok(calls.some(args => args[0] === 'gh' && args[2] === 'create'))
 })
 
-test('absent checks, failed checks and moved PR heads all prevent the merge call', async () => {
-  for (const [checks, moved] of [[[], false], [['pass', 'fail'], false], [['pass'], true]]) {
-    const { ctx, calls } = fixture(checks, moved)
-    await assert.rejects(deliverGithub(ctx, task, origin, new AbortController().signal, () => {}))
-    assert.ok(!calls.some(args => args[2] === 'merge'))
+test('publishing reuses an exact pull request and pushes a moved head without a duplicate', async () => {
+  const exactRun = fixture({ existing: true, exact: true })
+  const recorded = []
+  const exact = await publishGithub(exactRun.ctx, task, origin, new AbortController().signal, next => recorded.push(next))
+  assert.deepEqual([exact.adopted, exact.url, ...recorded.map(value => value.status)], [true, url, 'awaiting-ci'])
+  assert.ok(!exactRun.calls.some(args => args[0] === 'git' || (args[0] === 'gh' && args[2] === 'create')))
+  const movedRun = fixture({ existing: true, exact: false })
+  const moved = await publishGithub(movedRun.ctx, task, origin, new AbortController().signal)
+  assert.equal(moved.url, url)
+  assert.equal(movedRun.view.headRefOid, head)
+  assert.ok(movedRun.calls.some(args => args[0] === 'git' && args.includes(`${head}:refs/heads/sl-feature`)))
+  assert.ok(!movedRun.calls.some(args => args[0] === 'gh' && args[2] === 'create'))
+})
+
+test('merging a pull request pins the reviewed head and records the merged state', async () => {
+  const { ctx, calls, view } = fixture({ existing: true })
+  const recorded = []
+  const result = await mergeGithub(ctx, task, origin, new AbortController().signal, next => recorded.push(next))
+  assert.equal(result.state, 'MERGED')
+  assert.equal(view.state, 'MERGED')
+  assert.deepEqual(recorded, [{ status: 'merged', prUrl: url, prState: 'MERGED' }])
+  const merge = calls.find(args => args[0] === 'gh' && args[2] === 'merge')
+  assert.ok(merge)
+  assert.deepEqual(merge.slice(merge.indexOf('--match-head-commit')), ['--match-head-commit', head])
+  assert.ok(merge.includes('--merge'))
+})
+
+test('merging refuses a moved, conflicting or foreign pull request without calling merge', async () => {
+  for (const { ctx, calls } of [fixture({ existing: true, exact: false }), fixture({ existing: true, mergeable: 'CONFLICTING' })]) {
+    await assert.rejects(mergeGithub(ctx, task, origin, new AbortController().signal))
+    assert.ok(!calls.some(args => args[0] === 'gh' && args[2] === 'merge'))
   }
+  const foreign = fixture({ existing: true })
+  await assert.rejects(mergeGithub(foreign.ctx, { ...task, prUrl: 'https://github.com/other/repo/pull/7' }, origin, new AbortController().signal), /does not belong/)
+  assert.ok(!foreign.calls.some(args => args[0] === 'gh' && args[2] === 'merge'))
+})
+
+test('a merge blocked by GitHub reports the CLI reason', async () => {
+  const { ctx } = fixture({ existing: true, mergeFails: true })
+  await assert.rejects(mergeGithub(ctx, task, origin, new AbortController().signal), /required checks have not passed/)
 })

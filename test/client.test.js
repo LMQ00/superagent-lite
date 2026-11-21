@@ -373,3 +373,32 @@ test('filters pull requests by state and search, and opens a row into commits, f
   assert.equal(detailRequests.length, 2)
   board.dispose()
 })
+
+test('shows why a Git action is unavailable and reports the completed action', async () => {
+  const requests = []
+  const tasks = [{ id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'awaiting-merge', workerSessionId: 'worker-a', parentSessionId: 'parent-a',
+    git: { branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true, merged: false, unmerged: true, canMerge: false, canPublish: true, mergeReason: 'The target checkout has uncommitted changes' } }]
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path.startsWith('/superagent-lite/git?taskId=')) return { ok: true, json: async () => ({ commits: [], files: [] }) }
+      if (path === '/superagent-lite/git') return { ok: true, json: async () => ({}) }
+      return { ok: true, json: async () => ({ tasks }) }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  nodes(tree).find(node => node.type === 'button' && node.props.className === 'sl-pr__row').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Merge into master: The target checkout has uncommitted changes/)
+  assert.equal(nodes(tree).find(node => node.type === 'button' && text(node) === 'Merge into master').props.disabled, true)
+  nodes(tree).find(node => node.type === 'button' && text(node) === 'Send pull request').props.onClick()
+  for (let step = 0; step < 2; step += 1) { board.render(); await flush() }
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
+  assert.deepEqual(JSON.parse(requests.find(request => request.path === '/superagent-lite/git').options.body), { taskId: 'a', action: 'publish' })
+
+  board.dispose()
+})
