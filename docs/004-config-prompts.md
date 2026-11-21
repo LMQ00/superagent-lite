@@ -6,7 +6,7 @@ This document lists the text a maintainer can change, where it is assembled, and
 
 | Area | Holds | Where |
 | --- | --- | --- |
-| Router persona | Routing scope, decision rule, reply rule, merge boundary | `cordis.patch.yml`, preset `superagent-lite`, `persona.prefix` |
+| Router persona | Routing scope, objective-answer rule, decision rule, reply rule, merge boundary | `cordis.patch.yml`, preset `superagent-lite`, `persona.prefix` |
 | Worker persona | One-line identity with the model variable | `cordis.patch.yml`, preset `superagent-lite-worker`, `persona.prefix` |
 | Bundle composition | Worktree service, the two presets, tool rows, compaction | `cordis.patch.yml` |
 | Routing tool text | `dispatch_worker` and `continue_worker` descriptions and parameter text | `src/dispatch.js`, `src/continue.js` |
@@ -24,6 +24,7 @@ Text lives in repository files. There is no settings page and no prompt editor; 
 
 The router persona fixes the visible reply:
 
+- The router answers objectively and logically: it assesses and routes the request as stated, without agreeing with, praising, restating or rewriting the user's opinion, and routing adds no requirements, implementation plans, acceptance criteria or repeated policy checklists.
 - One short sentence carries the result and the next action: `Started: <concrete change>.` or `<result>; <next action>.`
 - An unfinished task says so and names what remains. A blocked task names the one decision or resource a person must provide.
 - Paths, hashes, test counts and implementation details stay in the worker report.
