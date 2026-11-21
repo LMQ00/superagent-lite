@@ -91,6 +91,7 @@ function gitFixture({ worktreeHead = head, dirty = '', targetDirty = '', merged 
 
 test('pull request URLs are restricted to GitHub pull requests', () => {
   assert.equal(pullRequestUrl(prUrl), prUrl)
+  assert.equal(pullRequestUrl(`${prUrl}/`), prUrl)
   for (const value of [undefined, 'javascript:alert(1)', 'https://github.com.evil.test/example/project/pull/7', 'https://github.com/example/project/issues/7']) {
     assert.equal(pullRequestUrl(value), undefined)
   }

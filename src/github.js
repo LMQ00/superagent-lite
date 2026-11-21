@@ -11,7 +11,7 @@ export function pullRequestUrl(value) {
   try {
     const url = new URL(value)
     if (url.origin === 'https://github.com' && !url.username && !url.password &&
-        /^\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+\/pull\/\d+\/?$/.test(url.pathname)) return url.href
+        /^\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+\/pull\/\d+\/?$/.test(url.pathname)) return url.href.replace(/\/$/, '')
   } catch {
     return undefined
   }
