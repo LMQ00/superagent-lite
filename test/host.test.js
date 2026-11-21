@@ -75,8 +75,9 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
         assert.equal(spec.agentPreset, undefined)
         assert.match(spec.prompt[0].text, /updated/)
         assert.match(spec.prompt[0].text, /do not assume repository state beyond them/)
-        assert.match(spec.prompt[0].text, /Block only for a concrete correctness/)
-        assert.match(spec.prompt[0].text, /non-blocking findings/)
+        assert.match(spec.prompt[0].text, /Approve only when the change is correct/)
+        assert.match(spec.prompt[0].text, /Block for a concrete correctness/)
+        assert.match(spec.prompt[0].text, /do not block on style preferences/)
         return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed', structured: { approved: true, findings: '' } }) }
       },
     },
@@ -111,6 +112,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   assert.equal(reviewCalls, 1)
   const message = createMessageRouterTool(ctx, worker, dispatched.taskId)
   assert.match(message.description, /Do not send routine progress/)
+  assert.match(message.description, /including a follow-up that does not belong/)
   await message.execute({ message: 'Done on sl-fixture' }, { agent: worker, signal })
   assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])
   assert.equal((await readTask(dispatched.taskId)).review.head, head)
