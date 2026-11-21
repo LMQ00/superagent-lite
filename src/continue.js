@@ -23,9 +23,9 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Requirements update for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
+          text: `Follow-up for the same task. First decide whether it belongs to this task and stays within its existing scope. If it is a different task or changes a settled requirement, do not apply it; report the mismatch with message_router. Otherwise apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
-        return `Update delivered to running worker ${record.workerSessionId} for ${taskId}.`
+        return `Follow-up delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
       await updateTask(taskId, current => {
         if (!current.worktree || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
@@ -36,7 +36,7 @@ export function createContinueTool(ctx) {
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
+          text: `Continue the same task in your assigned worktree. Decide whether this follow-up belongs to the task and its scope before applying it; if not, report the mismatch with message_router. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
