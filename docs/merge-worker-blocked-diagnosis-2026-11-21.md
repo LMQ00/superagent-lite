@@ -2,11 +2,11 @@
 
 被审对象：分支 `sl-superagent-lite-10691e5b98883bc1` 上的本文件提交（`git log` 可见）；基线为合并目标 master 的 HEAD `8d572fa360c075fed73e564b766a5248db0bdbf9`。文件按事故日期命名，长期说明以 `docs/DETAIL.md` 为准。范围：只诊断，未改代码、未执行合并。命令输入为合法 16 位任务 ID，参数本身通过校验。
 
-环境与采集时间：`gh version 2.104.0 (2026-11-12)`、`node v26.13.1`、`Linux 7.3.4`；证据采集于 2026-11-21T14:02–14:05+08:00（Asia/Shanghai）。任务 JSON 的 mtime：`7ca2bbe1` 12:44:39、`b81edda` 11:27:05、`0258beac` 12:13:06、`fe847302` 10:49:54、`0c6e6374` 12:24:20、`df729be0` 13:34:59（均 +0800）。
+行号约定：所有 `file:line` 以基线 `8d572fa` 为准；关键判定处同时给出函数/条件名（如 `mergeCommand` 的 `status !== 'awaiting-merge'`），便于重构后定位。环境与采集时间：`gh version 2.104.0 (2026-11-12)`、`node v26.13.1`、`Linux 7.3.4`；证据采集于 2026-11-21T14:02–14:05+08:00（Asia/Shanghai）。任务 JSON 的 mtime：`7ca2bbe1` 12:44:39、`b81edda` 11:27:05、`0258beac` 12:13:06、`fe847302` 10:49:54、`0c6e6374` 12:24:20、`df729be0` 13:34:59（均 +0800）。
 
 ## 结论（先回答）
 
-- **不能通过 `/merge-worker` 合并**：命令只接受 `status === 'awaiting-merge'` 的任务（`src/merge.js:25`）。用户四条里，两条 approved 的任务是 `delivery-blocked`（GitHub 投递在 required-checks 门禁失败：仓库没有 required checks，`gh pr checks --required` 因此 exit 1），两条是 `review-required`（review 未通过/未做）。两类都到不了 `awaiting-merge`，但原因不同。
+- **不能通过 `/merge-worker` 合并**：命令只接受 `status === 'awaiting-merge'` 的任务（`src/merge.js:25`）。用户四条里，两条 approved 的任务是 `delivery-blocked`（GitHub 投递在 checks 门禁失败：仓库完全没有 checks，无 `.github/workflows`，`gh pr checks` 无论是否加 `--required` 都 exit 1），两条是 `review-required`（review 未通过/未做）。两类都到不了 `awaiting-merge`，但原因不同。
 - **两条已 approved 的提交仍可合入**：Host 已推送并创建 PR（#4、#2），PR `state=OPEN`、`isDraft=false`、`mergeable=MERGEABLE`、`mergeStateStatus=CLEAN`、`baseRefName=master`、`isCrossRepository=false`，且 `headRefOid` 逐字等于 `review.head`。走 PR 合并即可，不需要 `/merge-worker`。
 - **报错原因不是**状态丢失、宿主重启、插件副本加载、HEAD 前移或命令参数错误；是任务状态不满足 `awaiting-merge`（两条 `delivery-blocked`、两条 `review-required`），而命令只认 `awaiting-merge`。
 - **已知缺口**：PR 合并不会回写任务状态，面板仍显示 `delivery-blocked`，`/merge-worker` 之后仍报同一句；本地 master 也仍停在 `8d572fa`，需要 `git pull`。当前代码没有 PR 状态回收入口。
@@ -70,6 +70,9 @@
 $ gh pr checks 4 --repo github.com/LMQ00/superagent-lite --required
 [stderr] no checks reported on the 'sl-superagent-lite-7ca2bbe11a9d6cec' branch
 exit=1
+$ gh pr checks 4 --repo github.com/LMQ00/superagent-lite
+[stderr] 同上
+exit=1
 $ gh pr checks 2 --repo github.com/LMQ00/superagent-lite --required
 [stderr] no checks reported on the 'sl-superagent-lite-b81eddab113e99cb' branch
 exit=1
@@ -117,11 +120,11 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
    - 用 `--merge` 会保留 reviewed commit 本身进入 master 历史；若改用 `--squash`，master 上只会得到一个新的 squash 提交（内容等价、SHA 不同），reviewed SHA 不会出现在历史里。仓库无分支保护、无 required checks，不需要 `--admin`。
    - **串行合并**：先合 #4，再 `git pull`，然后按上面的命令合 #2；每次合并后重新检查下一个 PR 的 `mergeable,mergeStateStatus,headRefOid`（多个分支同源改动，前一次合并可能让后一个变成 `CONFLICTING`）。
    - 合并后本地要 `git pull` 才会看到 master 前进（当前仍是 `8d572fa`）。
-2. **PR 合并不会更新任务状态**（已知缺口）：任务 JSON 仍是 `delivery-blocked`，面板不会自动变成 `merged`，再执行 `/merge-worker` 仍报同一句。验收口径以 `gh pr view <n> --json state` 的 `MERGED` 为准，不要看面板；当前代码没有 PR 状态回收/重试入口（`src/continue.js:31` 也不接受 `delivery-blocked`）。手工回写状态的临时做法及其风险见文末附录，不要放进正常流程。
+2. **PR 合并不会更新任务状态**（已知缺口）：任务 JSON 仍是 `delivery-blocked`，面板不会自动变成 `merged`，再执行 `/merge-worker` 仍报同一句。验收口径以 `gh pr view <n> --json state` 的 `MERGED` 为准，不要看面板。证据：全仓检索 `deliverGithub` 只有 `index.js:113` 一个调用点（`subagent/end` 收尾流程）；`src/github.js:36` 的 `gh pr view` 与 `publish({ status: 'awaiting-ci' })`、GitHub 路径的 `merged`/`merge-queued` 写入都只在该函数内部（本地路径的 `merged` 写于 `src/merge.js:54`）；`src/continue.js:31` 不接受 `delivery-blocked`。因此 `delivery-blocked` 之后没有再次读取 PR 状态并回写任务的入口，不要手工伪造 `merged`（原因见附录）。
 3. **不要重新 `review_worker_commit`**：review 结论仍有效且已钉住 head；worker 已结束被冻结，review 工具要求 `task.status === 'running'`（`src/review.js:30`），当前也调不动。即便能调，也会再次走同一条 GitHub 投递路径，在同一个 required-checks 门禁再次失败。
 4. **不要重启宿主**：状态在磁盘，重启不会把 `delivery-blocked` 变回 `awaiting-merge`，也没有启动重试。
 5. **不要改命令写法**：参数无误。
-6. 手工改状态 + 删 origin 的本地合并 workaround 见文末附录（**强烈不推荐**，仅留作理解状态机的参考）。
+6. 不要用“删 origin + 手工改任务状态”绕过判定链；附录只解释为什么不要这样做，不提供步骤。
 
 ## 判定逻辑缺陷与修法建议（本轮不改代码）
 
