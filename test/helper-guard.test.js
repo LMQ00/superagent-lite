@@ -56,14 +56,14 @@ test('the helper guard allows read-only inspection and confines its shell', () =
   assert.deepEqual(appends, [['sandbox/mode', { mode: 'read-only', source: 'delegation' }]])
   for (const name of [
     'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh',
-    'read_page', 'web_fetch', 'web_search', 'x_search', 'skill', 'todo_write',
-    'working_directory', 'job_output', 'job_list',
+    'read_page', 'web_fetch', 'web_search', 'x_search', 'job_output', 'job_list',
   ]) {
     assert.equal(check({ name }), undefined, name)
   }
   for (const name of [
     'write', 'edit', 'create_worktree', 'review_worker_commit', 'message_router',
     'superagent_memory', 'extract_team_memory', 'subagent', 'job_kill', 'present',
+    'skill', 'todo_write', 'working_directory',
   ]) {
     assert.match(check({ name }), /Read-only helpers cannot use/, name)
   }

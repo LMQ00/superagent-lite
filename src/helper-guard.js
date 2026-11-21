@@ -10,9 +10,6 @@ const READ_ONLY_TOOLS = new Set([
   'web_fetch',
   'web_search',
   'x_search',
-  'skill',
-  'todo_write',
-  'working_directory',
   'job_output',
   'job_list',
 ])
