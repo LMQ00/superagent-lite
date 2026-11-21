@@ -95,6 +95,12 @@ test('the helper guard rechecks shell confinement for every call', () => {
   assert.equal(check({ name: 'read' }), undefined)
 })
 
+test('the helper guard refuses sandbox escalation from a shell call', () => {
+  const { check } = registerHelper()
+  assert.match(check({ name: 'bash', arguments: { command: 'pwd', sandbox_permissions: 'danger-full-access' } }), /widen the sandbox/)
+  assert.equal(check({ name: 'bash', arguments: { command: 'pwd' } }), undefined)
+})
+
 test('a real Session log accepts the helper read-only override', { skip: !anchor }, async () => {
   const require = createRequire(join(anchor, 'package.json'))
   const { Session } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session')).href)

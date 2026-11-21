@@ -37,11 +37,16 @@ export function registerReadOnlyGuard(agent) {
   // The helper inherits the worker composition, so its shell could write; a
   // session-level override confines every shell call to read-only file effects.
   agent.session.append('sandbox/mode', { mode: 'read-only', source: 'delegation' })
+  // sandboxMode marks a mounted executor that can confine; the effective mode
+  // is resolved per call so a later sandbox switch fails closed.
   const shellConfined = session => agent.ctx.get('shell')?.sandboxMode !== undefined &&
     agent.ctx.get('sandboxPolicy')?.resolve({ session })?.mode === 'read-only'
-  agent.ctx.tools.guard(({ name, agent: caller }) => {
+  agent.ctx.tools.guard(({ name, arguments: input, agent: caller }) => {
     if (READ_ONLY_TOOLS.has(name)) return undefined
     if (SHELL_TOOLS.includes(name)) {
+      if (input?.sandbox_permissions !== undefined) {
+        return `Read-only helpers cannot widen the sandbox for "${name}".`
+      }
       return shellConfined(caller?.session ?? agent.session) ? undefined
         : `Read-only helpers cannot run "${name}" because this composition does not confine shell file writes.`
     }
