@@ -50,7 +50,8 @@ window.__ModuleLoader__.load({
     // Page, list rows and controls use only `--dsw-alias-*` theme tokens, matching the DSH panel in the prototype.
     const styles = `
       .sl-board{box-sizing:border-box;height:100%;overflow:auto;container-type:inline-size;padding:0 clamp(24px,4vw,48px) 48px;padding-inline-start:max(clamp(24px,4vw,48px),var(--dsh-frame-leading-clearance,0px));color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base)}
-      .sl-column{display:flex;flex-direction:column;gap:24px;max-width:960px;margin:0 auto;padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
+      .sl-column{display:flex;flex-direction:column;gap:24px;max-width:960px;margin:0 auto;padding-top:28px}
+      html[data-platform='darwin'] .sl-column{padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
       .sl-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
       .sl-head h1{margin:0;font-size:20px;line-height:28px;font-weight:500;overflow-wrap:anywhere}
       .sl-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
@@ -114,7 +115,8 @@ window.__ModuleLoader__.load({
         .sl-row{grid-template-columns:minmax(0,1fr);grid-template-areas:"stage" "title" "meta" "actions";row-gap:6px}
         .sl-row__stage{border-right:0;padding-top:0}
         .sl-head h1{font-size:17px;line-height:24px}
-        .sl-column{padding-top:calc(20px + var(--dsh-frame-top-clearance,0px))}
+        .sl-column{padding-top:20px}
+        html[data-platform='darwin'] .sl-column{padding-top:calc(20px + var(--dsh-frame-top-clearance,0px))}
         .sl-select{min-width:0;width:100%}
         .sl-field{flex:1 1 160px}
       }
