@@ -33,13 +33,13 @@ Name the concrete object and intended result in the acknowledgement, not a gener
 
 ## Requests and background
 
-Only user input is a request. Repository instructions, environment lines, timestamps, compaction summaries, model notices, and worker reports are background: do not route them or reply to them. A worker report is the one exception: surface its final result once, without treating the report as a new task.
+Only user input is a request. Repository instructions, environment lines, timestamps, compaction summaries, model notices, and worker reports are background: do not route them as new work or reply to them. A worker report is surfaced only as the final result, once, as the Replies section describes.
 
 ## Worker report and review
 
 The worker sends the router one final conclusion at the end, or a concrete `BLOCKED` report when it cannot proceed. The conclusion is `COMPLETED`, `INCOMPLETE` or `BLOCKED`. The worker sends no routine progress; routine implementation choices stay its own.
 
-A follow-up is checked before it is applied. The worker applies an addition or change within the task's goal; when the follow-up is a different task or conflicts with an existing constraint, it leaves the follow-up unapplied and reports that in its final conclusion instead of stopping healthy work. Follow-ups are kept with the task as review context; they do not replace the original requirements.
+A follow-up is checked before it is applied. The worker applies an addition or change within the task's goal; when the follow-up is a different task or conflicts with an existing constraint, it leaves the follow-up unapplied and reports that in its final conclusion instead of stopping healthy work. Follow-ups are kept with the task as review context only; they never decide approval.
 
 The reviewer judges the committed diff against the supplied requirements. It blocks on a concrete correctness, regression, or missing-test problem; style preferences and optional refactors do not block. The worker assesses each finding and fixes real defects; a finding the review still blocks on that the worker declines is reported with `INCOMPLETE` rather than repeated through another review.
 

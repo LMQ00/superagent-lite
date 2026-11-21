@@ -1,7 +1,17 @@
 import { readTask, updateTask } from './task-store.js'
 
 function withFollowUp(task, followUp) {
-  return [...(task.followUps ?? []), followUp].slice(-10)
+  return [...(task.followUps ?? []), followUp]
+}
+
+async function recordFollowUp(ctx, taskId, text) {
+  try {
+    await updateTask(taskId, current => ({ followUps: withFollowUp(current, text) }))
+    return true
+  } catch (error) {
+    ctx.logger?.warn(`superagent-lite follow-up record failed: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
 }
 
 export function createContinueTool(ctx) {
@@ -29,8 +39,8 @@ export function createContinueTool(ctx) {
           type: 'text',
           text: `Follow-up for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it; keep working on the current task and include the unapplied follow-up in your final report. Otherwise apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
-        await updateTask(taskId, current => ({ followUps: withFollowUp(current, text) }))
-        return `Follow-up delivered to running worker ${record.workerSessionId} for ${taskId}.`
+        const recorded = await recordFollowUp(ctx, taskId, text)
+        return `Follow-up delivered to running worker ${record.workerSessionId} for ${taskId}${recorded ? '' : '; it could not be recorded for review'}.`
       }
       await updateTask(taskId, current => {
         if (!current.worktree || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
@@ -43,12 +53,12 @@ export function createContinueTool(ctx) {
           type: 'text',
           text: `Continue the same task in your assigned worktree. Decide whether this follow-up belongs to the task; apply it if it stays within the task's goal, and if it is a different task or conflicts with an existing constraint, do not apply it; report in your final conclusion that the follow-up does not belong, without expanding the task. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
-        await updateTask(taskId, current => ({ followUps: withFollowUp(current, text) }))
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
         throw error
       }
-      return `Follow-up delivered to worker ${record.workerSessionId} for ${taskId}; the worker decides whether it belongs.`
+      const recorded = await recordFollowUp(ctx, taskId, text)
+      return `Follow-up delivered to worker ${record.workerSessionId} for ${taskId}; the worker decides whether it belongs${recorded ? '' : '; the follow-up could not be recorded for review'}.`
     },
   }
 }
