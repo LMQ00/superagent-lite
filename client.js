@@ -17,6 +17,13 @@ window.__ModuleLoader__.load({
         'status.awaiting-merge': 'Waiting for merge', 'status.merged': 'Merged',
         'status.merge-conflict': 'Merge conflict', 'status.merge-queued': 'Merge queued',
         'status.unconfirmed': 'Not confirmed', 'status.worker-finished': 'Worker finished', 'status.unknown': 'Unknown',
+        gitTitle: 'Git branches', gitEmpty: 'No worker branches yet.',
+        branch: 'Branch', baseBranch: 'Base branch', repository: 'Repository', pullRequestState: 'Pull request',
+        unmergedChanges: 'Unmerged commits', noUnmergedChanges: 'No unmerged commits',
+        reviewApproved: 'Review approved', reviewNotApproved: 'Review not approved', reviewStale: 'Review record is stale',
+        mergeInto: 'Merge into', publishPullRequest: 'Send pull request', gitWorking: 'Working…',
+        gitFailed: 'The Git action failed.',
+        'pr.open': 'Open', 'pr.merged': 'Merged', 'pr.closed': 'Closed', 'pr.unknown': 'Unknown',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -31,6 +38,13 @@ window.__ModuleLoader__.load({
         'status.awaiting-merge': '等待合并', 'status.merged': '已合并',
         'status.merge-conflict': '合并冲突', 'status.merge-queued': '已进入合并队列',
         'status.unconfirmed': '未确认', 'status.worker-finished': 'Worker 已结束', 'status.unknown': '未知',
+        gitTitle: 'Git 管理', gitEmpty: '暂无 worker 分支。',
+        branch: '分支', baseBranch: '基础分支', repository: '仓库', pullRequestState: '拉取请求',
+        unmergedChanges: '有未合并改动', noUnmergedChanges: '无未合并改动',
+        reviewApproved: '审查已通过', reviewNotApproved: '审查未通过', reviewStale: '审查记录已过期',
+        mergeInto: '合并到', publishPullRequest: '发送 PR', gitWorking: '处理中…',
+        gitFailed: 'Git 操作失败。',
+        'pr.open': '打开', 'pr.merged': '已合并', 'pr.closed': '已关闭', 'pr.unknown': '未知',
       },
     }
     const styles = `
@@ -48,7 +62,10 @@ window.__ModuleLoader__.load({
       .sl-board__list{display:grid;gap:8px;padding:0;list-style:none}
       .sl-board__task{display:grid;gap:8px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:12px;overflow-wrap:anywhere}
       .sl-board__task h2{margin:0;font-size:1rem}
+      .sl-board__task h3{margin:0;font-size:.95rem}
       .sl-board__task p{margin:0}
+      .sl-board__git{margin-top:24px}
+      .sl-board__git h2{font-size:1.1rem;margin:0 0 12px}
       .sl-board__meta{color:var(--dsw-alias-label-secondary)}
       .sl-board__error{color:var(--dsw-alias-state-error-primary)}
       .sl-board a{color:var(--dsw-alias-brand-primary)}
@@ -79,8 +96,11 @@ window.__ModuleLoader__.load({
       const [team, setTeam] = useState('')
       const [project, setProject] = useState('')
       const [openFailed, setOpenFailed] = useState(false)
+      const [gitPending, setGitPending] = useState('')
+      const [gitError, setGitError] = useState('')
       const active = useRef(null)
       const headingId = useId()
+      const gitHeadingId = useId()
 
       useEffect(() => {
         const controller = new AbortController()
@@ -118,6 +138,7 @@ window.__ModuleLoader__.load({
         active.current?.abort()
         setPhase('loading')
         setOpenFailed(false)
+        setGitError('')
         setRevision(value => value + 1)
       }
       const filter = (label, empty, key, value, set) => h('label', null, t(label),
@@ -136,6 +157,56 @@ window.__ModuleLoader__.load({
             setOpenFailed(true)
           }
         } }, text)
+      }
+      const gitAction = async (taskId, action) => {
+        setGitPending(`${taskId}:${action}`)
+        setGitError('')
+        try {
+          const response = await fetch('/superagent-lite/git', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ taskId, action }),
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('gitFailed'))
+          refresh()
+        } catch (error) {
+          setGitError(typeof error?.message === 'string' && error.message ? error.message : t('gitFailed'))
+        } finally {
+          setGitPending('')
+        }
+      }
+      const branches = shown.filter(task => task.git && typeof task.git.branch === 'string')
+      const prState = value => {
+        const key = `pr.${String(value).toLowerCase()}`
+        return Object.hasOwn(dictionaries.en, key) ? t(key) : String(value)
+      }
+      const branchRow = task => {
+        const git = task.git
+        const status = `status.${task.status}`
+        const pending = gitPending.startsWith(`${task.id}:`)
+        const pr = pullRequestHref(task.prUrl)
+        return h('li', { key: `git-${task.id}`, className: 'sl-board__task' },
+          h('h3', null, task.title || task.id),
+          h('p', { className: 'sl-board__meta' }, h('code', null, task.id), ' · ', h('code', null, git.branch)),
+          h('p', null, t(Object.hasOwn(dictionaries.en, status) ? status : 'status.unknown'),
+            ' · ', git.unmerged ? t('unmergedChanges') : t('noUnmergedChanges'),
+            ' · ', git.reviewed ? t('reviewApproved') : git.approved ? t('reviewStale') : t('reviewNotApproved')),
+          h('p', { className: 'sl-board__meta' }, `${t('baseBranch')}: ${git.baseBranch}`,
+            git.repository ? ` · ${t('repository')}: ${git.repository}` : ''),
+          git.pr?.state && h('p', { className: 'sl-board__meta' }, `${t('pullRequestState')}: ${prState(git.pr.state)}`),
+          h('div', { className: 'sl-board__actions' },
+            h('button', { type: 'button', disabled: pending || !git.canMerge, title: git.mergeReason,
+              onClick: () => void gitAction(task.id, 'merge') }, `${t('mergeInto')} ${git.baseBranch}`),
+            h('button', { type: 'button', disabled: pending || !git.canPublish, title: git.publishReason,
+              onClick: () => void gitAction(task.id, 'publish') }, t('publishPullRequest')),
+            pending && h('span', { className: 'sl-board__meta' }, t('gitWorking')),
+            pr && h('a', { href: pr, target: '_blank', rel: 'noopener noreferrer' }, t('pr'))))
       }
 
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
@@ -167,7 +238,13 @@ window.__ModuleLoader__.load({
               h('div', { className: 'sl-board__actions' },
                 session('router', task.parentSessionId), session('worker', task.workerSessionId, address),
                 pr && h('a', { href: pr, target: '_blank', rel: 'noopener noreferrer' }, t('pr'))))
-          }))))
+          })),
+          phase === 'ready' && h('section', { className: 'sl-board__git', 'aria-labelledby': gitHeadingId },
+            h('h2', { id: gitHeadingId }, t('gitTitle')),
+            gitError && h('p', { role: 'alert', className: 'sl-board__error' }, gitError),
+            branches.length === 0
+              ? h('p', { role: 'status', className: 'sl-board__meta' }, t('gitEmpty'))
+              : h('ul', { className: 'sl-board__list' }, ...branches.map(branchRow)))))
     }
 
     function PanelIcon({ size }) {

@@ -174,3 +174,76 @@ test('reports a load error and can refresh without workspace navigation', async 
   assert.equal(nodes(tree).filter(node => node.type === 'button').length, 1)
   board.dispose()
 })
+
+test('lists worker branches in the Git area and sends the chosen merge action', async () => {
+  const requests = []
+  let merged = false
+  const branchTasks = () => [{
+    id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one',
+    status: merged ? 'merged' : 'awaiting-merge', workerSessionId: 'worker-a', parentSessionId: 'parent-a',
+    git: {
+      branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true,
+      merged, unmerged: !merged, uncommitted: false, onBranch: true,
+      canMerge: !merged, canPublish: false,
+      publishReason: 'This project has no GitHub origin',
+    },
+  }]
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        assert.equal(options.method, 'POST')
+        assert.equal(options.credentials, 'same-origin')
+        assert.equal(options.headers['content-type'], 'application/json')
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'merge' })
+        merged = true
+        return { ok: true, json: async () => ({ status: 'merged' }) }
+      }
+      return { ok: true, json: async () => ({ tasks: branchTasks() }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /Git 管理/)
+  assert.match(text(tree), /sl-a/)
+  assert.match(text(tree), /有未合并改动/)
+  const merge = nodes(tree).find(node => node.type === 'button' && text(node) === '合并到 master')
+  assert.ok(merge)
+  assert.equal(merge.props.disabled, false)
+  merge.props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
+  assert.match(text(tree), /无未合并改动/)
+  assert.equal(nodes(tree).find(node => node.type === 'button' && text(node) === '合并到 master').props.disabled, true)
+  board.dispose()
+})
+
+test('shows the Git action error returned by the host', async () => {
+  const board = setup({
+    fetch: async (path) => path === '/superagent-lite/git'
+      ? { ok: false, json: async () => ({ error: 'Merge would conflict' }) }
+      : { ok: true, json: async () => ({ tasks: [{
+        id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'awaiting-merge',
+        workerSessionId: 'worker-a', parentSessionId: 'parent-a',
+        git: { branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true, canMerge: true, canPublish: false },
+      }] }) },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  nodes(tree).find(node => node.type === 'button' && text(node) === 'Merge into master').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.match(text(tree), /Merge would conflict/)
+  board.dispose()
+})

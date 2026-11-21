@@ -1,6 +1,8 @@
 import { listTasks } from './task-store.js'
 
-export function createBoardHandler(connection, agents, tasks = listTasks) {
+const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+
+export function createBoardHandler(connection, agents, tasks = listTasks, git) {
   return async (req, res) => {
     const admission = connection.admit(req)
     if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
@@ -12,12 +14,75 @@ export function createBoardHandler(connection, agents, tasks = listTasks) {
       return
     }
     const records = await tasks()
-    const rows = records.map(({ id, title, teamId, projectRoot, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl }) => ({
-      id, title, teamId, projectRoot, workerSessionId, parentSessionId, prUrl,
-      updatedAt: updatedAt ?? createdAt,
-      status: ['starting', 'running', 'resuming'].includes(status) && !agents.get(workerSessionId) ? 'unconfirmed' : status,
-    }))
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
+    const views = git ? await git.list(records, AbortSignal.timeout(30_000)).catch(() => undefined) : undefined
+    const rows = records.map(({ id, title, teamId, projectRoot, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl }) => {
+      const view = views?.get(id)
+      const current = view?.status ?? status
+      const row = {
+        id, title, teamId, projectRoot, workerSessionId, parentSessionId, prUrl,
+        updatedAt: updatedAt ?? createdAt,
+        status: ['starting', 'running', 'resuming'].includes(current) && !agents.get(workerSessionId) ? 'unconfirmed' : current,
+      }
+      return view?.git ? { ...row, git: view.git } : row
+    })
+    res.writeHead(200, JSON_HEADERS)
     res.end(JSON.stringify({ tasks: rows }))
+  }
+}
+
+async function readJsonBody(request, limit) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > limit) {
+      const error = new Error('Request body is too large')
+      error.status = 413
+      throw error
+    }
+    chunks.push(chunk)
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    const error = new Error('Invalid JSON body')
+    error.status = 400
+    throw error
+  }
+}
+
+export function createGitActionHandler(connection, git) {
+  return async (req, res) => {
+    const admission = connection.admit(req)
+    if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
+      res.writeHead(admission.rejection ?? 403, { 'cache-control': 'no-store' }).end()
+      return
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST', 'cache-control': 'no-store' }).end()
+      return
+    }
+    if (String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+      res.writeHead(415, { 'cache-control': 'no-store' }).end()
+      return
+    }
+    let body
+    try {
+      body = await readJsonBody(req, 4096)
+    } catch (error) {
+      res.writeHead(error.status ?? 400, { 'cache-control': 'no-store' }).end(JSON.stringify({ error: error.message }))
+      return
+    }
+    if (typeof body?.taskId !== 'string' || !/^[a-f0-9]{16}$/.test(body.taskId) ||
+        (body.action !== 'merge' && body.action !== 'publish')) {
+      res.writeHead(400, { 'cache-control': 'no-store' }).end(JSON.stringify({ error: 'A task ID and a merge or publish action are required' }))
+      return
+    }
+    try {
+      const result = await git.perform(body.taskId, body.action, AbortSignal.timeout(15 * 60_000))
+      res.writeHead(200, JSON_HEADERS).end(JSON.stringify(result))
+    } catch (error) {
+      res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+    }
   }
 }
