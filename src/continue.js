@@ -10,7 +10,7 @@ function resumingPrompt(record, text) {
     title: record.title,
     teamId: record.teamId,
     baseBranch: record.baseBranch,
-    task: `${record.task}\n\nFollow-up:\n${text}\n\nContinue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.`,
+    task: `${record.task}\n\nFollow-up:\n${text}\n\nContinue the same task in your assigned worktree. Resume from where you stopped; do not redo completed work or repeat the dispatch setup phases. After committing changes, call review_worker_commit again. Do not push or merge.`,
   })
 }
 
