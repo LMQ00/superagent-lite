@@ -36,15 +36,15 @@ function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy } =
 test('only an expected child is claimed as a helper', () => {
   assert.equal(claimHelper('parent'), false)
   expectHelper('parent')
-  assert.equal(claimHelper('parent'), true)
+  assert.deepEqual(claimHelper('parent'), { scope: undefined })
   assert.equal(claimHelper('parent'), false)
 })
 
 test('nested expectations survive one claim and clear together', () => {
   expectHelper('parent')
   expectHelper('parent')
-  assert.equal(claimHelper('parent'), true)
-  assert.equal(claimHelper('parent'), true)
+  assert.deepEqual(claimHelper('parent'), { scope: undefined })
+  assert.deepEqual(claimHelper('parent'), { scope: undefined })
   assert.equal(claimHelper('parent'), false)
   expectHelper('parent')
   clearHelperExpectation('parent')

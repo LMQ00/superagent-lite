@@ -36,6 +36,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const { readTask, updateTask } = await import('../src/task-store.js')
   const { archiveWorkerTurn, createMemoryTool } = await import('../src/memory.js')
   const { createMessageRouterTool } = await import('../src/message-router.js')
+  const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
   const repo = join(root, 'repo')
   const worktree = join(root, 'worktree')
   await mkdir(repo)
@@ -84,15 +85,40 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
         }
         ++reviewCalls
         assert.equal(spec.agentPreset, undefined)
-        assert.match(spec.prompt[0].text, /updated/)
-        assert.match(spec.prompt[0].text, /Judge the committed diff/)
-        assert.match(spec.prompt[0].text, /uncommitted local changes/)
+        assert.match(spec.prompt[0].text, /Read it yourself/)
+        assert.match(spec.prompt[0].text, /only commits/)
+        assert.match(spec.prompt[0].text, /Uncommitted local changes and assumptions about the repository are not part of the change/)
         assert.match(spec.prompt[0].text, /Follow-ups are context only: they can explain additional changes/)
         assert.match(spec.prompt[0].text, /"followUps":\["Add a changelog entry"\]/)
         assert.match(spec.prompt[0].text, /"requirements":"Update notes"/)
         assert.match(spec.prompt[0].text, /Approve only when the change is correct/)
         assert.match(spec.prompt[0].text, /Block for a concrete correctness/)
-        assert.match(spec.prompt[0].text, /do not block on style preferences/)
+        assert.match(spec.prompt[0].text, /cite the file and line/)
+        assert.match(spec.prompt[0].text, /Do not block on style preferences/)
+        assert.ok(spec.prompt[0].text.includes(baseCommit))
+        assert.ok(spec.prompt[0].text.includes(head))
+        assert.ok(spec.prompt[0].text.includes(worktree))
+        assert.doesNotMatch(spec.prompt[0].text, /diff --git/)
+        assert.doesNotMatch(spec.prompt[0].text, /\+updated/)
+        const claim = claimHelper(spec.parent.session.id)
+        assert.ok(claim)
+        const listeners = []
+        const reviewer = {
+          id: 'reviewer',
+          session: { id: 'reviewer', append() {} },
+          ctx: {
+            get: () => undefined,
+            tools: { guard() {} },
+            on(name, fn) { if (name === 'session/event') listeners.push(fn) },
+          },
+        }
+        registerReadOnlyGuard(reviewer, claim.scope)
+        for (const event of [
+          { type: 'tool/call', data: { callId: 'review-diff', name: 'bash', arguments: JSON.stringify({ command: `git diff ${baseCommit}..${head}` }) } },
+          { type: 'tool/result', data: { message: { toolCallId: 'review-diff', isError: false } } },
+        ]) {
+          for (const listener of listeners) listener(reviewer.session, event)
+        }
         return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed', structured: { approved: true, findings: '' } }) }
       },
     },
