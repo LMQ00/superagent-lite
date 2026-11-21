@@ -38,12 +38,13 @@ test('board refuses unauthenticated and non-owner readers without reading disk',
 })
 
 test('board lists only its public view fields to the owner and flags unrecovered tasks', async () => {
-  const rows = [{ id: 'a', task: 'private details', teamId: 'a', status: 'running', workerSessionId: 'w1' }, { id: 'b', status: 'running', workerSessionId: 'w2' }]
+  const rows = [{ id: 'a', task: 'private details', mode: 'report', teamId: 'a', status: 'running', workerSessionId: 'w1' }, { id: 'b', status: 'running', workerSessionId: 'w2' }]
   const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, { get: id => id === 'w1' }, () => rows)
   assert.equal((await request(handler, 'POST')).status, 405)
   const result = await request(handler)
   assert.equal(result.status, 200)
-  assert.deepEqual(JSON.parse(result.body).tasks.map(row => [row.id, row.status, row.task]), [['a', 'running', undefined], ['b', 'unconfirmed', undefined]])
+  assert.deepEqual(JSON.parse(result.body).tasks.map(row => [row.id, row.mode, row.status, row.task]),
+    [['a', 'report', 'running', undefined], ['b', undefined, 'unconfirmed', undefined]])
 })
 
 test('board overlays the Git branch view and reconciled status', async () => {
