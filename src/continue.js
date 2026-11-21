@@ -1,13 +1,37 @@
 import { readTask, updateTask } from './task-store.js'
 import { buildWorkerPrompt } from './worker-prompt.js'
 
-/** Reuse the dispatch task message so every follow-up carries the same fields and phase sections. */
-function followUpPrompt(record, text, instruction) {
+/** A running worker already owns its checkout, so it gets the task message without the dispatch setup phase. */
+function runningFollowUp(record, text) {
+  return [
+    `Project team: ${record.teamId}`,
+    `Base branch: ${record.baseBranch}`,
+    `Task: ${record.title}`,
+    '',
+    'Requirements:',
+    record.task,
+    '',
+    'Follow-up:',
+    text,
+    '',
+    'Before:',
+    '- Use the worktree already assigned to this task; `create_worktree` only re-enters it, never creates a second checkout.',
+    '',
+    'During:',
+    '- Apply the follow-up to your current work; restart only if the change requires it.',
+    '',
+    'After:',
+    '- Commit on the assigned branch and call review_worker_commit; do not push or merge.',
+  ].join('\n')
+}
+
+/** A settled worker resumes from rest, so it gets the full dispatch task message with the follow-up in Requirements. */
+function resumingFollowUp(record, text) {
   return buildWorkerPrompt({
     title: record.title,
     teamId: record.teamId,
     baseBranch: record.baseBranch,
-    task: `${record.task}\n\nFollow-up:\n${text}\n\n${instruction}`,
+    task: `${record.task}\n\nFollow-up:\n${text}\n\nContinue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.`,
   })
 }
 
@@ -34,7 +58,7 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: followUpPrompt(record, text, 'Apply it to your current work; restart only if the change requires it.'),
+          text: runningFollowUp(record, text),
         }], { signal: exec.signal })
         return `Update delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
@@ -47,7 +71,7 @@ export function createContinueTool(ctx) {
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: followUpPrompt(record, text, 'Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again.'),
+          text: resumingFollowUp(record, text),
         }], { signal: exec.signal })
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
