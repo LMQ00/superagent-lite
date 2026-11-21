@@ -112,7 +112,7 @@ Sends the worker's one final conclusion to the router. It requires the active wo
 
 ### `client.js`
 
-The browser panel. It registers the `main` and `sidebar.panellist` slots, the `superagent-lite` locale dictionaries, loads the task list, filters by team and project, renders session and Pull request links, and posts the Git actions. It imports no Node module and holds no state outside React.
+The browser panel. It registers the `main` and `sidebar.panellist` slots and the `superagent-lite` locale dictionaries, loads the task list, groups and filters tasks by the five status categories, filters by team and project, renders session and Pull request links, and posts the Git actions. Git delivery is a supporting list with no second state model. It imports no Node module and holds no state outside React.
 
 ## Dependency rules
 
@@ -191,7 +191,7 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots, the `s
 | Test | Covers |
 | --- | --- |
 | `test/board.test.js` | Owner admission, public task projection, Git overlay, endpoint status codes. |
-| `test/client.test.js` | Slot registration, localized rendering, filters, session navigation, Git actions and errors. |
+| `test/client.test.js` | Slot registration, localized rendering, five-category grouping and filters, session navigation, Git delivery actions and errors. |
 | `test/continue.test.js` | Running, idle and settled follow-up paths, record order and delivery failures. |
 | `test/git-actions.test.js` | Branch view, merge and publish eligibility, PR reconciliation and router access. |
 | `test/github.test.js` | Strict origin parsing, required checks and reviewed-SHA pinning. |

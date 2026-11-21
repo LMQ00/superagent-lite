@@ -79,8 +79,8 @@ The plugin has no standalone process and no CLI, so it has no process exit code.
 | Start | Enable the bundle and start DSH Web |
 | Reload | Disable and enable the bundle, or restart DSH Web |
 | Stop | Disable the bundle, or stop DSH Web |
-| Task status | Open **项目任务**; each row shows the stage from [003 Lifecycle](003-lifecycle.md) |
-| Git action status | The panel's Git area; a failed action shows the host error and the Task stays `delivery-blocked` or `awaiting-merge` |
+| Task status | Open **项目任务**; the five category groups in [005 Panel](005-panel.md), with each row's stage from [003 Lifecycle](003-lifecycle.md) |
+| Git delivery | The panel's Git area lists branches and actions only; it has no separate state. A failed action shows the host error and the Task stays `delivery-blocked` or `awaiting-merge` |
 | Record location | `~/.dsh/superagent-lite/`, split into `tasks/` and `memory/` |
 
 Plugin warnings that are not tied to a Task go to the DSH host log. Dispatch and delivery errors are also stored on the Task in its `failure` field; review and memory errors surface as tool errors.
