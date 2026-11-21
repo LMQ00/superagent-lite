@@ -32,6 +32,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const { createDispatchTool } = await import('../src/dispatch.js')
   const { mergeCommand } = await import('../src/merge.js')
   const { createReviewTool } = await import('../src/review.js')
+  const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
   const { archiveWorkerTurn, createMemoryTool } = await import('../src/memory.js')
   const { createMessageRouterTool } = await import('../src/message-router.js')
@@ -84,6 +85,14 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
         ++reviewCalls
         assert.equal(spec.agentPreset, undefined)
         assert.match(spec.prompt[0].text, /updated/)
+        assert.match(spec.prompt[0].text, /Judge the committed diff/)
+        assert.match(spec.prompt[0].text, /uncommitted local changes/)
+        assert.match(spec.prompt[0].text, /Follow-ups are context only: they can explain additional changes/)
+        assert.match(spec.prompt[0].text, /"followUps":\["Add a changelog entry"\]/)
+        assert.match(spec.prompt[0].text, /"requirements":"Update notes"/)
+        assert.match(spec.prompt[0].text, /Approve only when the change is correct/)
+        assert.match(spec.prompt[0].text, /Block for a concrete correctness/)
+        assert.match(spec.prompt[0].text, /do not block on style preferences/)
         return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed', structured: { approved: true, findings: '' } }) }
       },
     },
@@ -107,6 +116,10 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   git(['commit', '-am', 'change notes'], worktree)
   const head = git(['rev-parse', 'HEAD'], worktree)
   await updateTask(dispatched.taskId, { status: 'running', worktree: { path: worktree, branch } })
+  const continueTool = createContinueTool(ctx)
+  await continueTool.execute({ taskId: dispatched.taskId, task: 'Add a changelog entry' }, { agent: parent, signal })
+  assert.match(sends[0].text, /Add a changelog entry/)
+  sends.length = 0
   const local = mergeCommand(ctx)
   assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'error')
   const review = createReviewTool(ctx, worker, dispatched.taskId)
@@ -116,7 +129,12 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   }
   assert.match(await review.execute({}, { agent: worker, signal }), /Approved/)
   assert.equal(reviewCalls, 1)
+  assert.equal((await readTask(dispatched.taskId)).task, 'Update notes')
   const message = createMessageRouterTool(ctx, worker, dispatched.taskId)
+  assert.match(message.description, /Do not send routine progress/)
+  assert.match(message.description, /any unapplied follow-up/)
+  assert.match(message.description, /reviewed commit when one exists/)
+  assert.doesNotMatch(message.description, /asks for status/)
   await message.execute({ message: 'Done on sl-fixture' }, { agent: worker, signal })
   assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])
   assert.equal((await readTask(dispatched.taskId)).review.head, head)

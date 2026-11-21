@@ -8,7 +8,7 @@ The router makes that one routing call from the input alone. It does not inspect
 
 Prompt text and its editing rules are in [PROMPTS](PROMPTS.md).
 
-The **Project tasks** panel shows task IDs, state, and links to the router, worker, and any GitHub pull request. Its **Git branches** area lists each worker branch with the task ID, branch name, base branch, review state, and whether its commits are still unmerged. Refresh the panel to retrieve the latest status. The router can steer a running worker, or continue an unpublished settled worker, with `continue_worker`. A worker reports progress or its final conclusion to the router with `message_router`; a published change is a separate task.
+The **Project tasks** panel shows task IDs, state, and links to the router, worker, and any GitHub pull request. Its **Git branches** area lists each worker branch with the task ID, branch name, base branch, review state, and whether its commits are still unmerged. Refresh the panel to retrieve the latest status. The router can steer a running worker, or continue an unpublished settled worker, with `continue_worker`. A worker sends its final conclusion, or a concrete blocker, to the router with `message_router`; the conclusion is `COMPLETED`, `INCOMPLETE` or `BLOCKED`, routine progress is not sent, and a published change is a separate task.
 
 A worker that finishes with a clean approved commit settles as `awaiting-merge`; it does not publish automatically. The branch actions in the Git area start delivery, and the router Session must be running with full access for them. Pull-request state is read back from GitHub (`gh pr view`) and the task record is corrected when that state disagrees, so a merged or closed PR is not left showing a stale status.
 

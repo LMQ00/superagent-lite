@@ -31,11 +31,21 @@ async function taskFixture(id, status = 'running') {
   })
 }
 
-function context(sends, workerStatus) {
+function context(sends, workerStatus, onSend) {
   return {
     agents: { get: () => workerStatus === undefined ? undefined : { status: workerStatus } },
-    subagents: { async sendMessage(sender, targetId, content) { sends.push({ sender: sender.id, targetId, text: content[0].text }) } },
+    subagents: {
+      async sendMessage(sender, targetId, content) {
+        await onSend?.()
+        sends.push({ sender: sender.id, targetId, text: content[0].text })
+      },
+    },
   }
+}
+
+async function followUpTexts(id) {
+  const { readTask } = await import('../src/task-store.js')
+  return ((await readTask(id)).followUps ?? []).map(item => item.text)
 }
 
 test('continue_worker keeps steering a worker whose turn is active', async () => {
@@ -44,14 +54,21 @@ test('continue_worker keeps steering a worker whose turn is active', async () =>
   const id = 'aaaaaaaaaaaaaaaa'
   await taskFixture(id)
   const sends = []
-  const tool = createContinueTool(context(sends, 'running'))
+  const followUpsAtSend = []
+  const tool = createContinueTool(context(sends, 'running', async () => followUpsAtSend.push(await followUpTexts(id))))
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
   assert.match(text, /running worker/)
   assert.equal(sends[0].targetId, 'worker')
   assert.match(sends[0].text, /Requirements update/)
+  assert.match(sends[0].text, /First decide whether it belongs to this task/)
+  assert.match(sends[0].text, /keep working on the current task/)
+  assert.match(sends[0].text, /include the unapplied follow-up in your final report/)
+  assert.match(sends[0].text, /restart only if the change requires it/)
   assert.match(sends[0].text, /New requirement/)
   assert.doesNotMatch(sends[0].text, /Project team:/)
+  assert.deepEqual(followUpsAtSend, [['New requirement']])
   assert.equal((await readTask(id)).status, 'running')
+  assert.equal((await readTask(id)).task, originalTask)
 })
 
 test('continue_worker sends the task message to an idle worker whose task is still running', async () => {
@@ -62,14 +79,16 @@ test('continue_worker sends the task message to an idle worker whose task is sti
   const sends = []
   const tool = createContinueTool(context(sends, 'idle'))
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
-  assert.match(text, /Follow-up accepted/)
+  assert.match(text, /Follow-up delivered/)
   assert.equal(sends[0].targetId, 'worker')
   assert.match(sends[0].text, /Project team: team/)
   assert.match(sends[0].text, /Requirements:\nImplement it\.\n\nAcceptance: tests pass\./)
   assert.match(sends[0].text, /Follow-up:\nNew requirement/)
   assert.match(sends[0].text, /Resume:/)
+  assert.match(sends[0].text, /report BLOCKED with the mismatch instead of requesting another review/)
   assertSectionOrder(sends[0].text, continuationSections)
   assert.equal((await readTask(id)).status, 'running')
+  assert.deepEqual(await followUpTexts(id), ['New requirement'])
 })
 
 test('continue_worker resumes a settled worker with the dispatch task message', async () => {
@@ -81,7 +100,7 @@ test('continue_worker resumes a settled worker with the dispatch task message', 
   const sends = []
   const tool = createContinueTool(context(sends))
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
-  assert.match(text, /Follow-up accepted/)
+  assert.match(text, /Follow-up delivered/)
   assert.equal(sends[0].targetId, 'worker')
   assert.match(sends[0].text, /Project team: team/)
   assert.match(sends[0].text, /Base branch: main/)
@@ -92,11 +111,13 @@ test('continue_worker resumes a settled worker with the dispatch task message', 
   assert.match(sends[0].text, /Do not push or merge/)
   assertSectionOrder(sends[0].text, continuationSections)
   assert.equal((await readTask(id)).status, 'resuming')
+  assert.equal((await readTask(id)).task, originalTask)
+  assert.deepEqual(await followUpTexts(id), ['New requirement'])
 })
 
 test('resuming keeps only the current follow-up in the new task message', async () => {
   const { createContinueTool } = await import('../src/continue.js')
-  const { updateTask } = await import('../src/task-store.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
   const id = 'dddddddddddddddd'
   await taskFixture(id)
   await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
@@ -108,6 +129,8 @@ test('resuming keeps only the current follow-up in the new task message', async 
   assert.match(sends[0].text, /Follow-up:\nFirst follow-up/)
   assert.match(sends[1].text, /Follow-up:\nSecond follow-up/)
   assert.doesNotMatch(sends[1].text, /First follow-up/)
+  assert.equal((await readTask(id)).task, originalTask)
+  assert.deepEqual(await followUpTexts(id), ['First follow-up', 'Second follow-up'])
 })
 
 test('other settled states also resume with the task message', async () => {
@@ -136,10 +159,12 @@ test('continue_worker steers an active worker even when the task record is settl
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
   assert.match(text, /running worker/)
   assert.match(sends[0].text, /Requirements update/)
+  assert.match(sends[0].text, /First decide whether it belongs to this task/)
   assert.doesNotMatch(sends[0].text, /Project team:/)
   const task = await readTask(id)
   assert.equal(task.status, 'awaiting-merge')
   assert.equal(task.review.head, 'abc')
+  assert.deepEqual(await followUpTexts(id), ['New requirement'])
 })
 
 test('continue_worker wakes a running task when the worker agent is not loaded', async () => {
@@ -150,9 +175,10 @@ test('continue_worker wakes a running task when the worker agent is not loaded',
   const sends = []
   const tool = createContinueTool(context(sends))
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
-  assert.match(text, /Follow-up accepted/)
+  assert.match(text, /Follow-up delivered/)
   assert.match(sends[0].text, /Project team: team/)
   assert.equal((await readTask(id)).status, 'running')
+  assert.deepEqual(await followUpTexts(id), ['New requirement'])
 })
 
 test('a failed steering delivery leaves the task running', async () => {
@@ -165,7 +191,9 @@ test('a failed steering delivery leaves the task running', async () => {
     tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
     /worker is gone/,
   )
-  assert.equal((await readTask(id)).status, 'running')
+  const task = await readTask(id)
+  assert.equal(task.status, 'running')
+  assert.deepEqual(task.followUps ?? [], [])
 })
 
 test('a failed wake-up delivery leaves the running task running', async () => {
@@ -178,7 +206,9 @@ test('a failed wake-up delivery leaves the running task running', async () => {
     tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
     /worker is gone/,
   )
-  assert.equal((await readTask(id)).status, 'running')
+  const task = await readTask(id)
+  assert.equal(task.status, 'running')
+  assert.deepEqual(task.followUps ?? [], [])
 })
 
 test('a failed resume delivery marks the settled task failed', async () => {
@@ -192,5 +222,7 @@ test('a failed resume delivery marks the settled task failed', async () => {
     tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
     /worker is gone/,
   )
-  assert.equal((await readTask(id)).status, 'failed')
+  const task = await readTask(id)
+  assert.equal(task.status, 'failed')
+  assert.deepEqual(task.followUps ?? [], [])
 })

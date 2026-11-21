@@ -3,12 +3,12 @@ import { taskForSession } from './task-store.js'
 export function createMessageRouterTool(ctx, agent, taskId) {
   return {
     name: 'message_router',
-    description: 'Send the router a progress note or final conclusion when a requirement blocks progress and when the work is finished.',
+    description: 'Send the router one final conclusion when the work ends, or a concrete BLOCKED report that needs a person. Do not send routine progress. Include the outcome, checks actually run, reviewed commit when one exists, remaining risk, and any unapplied follow-up.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        message: { type: 'string', description: 'Concise note or conclusion: branch, reviewed commit, tests, and remaining risk.' },
+        message: { type: 'string', description: 'Final conclusion or concrete blocker: status, branch, reviewed commit when one exists, checks actually run, remaining risk, and any unapplied follow-up.' },
       },
       required: ['message'],
     },
