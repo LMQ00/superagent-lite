@@ -8,7 +8,7 @@ The router makes that one routing call from the input alone. It does not inspect
 
 Prompt text and its editing rules are in [PROMPTS](PROMPTS.md).
 
-The **Project tasks** panel shows task IDs, state, and links to the router, worker, and any GitHub pull request. Refresh the panel to retrieve the latest status. The router can steer a running worker, or continue an unpublished settled worker, with `continue_worker`. A worker sends its final conclusion, or a concrete blocker, to the router with `message_router`; routine progress is not sent, and a published change is a separate task.
+The **Project tasks** panel shows task IDs, state, and links to the router, worker, and any GitHub pull request. Refresh the panel to retrieve the latest status. The router can steer a running worker, or continue an unpublished settled worker, with `continue_worker`. A worker sends its final conclusion, or a concrete blocker, to the router with `message_router`; the conclusion is `COMPLETED`, `INCOMPLETE` or `BLOCKED`, routine progress is not sent, and a published change is a separate task.
 
 - **Local-only repository:** To authorize a reviewed merge, run `/merge-worker <task ID>` in the original router Session. The target branch must still be checked out and clean; conflicting merges are refused. No push is made.
 - **GitHub repository:** With a recognized `origin`, authenticated `gh`, DSH full-access permission and enforced required CI checks, the Host publishes the reviewed commit and requests squash auto-merge only after required checks pass. The request is pinned to the reviewed SHA. GitHub branch protection and review rules still apply. Missing or failed checks block delivery. Interrupted runs do not automatically retry GitHub writes.
