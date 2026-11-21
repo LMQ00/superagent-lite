@@ -157,6 +157,38 @@ test('registers matching slots and renders a localized read-only board with filt
   assert.ok(requests.every(request => request.options.signal.aborted))
 })
 
+test('shows status marks, task metadata and Git review tags for one branch', async () => {
+  const board = setup({
+    fetch: async () => ({ ok: true, json: async () => ({ tasks: [{
+      id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'running',
+      workerSessionId: 'worker-a', parentSessionId: 'parent-a', updatedAt: '2026-11-21T07:20:00Z',
+      git: {
+        branch: 'sl-a', baseBranch: 'master', repository: 'owner/repo', approved: true, reviewed: false,
+        unmerged: true, canMerge: false, canPublish: true, mergeReason: 'The review has not approved this branch',
+        pr: { state: 'OPEN', url: 'https://github.com/owner/repo/pull/1' },
+      },
+    }] }) }),
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  const tree = board.render()
+  const content = text(tree)
+  assert.match(content, /团队alpha/)
+  assert.match(content, /项目\/one/)
+  assert.match(content, /更新时间/)
+  assert.match(content, /审查记录已过期/)
+  assert.match(content, /有未合并改动/)
+  assert.match(content, /拉取请求: 打开/)
+  const stages = nodes(tree).filter(node => node.props?.className === 'sl-stage')
+  assert.deepEqual(stages.map(node => node.props['data-state']), ['ongoing', 'ongoing'])
+  const tags = nodes(tree).filter(node => node.props?.className === 'sl-tag')
+  assert.deepEqual(tags.map(node => node.props['data-tone']), ['warning', 'warning', 'info'])
+  const time = nodes(tree).find(node => node.type === 'time')
+  assert.equal(time.props.dateTime, '2026-11-21T07:20:00.000Z')
+  board.dispose()
+})
+
 test('reports a load error and can refresh without workspace navigation', async () => {
   let attempt = 0
   const board = setup({ fetch: async () => ++attempt === 1 ? { ok: false } : {
