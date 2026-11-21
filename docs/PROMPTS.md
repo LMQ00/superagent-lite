@@ -15,7 +15,7 @@ Prompt text tells an agent what to do; code enforces what is allowed. This bundl
 | Worker persona | worker | `cordis.patch.yml`, preset `superagent-lite-worker` |
 | Repository instructions | router, worker | `AGENTS.md`, mounted by `@deepseek-ai/dsh-agent-instructions` |
 
-Both presets mount `@deepseek-ai/dsh-agent-instructions` with a 65,536-byte budget, matching the reference's router and worker presets. The plugin loads the user-global chain, then the project chain from the project root down to the session's working directory; a worker's file reads add nested instruction files later. The router treats the injected files as repository conventions to follow, not as requests; the host frames them as guidance that does not override user or system instructions, and they cannot authorize a push or merge.
+Both presets mount `@deepseek-ai/dsh-agent-instructions` with a 65,536-byte budget, matching the reference's router and worker presets. The plugin loads the user-global chain, then the project chain from the project root down to the session's working directory; a worker's file reads add nested instruction files later. The router treats the injected files as repository conventions to follow, not as requests. The host frames them as guidance that does not override user or system instructions, and the router persona keeps them from authorizing a push or merge.
 
 ## Router tool use
 
