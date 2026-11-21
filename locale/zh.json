@@ -1,7 +1,6 @@
 {
   "meta": {
     "title": "轻量超级代理",
-    "description": "将项目任务派发给隔离的 worker；每个 worker 使用指定团队和独立 Git worktree。",
-    "detail": "docs/DETAIL.md"
+    "description": "将项目任务派发给隔离的 worker；每个 worker 使用指定团队和独立 Git worktree。"
   }
 }

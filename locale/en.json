@@ -1,7 +1,6 @@
 {
   "meta": {
     "title": "Superagent lite",
-    "description": "Routes project tasks to isolated workers, each assigned to a project team and Git worktree.",
-    "detail": "docs/DETAIL.md"
+    "description": "Routes project tasks to isolated workers, each assigned to a project team and Git worktree."
   }
 }
