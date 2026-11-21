@@ -36,10 +36,12 @@ export function clearHelperExpectation(parentSessionId) {
 }
 
 export function registerReadOnlyGuard(agent) {
-  // The helper inherits the worker composition, so its shell could write. A
-  // session-level override confines every shell call to file reads.
+  // index.js claims the child expected by review.js and installs this guard.
+  // The helper inherits the worker composition, so its shell could write; a
+  // session-level override confines every shell call to read-only file effects.
   agent.session.append('sandbox/mode', { mode: 'read-only', source: 'delegation' })
-  const confinesShell = agent.ctx.get('shell')?.sandboxMode !== undefined
+  const policy = agent.ctx.get('sandboxPolicy')?.resolve({ session: agent.session })
+  const confinesShell = policy?.mode === 'read-only' && agent.ctx.get('shell')?.sandboxMode !== undefined
   const allowed = new Set(READ_ONLY_TOOLS)
   if (confinesShell) for (const name of SHELL_TOOLS) allowed.add(name)
   agent.ctx.tools.guard(({ name }) => {

@@ -1,14 +1,28 @@
 import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 import { claimHelper, clearHelperExpectation, expectHelper, registerReadOnlyGuard } from '../src/helper-guard.js'
 
-function registerHelper({ shell = { sandboxMode: 'workspace-write' } } = {}) {
+const anchor = process.env.DSH_INSTALL_DIR
+
+function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy } = {}) {
   const appends = []
+  let mode = 'danger-full-access'
   let check
+  const session = {
+    append(type, data) {
+      appends.push([type, data])
+      if (type === 'sandbox/mode') mode = data.mode
+    },
+  }
   registerReadOnlyGuard({
-    session: { append: (...args) => { appends.push(args) } },
+    session,
     ctx: {
-      get: name => name === 'shell' ? shell : undefined,
+      get: name => name === 'shell' ? shell
+        : name === 'sandboxPolicy' ? (policy ?? { resolve: () => ({ mode }) })
+        : undefined,
       tools: { guard(fn) { check = fn } },
     },
   })
@@ -58,5 +72,38 @@ test('the helper guard denies shell commands when nothing confines them', () => 
   assert.equal(check({ name: 'glob' }), undefined)
   assert.match(check({ name: 'bash' }), /does not confine shell file writes/)
   assert.match(check({ name: 'pwsh' }), /does not confine shell file writes/)
+  assert.match(check({ name: 'write' }), /Read-only helpers cannot use/)
+})
+
+test('the helper guard denies shell commands when the read-only override is not effective', () => {
+  const { check } = registerHelper({
+    policy: { resolve: () => ({ mode: 'workspace-write' }) },
+  })
+  assert.equal(check({ name: 'read' }), undefined)
+  assert.match(check({ name: 'bash' }), /does not confine shell file writes/)
+})
+
+test('a real Session log accepts the helper read-only override', { skip: !anchor }, async () => {
+  const require = createRequire(join(anchor, 'package.json'))
+  const { Session } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-session')).href)
+  const session = Session.create('helper')
+  let check
+  registerReadOnlyGuard({
+    session,
+    ctx: {
+      get: name => name === 'shell' ? { sandboxMode: 'workspace-write' }
+        : name === 'sandboxPolicy' ? {
+            resolve({ session }) {
+              const events = session.snapshotEvents()
+              return { mode: events.findLast(event => event.type === 'sandbox/mode')?.data.mode ?? 'danger-full-access' }
+            },
+          }
+        : undefined,
+      tools: { guard(fn) { check = fn } },
+    },
+  })
+  assert.deepEqual(session.eventAt(0)?.data, { mode: 'read-only', source: 'delegation' })
+  assert.equal(check({ name: 'read' }), undefined)
+  assert.equal(check({ name: 'bash' }), undefined)
   assert.match(check({ name: 'write' }), /Read-only helpers cannot use/)
 })
