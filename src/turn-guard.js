@@ -8,10 +8,11 @@ const REMINDER = '[superagent-lite] 这轮用户输入还没有调度决定。�
 
 export function createDispatchGuard(ctx) {
   const calls = new Map()
-  const decided = new Map()
-  const armed = new Set()
+  const decisions = new Map()
+  const pending = new Map()
   const missing = new Set()
   const reminders = new Map()
+  const deferred = new Map()
 
   function dropCalls(sessionId, turn) {
     for (const [callId, call] of calls) {
@@ -20,10 +21,12 @@ export function createDispatchGuard(ctx) {
   }
 
   function forget(sessionId) {
-    armed.delete(sessionId)
+    pending.delete(sessionId)
     missing.delete(sessionId)
-    decided.delete(sessionId)
+    decisions.delete(sessionId)
     reminders.delete(sessionId)
+    for (const handle of deferred.get(sessionId) ?? []) clearImmediate(handle)
+    deferred.delete(sessionId)
     dropCalls(sessionId)
   }
 
@@ -32,7 +35,6 @@ export function createDispatchGuard(ctx) {
     const agent = ctx.agents.get(sessionId)
     if (!agent) return
     missing.delete(sessionId)
-    if (!armed.delete(sessionId)) return
     const sent = (reminders.get(sessionId) ?? 0) + 1
     reminders.set(sessionId, sent)
     try {
@@ -54,13 +56,15 @@ export function createDispatchGuard(ctx) {
         // DSH user-role message sources are merge-extensible and consumers fall
         // through unknown kinds, so this marker cannot be mistaken for input.
         if (event.data.source?.kind === REMINDER_SOURCE) {
-          // Re-arm a bounded number of retries; the reminder itself must not
-          // count as a fresh user input beyond that.
-          if ((reminders.get(session.id) ?? 0) < MAX_REMINDERS) armed.add(session.id)
+          // A reminder reopens the requirement until its retry budget runs out.
+          if ((reminders.get(session.id) ?? 0) < MAX_REMINDERS) {
+            pending.set(session.id, (pending.get(session.id) ?? 0) + 1)
+            missing.delete(session.id)
+          }
           return
         }
         if (event.data.source?.kind === 'user') {
-          armed.add(session.id)
+          pending.set(session.id, (pending.get(session.id) ?? 0) + 1)
           missing.delete(session.id)
           reminders.delete(session.id)
         }
@@ -75,11 +79,9 @@ export function createDispatchGuard(ctx) {
         if (!call || call.sessionId !== session.id) return
         calls.delete(event.data.message.toolCallId)
         if (!event.data.message.isError) {
-          let turns = decided.get(session.id)
-          if (!turns) decided.set(session.id, turns = new Set())
-          turns.add(call.turn)
-          missing.delete(session.id)
-          reminders.delete(session.id)
+          let counts = decisions.get(session.id)
+          if (!counts) decisions.set(session.id, counts = new Map())
+          counts.set(call.turn, (counts.get(call.turn) ?? 0) + 1)
         }
         return
       }
@@ -89,25 +91,33 @@ export function createDispatchGuard(ctx) {
         forget(session.id)
         return
       }
+      dropCalls(session.id, event.data.turn)
       if (event.data.reason.kind !== 'completed') {
         forget(session.id)
         return
       }
-      const turns = decided.get(session.id)
-      if (turns?.delete(event.data.turn)) {
-        armed.delete(session.id)
-        missing.delete(session.id)
-        dropCalls(session.id, event.data.turn)
-        return
+      const counts = decisions.get(session.id)
+      const decided = counts?.get(event.data.turn) ?? 0
+      counts?.delete(event.data.turn)
+      const required = pending.get(session.id) ?? 0
+      pending.delete(session.id)
+      if (required > 0) {
+        if (decided >= required) {
+          missing.delete(session.id)
+          reminders.delete(session.id)
+          return
+        }
+        missing.add(session.id)
+        // Cover a host that announces idle before turn/end, or does not announce
+        // the transition for this turn: settle on the next macrotask if idle.
+        const handle = setImmediate(() => {
+          deferred.get(session.id)?.delete(handle)
+          if (ctx.agents.get(session.id)?.status === 'idle') deliver(session.id)
+        })
+        let handles = deferred.get(session.id)
+        if (!handles) deferred.set(session.id, handles = new Set())
+        handles.add(handle)
       }
-      if (!armed.has(session.id)) return
-      missing.add(session.id)
-      dropCalls(session.id, event.data.turn)
-      // Cover a host that announces idle before turn/end, or does not announce
-      // the transition for this turn: settle on the next macrotask if idle.
-      setImmediate(() => {
-        if (ctx.agents.get(session.id)?.status === 'idle') deliver(session.id)
-      })
     },
     // Delivering the reminder inside the turn/end publication would make the
     // inbox append reenter the open Session append, which the Session rejects

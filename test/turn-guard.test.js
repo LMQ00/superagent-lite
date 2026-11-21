@@ -170,6 +170,27 @@ test('each new user input needs its own decision', () => {
   assert.equal(followups.length, 1)
 })
 
+test('two inputs in one turn need two decisions', () => {
+  const { guard, session, followups } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, input)
+  guard.onEvent(session, call(1))
+  guard.onEvent(session, result(1))
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 1)
+  const covered = fixture()
+  covered.guard.onEvent(covered.session, input)
+  covered.guard.onEvent(covered.session, input)
+  covered.guard.onEvent(covered.session, call(1))
+  covered.guard.onEvent(covered.session, result(1))
+  covered.guard.onEvent(covered.session, call(1, 'continue_worker'))
+  covered.guard.onEvent(covered.session, result(1, 'continue_worker'))
+  covered.guard.onEvent(covered.session, end(1))
+  covered.guard.onIdle(covered.session.id)
+  assert.equal(covered.followups.length, 0)
+})
+
 test('a failed decision does not satisfy the requirement', () => {
   const { guard, session, followups } = fixture()
   guard.onEvent(session, input)
