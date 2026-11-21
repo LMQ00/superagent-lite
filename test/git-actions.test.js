@@ -379,3 +379,18 @@ test('merged pull requests keep their author, comment and check indicators', asy
   assert.equal(view.git.pr.comments, 1)
   assert.deepEqual(view.git.pr.checks, { state: 'success', total: 1 })
 })
+
+test('a stored merged squash pull request stays merged when GitHub is unavailable', async () => {
+  const record = task({ status: 'merged', prUrl })
+  const { git } = gitFixture({ merged: false })
+  const manager = createGitManager(context(), {
+    store: memoryStore([record]), git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    gh: async () => { throw new Error('gh unavailable') },
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'merged')
+  assert.equal(view.git.merged, true)
+  assert.equal(view.git.unmerged, false)
+  assert.equal(view.git.pr.state, 'UNKNOWN')
+})

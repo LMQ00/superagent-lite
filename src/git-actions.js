@@ -240,7 +240,9 @@ export function createGitManager(ctx, dependencies = {}) {
     const approved = task.review?.approved === true
     const reviewed = approved && facts?.head !== undefined && facts.head === task.review.head
     const mergedInPr = pr?.exact === true && pr.state === 'MERGED'
-    const merged = mergedInPr || await isMerged(task, facts?.head, signal)
+    // A squash-merged pull request is not an ancestor of the base branch; keep the stored merge state
+    // when GitHub cannot be read. Otherwise the row would claim both merged and unmerged at once.
+    const merged = mergedInPr || task.status === 'merged' || await isMerged(task, facts?.head, signal)
     let mergeReason
     let publishReason
     let canMerge = false
