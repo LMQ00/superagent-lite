@@ -10,6 +10,7 @@ const ORIGIN_CACHE_MS = 30_000
 const PR_CACHE_MS = 30_000
 const PR_TIMEOUT_MS = 10_000
 const PUBLISHABLE_STATUSES = ['awaiting-merge', 'delivery-blocked']
+const PENDING_DELIVERY_STATUSES = ['review-required', 'awaiting-merge', 'awaiting-ci', 'merge-queued', 'publishing', 'merging', 'delivery-blocked']
 
 export function pullRequestUrl(value) {
   if (typeof value !== 'string') return undefined
@@ -80,7 +81,7 @@ export function createGitManager(ctx, dependencies = {}) {
   }
 
   async function isMerged(task, head, signal) {
-    if (!head) return false
+    if (!head || head === task.baseCommit) return false
     try {
       const tip = await git(['rev-parse', '--verify', `refs/heads/${task.baseBranch}^{commit}`], task.projectRoot, signal)
       if (tip === head) return true
@@ -172,6 +173,11 @@ export function createGitManager(ctx, dependencies = {}) {
     return value
   }
 
+  async function settle(task, status) {
+    if (task.status === status) return task
+    return store.updateTask(task.id, { status })
+  }
+
   async function viewFor(record, project, signal) {
     let task = record
     let pr
@@ -179,13 +185,19 @@ export function createGitManager(ctx, dependencies = {}) {
       pr = await syncPullRequest(task, signal)
       if (pr?.status) task = { ...task, status: pr.status }
     }
+    if (task.mode === 'report' && PENDING_DELIVERY_STATUSES.includes(task.status)) {
+      task = await settle(task, 'completed')
+    }
     const branch = task.worktree?.branch
     if (!branch) return { status: task.status, git: undefined }
     const facts = await worktreeFacts(task, signal)
     const approved = task.review?.approved === true
     const reviewed = approved && facts?.head !== undefined && facts.head === task.review.head
     const mergedInPr = pr?.exact === true && pr.state === 'MERGED'
-    const merged = mergedInPr || await isMerged(task, facts?.head, signal)
+    const merged = mergedInPr || await isMerged(task, facts?.head ?? task.review?.head, signal)
+    if (merged && PENDING_DELIVERY_STATUSES.includes(task.status)) {
+      task = await settle(task, 'merged')
+    }
     let mergeReason
     let publishReason
     let canMerge = false
