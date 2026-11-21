@@ -333,7 +333,8 @@ window.__ModuleLoader__.load({
             h('span', { className: 'sl-tag', 'data-tone': git.unmerged ? 'warning' : 'neutral' },
               git.unmerged ? t('unmergedChanges') : t('noUnmergedChanges')),
             prStateText && h('span', { className: 'sl-tag', 'data-tone': prTone },
-              `${t('pullRequestState')}: ${prStateText}`)),
+              `${t('pullRequestState')}: ${prStateText}`),
+            h('code', { className: 'sl-code', title: task.id }, task.id)),
           statusCell(task.status),
           h('div', { className: 'sl-row__actions' },
             h('button', {
