@@ -58,8 +58,23 @@ export function createGitActionHandler(connection, git) {
       res.writeHead(admission.rejection ?? 403, { 'cache-control': 'no-store' }).end()
       return
     }
+    if (req.method === 'GET') {
+      const taskId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('taskId')
+      if (!/^[a-f0-9]{16}$/.test(taskId ?? '')) {
+        res.writeHead(400, { 'cache-control': 'no-store' }).end(JSON.stringify({ error: 'A task ID is required' }))
+        return
+      }
+      try {
+        const detail = await git.detail(taskId, AbortSignal.timeout(30_000))
+        res.writeHead(200, JSON_HEADERS).end(JSON.stringify(detail))
+      } catch (error) {
+        res.writeHead(error?.status === 404 ? 404 : 409, JSON_HEADERS)
+          .end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+      }
+      return
+    }
     if (req.method !== 'POST') {
-      res.writeHead(405, { allow: 'POST', 'cache-control': 'no-store' }).end()
+      res.writeHead(405, { allow: 'GET, POST', 'cache-control': 'no-store' }).end()
       return
     }
     if (String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {

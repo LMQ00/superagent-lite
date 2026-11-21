@@ -10,6 +10,8 @@ const ORIGIN_CACHE_MS = 30_000
 const PR_CACHE_MS = 30_000
 const PR_TIMEOUT_MS = 10_000
 const PUBLISHABLE_STATUSES = ['awaiting-merge', 'delivery-blocked']
+const FAILED_CHECKS = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'ERROR', 'STARTUP_FAILURE', 'STALE'])
+const PENDING_CHECKS = new Set(['PENDING', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'EXPECTED', 'REQUESTED'])
 
 export function pullRequestUrl(value) {
   if (typeof value !== 'string') return undefined
@@ -19,6 +21,49 @@ export function pullRequestUrl(value) {
   } catch {
     return undefined
   }
+}
+
+export function checksRollup(value) {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const states = value.map(check => {
+    if (typeof check?.state === 'string') return check.state.toUpperCase()
+    if (typeof check?.conclusion === 'string') {
+      return String(check.status ?? '').toUpperCase() === 'COMPLETED' ? check.conclusion.toUpperCase() : 'PENDING'
+    }
+    return 'PENDING'
+  })
+  const state = states.some(value => FAILED_CHECKS.has(value))
+    ? 'failure'
+    : states.some(value => PENDING_CHECKS.has(value)) ? 'pending' : 'success'
+  return { state, total: states.length }
+}
+
+function commentCount(view) {
+  const comments = Array.isArray(view?.comments) ? view.comments.length
+    : Number.isInteger(view?.comments) ? view.comments : undefined
+  const reviews = Array.isArray(view?.reviews)
+    ? view.reviews.filter(review => typeof review?.body === 'string' && review.body.trim()).length
+    : Number.isInteger(view?.reviews) ? view.reviews : undefined
+  if (comments === undefined && reviews === undefined) return undefined
+  return (comments ?? 0) + (reviews ?? 0)
+}
+
+function commitRows(output) {
+  return output.split('\n').filter(Boolean).map(line => {
+    const [hash, author, date, ...subject] = line.split('\x1f')
+    return { hash, author, date, subject: subject.join('\x1f') }
+  })
+}
+
+function changedFiles(output) {
+  return output.split('\n').filter(Boolean).map(line => {
+    const [additions, deletions, ...path] = line.split('\t')
+    return {
+      path: path.join('\t'),
+      additions: /^\d+$/.test(additions) ? Number(additions) : undefined,
+      deletions: /^\d+$/.test(deletions) ? Number(deletions) : undefined,
+    }
+  })
 }
 
 function dirtyTargetLine(line) {
@@ -73,7 +118,8 @@ export function createGitManager(ctx, dependencies = {}) {
       } catch {
         current = undefined
       }
-      return { head, uncommitted: status.length > 0, onBranch: current === `refs/heads/${branch}` }
+      const author = await git(['log', '-1', '--format=%an', head], path, signal).catch(() => undefined)
+      return { head, uncommitted: status.length > 0, onBranch: current === `refs/heads/${branch}`, author }
     } catch {
       return undefined
     }
@@ -142,7 +188,6 @@ export function createGitManager(ctx, dependencies = {}) {
   async function syncPullRequest(task, signal) {
     const url = pullRequestUrl(task.prUrl)
     if (!url) return undefined
-    if (task.status === 'merged') return { url, state: 'MERGED', exact: true }
     const cached = pullRequests.get(url)
     if (cached && now() - cached.at < PR_CACHE_MS) return cached.value
     let value = { url, state: 'UNKNOWN', exact: false }
@@ -150,14 +195,24 @@ export function createGitManager(ctx, dependencies = {}) {
       const timeout = AbortSignal.timeout(PR_TIMEOUT_MS)
       const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
       const raw = await gh([
-        'pr', 'view', url, '--json', 'state,headRefOid,headRefName,baseRefName,isCrossRepository',
+        'pr', 'view', url, '--json',
+        'state,headRefOid,headRefName,baseRefName,isCrossRepository,isDraft,author,comments,reviews,statusCheckRollup',
+        '--jq', '{state,headRefOid,headRefName,baseRefName,isCrossRepository,isDraft,author:{login:.author.login},comments:(.comments|length),reviews:([.reviews[]|select((.body // "") | test("[^[:space:]]"))]|length),statusCheckRollup}',
       ], task.projectRoot, combined)
       const view = JSON.parse(raw)
       const exact = view.headRefOid === task.review?.head &&
         view.headRefName === task.worktree?.branch &&
         view.baseRefName === task.baseBranch &&
         view.isCrossRepository === false
-      value = { url, state: typeof view.state === 'string' ? view.state : 'UNKNOWN', exact }
+      value = {
+        url,
+        state: typeof view.state === 'string' ? view.state : 'UNKNOWN',
+        exact,
+        draft: view.isDraft === true,
+        author: typeof view.author?.login === 'string' && view.author.login ? view.author.login : undefined,
+        comments: commentCount(view),
+        checks: checksRollup(view.statusCheckRollup),
+      }
       if (exact && view.state === 'MERGED' && task.status !== 'merged') {
         await store.updateTask(task.id, { status: 'merged' })
         value.status = 'merged'
@@ -215,8 +270,17 @@ export function createGitManager(ctx, dependencies = {}) {
         unmerged: !merged && Boolean(facts?.head),
         uncommitted: facts?.uncommitted ?? false,
         onBranch: facts?.onBranch ?? false,
+        author: facts?.author,
         repository: project.origin?.repo,
-        pr: pr ? { url: pr.url, state: pr.state, exact: pr.exact } : undefined,
+        pr: pr ? {
+          url: pr.url,
+          state: pr.state,
+          exact: pr.exact,
+          draft: pr.draft,
+          author: pr.author,
+          comments: pr.comments,
+          checks: pr.checks,
+        } : undefined,
         canMerge,
         canPublish,
         mergeReason,
@@ -236,6 +300,38 @@ export function createGitManager(ctx, dependencies = {}) {
       return [record.id, await viewFor(record, await project, signal)]
     }))
     return new Map(entries)
+  }
+
+  async function detail(taskId, signal) {
+    if (typeof taskId !== 'string' || !TASK_ID.test(taskId)) throw new Error('Invalid task ID')
+    const task = await store.readTask(taskId)
+    if (!task) {
+      const error = new Error('Task not found')
+      error.status = 404
+      throw error
+    }
+    const base = task.worktree?.baseCommit ?? task.baseCommit
+    let head = task.review?.head
+    if (!head && task.worktree?.path) {
+      head = await git(['rev-parse', '--verify', 'HEAD^{commit}'], task.worktree.path, signal).catch(() => undefined)
+    }
+    if (!base || !head) return { taskId, branch: task.worktree?.branch, baseBranch: task.baseBranch, commits: [], files: [] }
+    const range = `${base}..${head}`
+    try {
+      const [log, numstat] = await Promise.all([
+        git(['log', '--reverse', '--format=%H%x1f%an%x1f%aI%x1f%s', range], task.projectRoot, signal),
+        git(['diff', '--numstat', range], task.projectRoot, signal),
+      ])
+      return {
+        taskId,
+        branch: task.worktree?.branch,
+        baseBranch: task.baseBranch,
+        commits: commitRows(log),
+        files: changedFiles(numstat),
+      }
+    } catch (error) {
+      throw new Error(`Could not read the branch history: ${error.message}`)
+    }
   }
 
   async function perform(taskId, action, signal) {
@@ -268,5 +364,5 @@ export function createGitManager(ctx, dependencies = {}) {
     }
   }
 
-  return { list, perform }
+  return { list, detail, perform }
 }
