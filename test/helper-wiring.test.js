@@ -4,11 +4,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
+const originalHome = process.env.HOME
 const home = await mkdtemp(join(tmpdir(), 'superagent-lite-helper-wiring-'))
 process.env.HOME = home
 
 test('agent/created installs the read-only helper guard', async (t) => {
-  t.after(() => rm(home, { recursive: true, force: true }))
+  t.after(async () => {
+    if (originalHome === undefined) delete process.env.HOME
+    else process.env.HOME = originalHome
+    await rm(home, { recursive: true, force: true })
+  })
   const { apply } = await import('../index.js')
   const { expectHelper } = await import('../src/helper-guard.js')
   const listeners = new Map()

@@ -26,7 +26,11 @@ function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy } =
       tools: { guard(fn) { check = fn } },
     },
   })
-  return { appends, check: execution => check(execution) }
+  return {
+    appends,
+    check: execution => check(execution),
+    setMode: next => { mode = next },
+  }
 }
 
 test('only an expected child is claimed as a helper', () => {
@@ -81,6 +85,14 @@ test('the helper guard denies shell commands when the read-only override is not 
   })
   assert.equal(check({ name: 'read' }), undefined)
   assert.match(check({ name: 'bash' }), /does not confine shell file writes/)
+})
+
+test('the helper guard rechecks shell confinement for every call', () => {
+  const { check, setMode } = registerHelper()
+  assert.equal(check({ name: 'bash' }), undefined)
+  setMode('danger-full-access')
+  assert.match(check({ name: 'bash' }), /does not confine shell file writes/)
+  assert.equal(check({ name: 'read' }), undefined)
 })
 
 test('a real Session log accepts the helper read-only override', { skip: !anchor }, async () => {
