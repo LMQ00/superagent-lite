@@ -125,6 +125,36 @@ test('other settled states also resume with the task message', async () => {
   }
 })
 
+test('continue_worker steers an active worker even when the task record is settled', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '3333333333333333'
+  await taskFixture(id)
+  await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' }, review: { head: 'abc', approved: true } })
+  const sends = []
+  const tool = createContinueTool(context(sends, 'running'))
+  const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(text, /running worker/)
+  assert.match(sends[0].text, /Requirements update/)
+  assert.doesNotMatch(sends[0].text, /Project team:/)
+  const task = await readTask(id)
+  assert.equal(task.status, 'awaiting-merge')
+  assert.equal(task.review.head, 'abc')
+})
+
+test('continue_worker wakes a running task when the worker agent is not loaded', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask } = await import('../src/task-store.js')
+  const id = '4444444444444444'
+  await taskFixture(id)
+  const sends = []
+  const tool = createContinueTool(context(sends))
+  const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(text, /Follow-up accepted/)
+  assert.match(sends[0].text, /Project team: team/)
+  assert.equal((await readTask(id)).status, 'running')
+})
+
 test('a failed steering delivery leaves the task running', async () => {
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask } = await import('../src/task-store.js')

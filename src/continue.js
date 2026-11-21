@@ -41,7 +41,7 @@ export function createContinueTool(ctx) {
       const record = await readTask(taskId)
       if (!record || record.parentSessionId !== parent.id) throw new Error('Task does not belong to this router Session')
       const worker = ctx.agents?.get(record.workerSessionId)
-      if (record.status === 'running' && worker?.status === 'running') {
+      if (worker?.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
           text: `Requirements update for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
