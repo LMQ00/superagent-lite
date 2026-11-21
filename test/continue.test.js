@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import test, { after } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-const home = await mkdtemp(join(tmpdir(), 'superagent-lite-continue-'))
+const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
+await mkdir(tmp, { recursive: true })
+const home = await mkdtemp(join(tmp, 'continue-'))
 process.env.HOME = home
 after(() => rm(home, { recursive: true, force: true }))
 
 const originalTask = 'Implement it.\n\nAcceptance: tests pass.'
-const runningInstruction = 'Requirements update for the same task. Apply it to your current work; restart only if the change requires it. If you have not created your worktree yet, call create_worktree once; otherwise it re-enters the existing checkout instead of creating another. Do not push or merge.'
 const resumingInstruction = 'Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.'
 const sections = ['Project team:', 'Base branch:', 'Task:', 'Requirements:', 'Follow-up:', 'Before:', 'During:', 'After:', 'Reporting:']
 
@@ -36,7 +37,7 @@ async function taskFixture(id, status = 'running') {
   })
 }
 
-test('continue_worker sends a running worker the task message before it creates a worktree', async () => {
+test('continue_worker keeps the concise steering update for a running worker', async () => {
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask } = await import('../src/task-store.js')
   const id = 'aaaaaaaaaaaaaaaa'
@@ -47,8 +48,8 @@ test('continue_worker sends a running worker the task message before it creates 
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
   assert.match(text, /running worker/)
   assert.equal(sends[0].targetId, 'worker')
-  assertTaskMessage(sends[0].text, runningInstruction)
-  assert.match(sends[0].text, /If you have not created your worktree yet, call create_worktree once; otherwise it re-enters the existing checkout instead of creating another\./)
+  assert.equal(sends[0].text, 'Requirements update for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\nNew requirement')
+  assert.doesNotMatch(sends[0].text, /Project team:/)
   assert.equal((await readTask(id)).status, 'running')
 })
 

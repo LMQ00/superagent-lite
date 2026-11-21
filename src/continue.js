@@ -2,15 +2,15 @@ import { readTask, updateTask } from './task-store.js'
 import { buildWorkerPrompt } from './worker-prompt.js'
 
 /**
- * Reuse the dispatch task message for every follow-up, so the fields and phase
- * sections can never drift from what a fresh worker receives.
+ * A settled worker resumes from rest, so it receives the same task message as a
+ * fresh dispatch, with the current follow-up inside Requirements.
  */
-function followUpPrompt(record, text, instruction) {
+function resumingPrompt(record, text) {
   return buildWorkerPrompt({
     title: record.title,
     teamId: record.teamId,
     baseBranch: record.baseBranch,
-    task: `${record.task}\n\nFollow-up:\n${text}\n\n${instruction}`,
+    task: `${record.task}\n\nFollow-up:\n${text}\n\nContinue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.`,
   })
 }
 
@@ -37,7 +37,7 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: followUpPrompt(record, text, 'Requirements update for the same task. Apply it to your current work; restart only if the change requires it. If you have not created your worktree yet, call create_worktree once; otherwise it re-enters the existing checkout instead of creating another. Do not push or merge.'),
+          text: `Requirements update for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
         }], { signal: exec.signal })
         return `Update delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
@@ -50,7 +50,7 @@ export function createContinueTool(ctx) {
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: followUpPrompt(record, text, 'Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.'),
+          text: resumingPrompt(record, text),
         }], { signal: exec.signal })
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
