@@ -1,6 +1,6 @@
 # `/merge-worker` 报 “No reviewed local commit is ready for merge” 诊断
 
-基线：合并目标 master 的 HEAD `8d572fa360c075fed73e564b766a5248db0bdbf9`（不是本诊断提交；本诊断分支另有提交）。范围：只诊断，未改代码、未执行合并。命令输入为合法 16 位任务 ID，参数本身通过校验。
+被审对象：分支 `sl-superagent-lite-10691e5b98883bc1` 上的本文件提交（`git log` 可见）；基线为合并目标 master 的 HEAD `8d572fa360c075fed73e564b766a5248db0bdbf9`。文件按事故日期命名，长期说明以 `docs/DETAIL.md` 为准。范围：只诊断，未改代码、未执行合并。命令输入为合法 16 位任务 ID，参数本身通过校验。
 
 环境与采集时间：`gh version 2.104.0 (2026-11-12)`、`node v26.13.1`、`Linux 7.3.4`；证据采集于 2026-11-21T14:02–14:05+08:00（Asia/Shanghai）。任务 JSON 的 mtime：`7ca2bbe1` 12:44:39、`b81edda` 11:27:05、`0258beac` 12:13:06、`fe847302` 10:49:54、`0c6e6374` 12:24:20、`df729be0` 13:34:59（均 +0800）。
 
@@ -47,7 +47,7 @@
 
 ### Git 证据
 
-对“有 `review.head` 的四条 approved 记录”逐条比对（`0258beac`/`fe847302` 不参与，前者 review 未通过、后者无 review）：
+下表为 4 条 approved 记录。`0258beac` 也有 `review.head`（`71c9fc4e14aa0b3ef7b85584b2cfb419926c0ff3`）且 worktree HEAD 与之相等，但 `approved=false`，不参与合并判定；`fe847302` 无 `review.head`，同样不参与。五条有 `review.head` 的记录均无 HEAD 前移。
 
 | 任务 | worktree HEAD | review.head | 相等 | dirty 行数 | 远端分支 head |
 | --- | --- | --- | --- | --- | --- |
@@ -84,7 +84,7 @@ gh api repos/LMQ00/superagent-lite/rulesets -> []
 gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=true, allow_squash_merge=true
 ```
 
-关于“失败点就是 checks”的推断边界：任务里只留了 `gh pr exited with status 1`，`src/process.js:14` 丢弃 stdout（以及 stderr，`runProcess` 只回读 stdout）。但在 `awaiting-ci` 写入之后，`deliverGithub` 只再调用三类 `gh pr`：`pr view`（现测成功）、`pr checks`（可复现 exit 1）、`pr merge`（未执行）。因此可复现的失败点只能是 `pr checks`；无法从记录中排除当时存在瞬时失败，但当前 `gh auth status --hostname github.com` 正常、`gh` 版本支持 `--required`（2.104.0），且 `pr checks` 的失败是确定性的。
+关于“失败点就是 checks”的推断边界：任务里只留了 `gh pr exited with status 1`；`src/process.js:14` 的失败消息只含命令与第一个参数，失败时 stdout 不进入错误文本，stderr 由 spawn 收集但未拼入。但在 `awaiting-ci` 写入之后，`deliverGithub` 只再调用三类 `gh pr`：`pr view`（现测成功）、`pr checks`（可复现 exit 1）、`pr merge`（未执行）。因此可复现的失败点只能是 `pr checks`；无法从记录中排除当时存在瞬时失败，但当前 `gh auth status --hostname github.com` 正常、`gh` 版本支持 `--required`（2.104.0），且 `pr checks` 的失败是确定性的。
 
 ## 失败链路
 
@@ -92,7 +92,7 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 2. `index.js:112` 写 `publishing`，调用 `deliverGithub`（`src/github.js:22`）。
 3. 推送分支、`gh pr create` 成功（PR #4/#2 等已存在），`src/github.js:35` 写 `awaiting-ci` + `prUrl`。
 4. `src/github.js:40` 执行 `gh pr checks … --required --watch`；仓库没有 required checks，`gh` 以 exit 1 返回。
-5. `src/process.js:14` 把任何 `gh pr …` 失败统一包成 `gh pr exited with status 1`（只保留命令与第一个参数，具体子命令与 stderr 被丢弃）。
+5. `src/process.js:14` 把任何 `gh pr …` 失败统一包成 `gh pr exited with status 1`：错误消息只拼命令与第一个参数，失败时 stdout 不进入错误文本，stderr 虽由 spawn 收集但未拼入。
 6. `index.js:114-116` 捕获后写 `status='delivery-blocked'`、同名 `failure`，`prUrl` 保留。
 7. 用户执行 `/merge-worker`：`src/merge.js:25` 看到 `status !== 'awaiting-merge'`，抛 `No reviewed local commit is ready for merge`。
 8. 另外两条 `review-required` 在 `index.js:93-95` 就被写成 `review-required`，根本没进入投递；它们的报错也是同一句，但原因不同。
@@ -116,7 +116,7 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
    - 用 `--merge` 会保留 reviewed commit 本身进入 master 历史；若改用 `--squash`，master 上只会得到一个新的 squash 提交（内容等价、SHA 不同），reviewed SHA 不会出现在历史里。仓库无分支保护、无 required checks，不需要 `--admin`。
    - **串行合并**：先合 #4，再 `git pull`，然后 `gh pr merge 2 --repo LMQ00/superagent-lite --merge`；每次合并后重新检查下一个 PR 的 `mergeable,mergeStateStatus,headRefOid`（多个分支同源改动，前一次合并可能让后一个变成 `CONFLICTING`）。
    - 合并后本地要 `git pull` 才会看到 master 前进（当前仍是 `8d572fa`）。
-2. **PR 合并不会更新任务状态**（已知缺口）：任务 JSON 仍是 `delivery-blocked`，面板不会自动变成 `merged`，再执行 `/merge-worker` 仍报同一句。验收口径应以 `gh pr view <n> --json state` 的 `MERGED` 为准，不要看面板；若必须让面板一致，可备份任务 JSON 后手工把 `status` 改为 `merged`（宿主可能用 `updateTask` 读改写覆盖，改前备份），当前代码没有 PR 状态回收/重试入口（`src/continue.js:31` 也不接受 `delivery-blocked`）。
+2. **PR 合并不会更新任务状态**（已知缺口）：任务 JSON 仍是 `delivery-blocked`，面板不会自动变成 `merged`，再执行 `/merge-worker` 仍报同一句。验收口径以 `gh pr view <n> --json state` 的 `MERGED` 为准，不要看面板；当前代码没有 PR 状态回收/重试入口（`src/continue.js:31` 也不接受 `delivery-blocked`）。手工回写状态的临时做法及其风险见文末附录，不要放进正常流程。
 3. **不要重新 `review_worker_commit`**：review 结论仍有效且已钉住 head；worker 已结束被冻结，review 工具要求 `task.status === 'running'`（`src/review.js:30`），当前也调不动。即便能调，也会再次走同一条 GitHub 投递路径，在同一个 required-checks 门禁再次失败。
 4. **不要重启宿主**：状态在磁盘，重启不会把 `delivery-blocked` 变回 `awaiting-merge`，也没有启动重试。
 5. **不要改命令写法**：参数无误。
@@ -126,7 +126,7 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 
 1. **`src/merge.js:25` 三种原因共用一句错误文案**（状态不对 / review 未通过 / 无 worktree）。建议按条件分别报错并附 `status`、`review.approved`、`failure`、`prUrl`：`delivery-blocked && prUrl` 提示“已投递为 PR #n，请走 PR 合并”；`review-required` 提示“提交尚未通过 review”；无 `worktree` 单独报。测试：新增 `test/merge.test.js`（或扩展 `test/host.test.js`），分别构造三种任务，断言错误文案互不相同且包含各自字段。
 2. **状态分类优先，不要 origin 优先**：若先探测 GitHub origin 就统一指 PR，会把 `0258beac`（`review-required`、无 PR）误导去合 PR。建议只在 `delivery-blocked && prUrl` 时给 PR 指引，其余仍报真实原因（与缺陷 1 合并实现）。测试：GitHub origin + `delivery-blocked`+`prUrl` 断言指向 PR；GitHub origin + `review-required` 且 `prUrl=null` 断言提示 review。
-3. **`src/github.js:40-44` 把“required checks 非空且全绿”作为硬门禁**，而仓库没配 required checks 时 `gh pr checks --required` 本身 exit 1，导致“分支已推、PR 已建”之后必然 `delivery-blocked`，且错误只剩 `gh pr exited with status 1`。建议：投递前探测 required checks，为空时给出明确错误或在显式配置下放行；`gh` 失败时保留子命令与 stderr 片段。测试：扩展 `test/github.test.js`，覆盖空 required checks、失败 checks 两个用例，断言错误信息包含子命令与 stderr。
+3. **`src/github.js:40-44` 把“required checks 非空且全绿”作为硬门禁**，而仓库没配 required checks 时 `gh pr checks --required` 本身 exit 1，导致“分支已推、PR 已建”之后必然 `delivery-blocked`，且错误只剩 `gh pr exited with status 1`。另外还有时序问题：即使仓库配置了 required checks，`gh pr create` 之后立刻查询时 check run 往往尚未注册，`gh pr checks --required` 同样以 `no checks reported` exit 1；所以只做“投递前探测 required checks”不能消除有 CI 仓库上的同一竞态。建议：对空检查结果设宽限/重试（或按显式配置跳过），并区分“没有 required checks”和“检查尚未出现”；`gh` 失败时保留子命令与 stderr 片段。测试：扩展 `test/github.test.js`，覆盖空 required checks、失败 checks、`pr create` 后首次查询为空而重试后出现检查三个用例，断言错误信息包含子命令与 stderr。
 4. **`delivery-blocked` 是死状态**：`src/continue.js:31` 不接受它，也没有重试投递命令，一次 `gh` 失败会把已 approved 的提交永久搁置。建议增加受控重试入口（如 `/publish-worker <id>` 或允许 `continue_worker` 从 `delivery-blocked` 恢复并复用已有 PR），并记录失败步骤；另建议在面板/命令中按 PR 实际状态回收 `merged`。测试：`test/continue.test.js` 断言 `delivery-blocked` 可重试；`test/github.test.js` 断言投递失败后重试复用同一 PR；PR 已合并时任务状态回收为 `merged`。
 5. **approved 后的 HEAD 变化缺少复审入口**：worker 结束前 HEAD 变化会被降级为 `review-required`（`index.js:99-101`），合并前 `src/merge.js:36-37` 也会拒绝 HEAD 不匹配，GitHub 路径用 `src/github.js:28` 的 reviewed head 推送和 `src/github.js:47` 的 `--match-head-commit` 钉住，因此不会误合未审核提交；但任务一旦进入 `delivery-blocked`，HEAD 再变化既不会自动复审也没有入口，只能等人发现。建议为该状态提供重新 review 的路径。测试：扩展 `test/host.test.js`，approved 后新增提交，断言本地合并拒绝且 PR 路径不会合入新提交。
 6. **有 GitHub origin 时 `awaiting-merge` 永不写入，`/merge-worker` 对该类仓库整体不可用**：`index.js:103-107` 的本地分支以 `!githubOrigin` 为前提，因此 GitHub 项目的 approved 任务只会走 PR 路径；但 `src/merge.js:27` 的“GitHub 项目走 PR”提示排在状态校验之后，用户永远先看到 `No reviewed local commit is ready for merge`，而不是“该仓库走 PR”。`docs/DETAIL.md` 只写了 Local-only 与 GitHub 两种仓库，命令层没有对应提示。建议：在缺陷 1/2 的“状态优先分类”里补一条 GitHub 项目专用的拒绝文案（只对 `delivery-blocked && prUrl` 指向 PR，其余报真实原因），并把“GitHub 仓库不走 `/merge-worker`”写进 `docs/DETAIL.md` 与 router 提示词；不要改成 origin 优先。测试：`test/merge.test.js` 断言 GitHub origin + approved 任务得到指向 PR 的提示，GitHub origin + `review-required` 仍报 review 原因。
@@ -138,4 +138,5 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 - `git remote remove origin` 不可逆地改动仓库远端配置；
 - 宿主随时可能用 `updateTask` 的读改写覆盖手工修改，改前必须备份任务 JSON；
 - `src/merge.js:36-37` 会再次校验 worktree HEAD == `review.head` 且工作区干净，`src/merge.js:45` 会再次校验状态与 head；
-- 成功后任务记录与真实交付来源（PR #n）仍不一致，面板会误导。
+- 成功后任务记录与真实交付来源（PR #n）仍不一致，面板会误导；
+- 若只是想让面板与 PR 一致，需备份任务 JSON 后手工把 `status` 改为 `merged`，宿主可能用 `updateTask` 的读改写覆盖，且不会校验 PR 是否真的合并。
