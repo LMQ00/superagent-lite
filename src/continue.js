@@ -3,7 +3,7 @@ import { readTask, updateTask } from './task-store.js'
 export function createContinueTool(ctx) {
   return {
     name: 'continue_worker',
-    description: 'Send a follow-up on the same business to its existing worker, including while it is still running. This counts as the routing decision for that user input; do not also dispatch the same request. Use a new dispatch for a different task or after publication.',
+    description: 'Send a follow-up on the same task to its worker, even while it runs. It is this input\'s routing decision; do not also dispatch. Use a new dispatch for a different task or after publication.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -23,7 +23,7 @@ export function createContinueTool(ctx) {
       if (record.status === 'running') {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Requirements update from the router for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
+          text: `Requirements update for the same task. Apply it to your current work; restart only if the change requires it. Do not push or merge.\n\nUpdate:\n${text}`,
         }], { signal: exec.signal })
         return `Update delivered to running worker ${record.workerSessionId} for ${taskId}.`
       }
@@ -36,7 +36,7 @@ export function createContinueTool(ctx) {
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: `Continue the same task in your assigned worktree. After making and committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
+          text: `Continue the same task in your assigned worktree. After committing changes, call review_worker_commit again. Do not push or merge.\n\nFollow-up:\n${text}`,
         }], { signal: exec.signal })
       } catch (error) {
         await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
