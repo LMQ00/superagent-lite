@@ -312,6 +312,76 @@ test('branch detail rejects unknown tasks and reports history failures', async (
   await assert.rejects(broken.detail(taskId, signal), /Could not read the branch history/)
 })
 
+test('a merged worker branch settles a stale review-required task as merged', async () => {
+  const record = task({ status: 'review-required', review: { head, approved: false } })
+  const store = memoryStore([record])
+  const { git } = gitFixture({ merged: true })
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head, originOf: async () => undefined,
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'merged')
+  assert.equal(view.git.merged, true)
+  assert.equal(view.git.unmerged, false)
+  assert.equal((await store.readTask(taskId)).status, 'merged')
+})
+
+test('a branch with no commits of its own is not reported as merged', async () => {
+  const record = task({ status: 'review-required', review: undefined, baseCommit: baseTip, worktree: { path: '/wt', branch: 'sl-feature', baseCommit: baseTip } })
+  const store = memoryStore([record])
+  const { git } = gitFixture({ worktreeHead: baseTip, merged: true })
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => baseTip, originOf: async () => undefined,
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'review-required')
+  assert.equal((await store.readTask(taskId)).status, 'review-required')
+})
+
+test('a genuinely pending review stays review-required', async () => {
+  const record = task({ status: 'review-required', review: { head, approved: false } })
+  const store = memoryStore([record])
+  const { git } = gitFixture({ merged: false })
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head, originOf: async () => undefined,
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'review-required')
+  assert.equal(view.git.merged, false)
+  assert.equal(view.git.unmerged, true)
+  assert.equal((await store.readTask(taskId)).status, 'review-required')
+})
+
+test('a report-only task never shows a delivery state and settles as completed', async () => {
+  const record = task({ mode: 'report', status: 'review-required', review: undefined, worktree: undefined })
+  const store = memoryStore([record])
+  const manager = createGitManager(context(), {
+    store, originOf: async () => undefined,
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'completed')
+  assert.equal(view.git, undefined)
+  assert.equal((await store.readTask(taskId)).status, 'completed')
+})
+
+test('a delivery-blocked task whose pull request merged past the reviewed head is settled as merged', async () => {
+  const reviewed = 'c'.repeat(40)
+  const record = task({ status: 'delivery-blocked', prUrl, review: { head: reviewed, approved: true } })
+  const store = memoryStore([record])
+  const { git } = gitFixture({ merged: true })
+  const manager = createGitManager(context(), {
+    store, git, checkedHead: async () => head,
+    originOf: async () => ({ repo: 'example/project', pushUrl: 'https://github.com/example/project.git' }),
+    gh: async () => JSON.stringify({ state: 'MERGED', headRefOid: head, headRefName: 'sl-feature', baseRefName: 'main', isCrossRepository: false }),
+  })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'merged')
+  assert.equal(view.git.merged, true)
+  assert.equal(view.git.pr.state, 'MERGED')
+  assert.equal(view.git.pr.exact, false)
+  assert.equal((await store.readTask(taskId)).status, 'merged')
+})
+
 test('a pull request for a different head does not change the stored status', async () => {
   const record = task({ status: 'delivery-blocked', prUrl })
   const store = memoryStore([record])

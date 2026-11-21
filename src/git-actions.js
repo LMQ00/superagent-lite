@@ -12,6 +12,7 @@ const PR_TIMEOUT_MS = 10_000
 const PUBLISHABLE_STATUSES = ['awaiting-merge', 'delivery-blocked']
 const FAILED_CHECKS = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'ERROR', 'STARTUP_FAILURE', 'STALE'])
 const PENDING_CHECKS = new Set(['PENDING', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'EXPECTED', 'REQUESTED'])
+const PENDING_DELIVERY_STATUSES = ['review-required', 'awaiting-merge', 'awaiting-ci', 'merge-queued', 'publishing', 'merging', 'delivery-blocked']
 
 export function pullRequestUrl(value) {
   if (typeof value !== 'string') return undefined
@@ -126,7 +127,7 @@ export function createGitManager(ctx, dependencies = {}) {
   }
 
   async function isMerged(task, head, signal) {
-    if (!head) return false
+    if (!head || head === task.baseCommit) return false
     try {
       const tip = await git(['rev-parse', '--verify', `refs/heads/${task.baseBranch}^{commit}`], task.projectRoot, signal)
       if (tip === head) return true
@@ -227,12 +228,20 @@ export function createGitManager(ctx, dependencies = {}) {
     return value
   }
 
+  async function settle(task, status) {
+    if (task.status === status) return task
+    return store.updateTask(task.id, { status })
+  }
+
   async function viewFor(record, project, signal) {
     let task = record
     let pr
     if (task.prUrl) {
       pr = await syncPullRequest(task, signal)
       if (pr?.status) task = { ...task, status: pr.status }
+    }
+    if (task.mode === 'report' && PENDING_DELIVERY_STATUSES.includes(task.status)) {
+      task = await settle(task, 'completed')
     }
     const branch = task.worktree?.branch
     if (!branch) return { status: task.status, git: undefined }
@@ -242,7 +251,10 @@ export function createGitManager(ctx, dependencies = {}) {
     const mergedInPr = pr?.exact === true && pr.state === 'MERGED'
     // A squash-merged pull request is not an ancestor of the base branch; keep the stored merge state
     // when GitHub cannot be read. Otherwise the row would claim both merged and unmerged at once.
-    const merged = mergedInPr || task.status === 'merged' || await isMerged(task, facts?.head, signal)
+    const merged = mergedInPr || task.status === 'merged' || await isMerged(task, facts?.head ?? task.review?.head, signal)
+    if (merged && PENDING_DELIVERY_STATUSES.includes(task.status)) {
+      task = await settle(task, 'merged')
+    }
     let mergeReason
     let publishReason
     let canMerge = false

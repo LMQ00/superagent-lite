@@ -67,6 +67,22 @@ test('board overlays the Git branch view and reconciled status', async () => {
   assert.equal(tasks[1].git.branch, 'sl-b')
 })
 
+test('board shows merged, completed and review-required states from the reconciled Git view', async () => {
+  const rows = ['merged', 'completed', 'pending'].map(id => ({ id, status: 'review-required' }))
+  const git = {
+    async list() {
+      return new Map([
+        ['merged', { status: 'merged', git: { branch: 'sl-merged' } }],
+        ['completed', { status: 'completed', git: undefined }],
+        ['pending', { status: 'review-required', git: { branch: 'sl-pending', unmerged: true } }],
+      ])
+    },
+  }
+  const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {}, () => rows, git)
+  const tasks = JSON.parse((await request(handler)).body).tasks
+  assert.deepEqual(tasks.map(row => row.status), ['merged', 'completed', 'review-required'])
+})
+
 test('board keeps listing tasks when the Git branch view is unavailable', async () => {
   const handler = createBoardHandler(
     { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {},
