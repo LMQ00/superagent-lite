@@ -247,3 +247,30 @@ test('shows the Git action error returned by the host', async () => {
   assert.match(text(tree), /Merge would conflict/)
   board.dispose()
 })
+
+test('shows why a Git action is unavailable and reports the completed action', async () => {
+  const requests = []
+  const tasks = [{ id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'awaiting-merge', workerSessionId: 'worker-a', parentSessionId: 'parent-a',
+    git: { branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true, merged: false, unmerged: true, canMerge: false, canPublish: true, mergeReason: 'The target checkout has uncommitted changes' } }]
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      return path === '/superagent-lite/git'
+        ? { ok: true, json: async () => ({ message: 'Published the reviewed commit as pull request 7.' }) }
+        : { ok: true, json: async () => ({ tasks }) }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /Merge unavailable: The target checkout has uncommitted changes/)
+  assert.equal(nodes(tree).find(node => node.type === 'button' && text(node) === 'Merge into master').props.disabled, true)
+  nodes(tree).find(node => node.type === 'button' && text(node) === 'Send pull request').props.onClick()
+  for (let step = 0; step < 4; step += 1) { board.render(); await flush() }
+  tree = board.render()
+  assert.match(text(tree), /Published the reviewed commit as pull request 7\./)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
+  assert.deepEqual(JSON.parse(requests.find(request => request.path === '/superagent-lite/git').options.body), { taskId: 'a', action: 'publish' })
+  board.dispose()
+})

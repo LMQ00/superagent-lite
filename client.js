@@ -22,7 +22,8 @@ window.__ModuleLoader__.load({
         unmergedChanges: 'Unmerged commits', noUnmergedChanges: 'No unmerged commits',
         reviewApproved: 'Review approved', reviewNotApproved: 'Review not approved', reviewStale: 'Review record is stale',
         mergeInto: 'Merge into', publishPullRequest: 'Send pull request', gitWorking: 'Working…',
-        gitFailed: 'The Git action failed.',
+        gitFailed: 'The Git action failed.', gitSucceeded: 'Git action completed.',
+        mergeUnavailable: 'Merge unavailable:', publishUnavailable: 'Send pull request unavailable:',
         'pr.open': 'Open', 'pr.merged': 'Merged', 'pr.closed': 'Closed', 'pr.unknown': 'Unknown',
       },
       zh: {
@@ -43,7 +44,8 @@ window.__ModuleLoader__.load({
         unmergedChanges: '有未合并改动', noUnmergedChanges: '无未合并改动',
         reviewApproved: '审查已通过', reviewNotApproved: '审查未通过', reviewStale: '审查记录已过期',
         mergeInto: '合并到', publishPullRequest: '发送 PR', gitWorking: '处理中…',
-        gitFailed: 'Git 操作失败。',
+        gitFailed: 'Git 操作失败。', gitSucceeded: 'Git 操作已完成。',
+        mergeUnavailable: '无法合并：', publishUnavailable: '无法发送 PR：',
         'pr.open': '打开', 'pr.merged': '已合并', 'pr.closed': '已关闭', 'pr.unknown': '未知',
       },
     }
@@ -98,6 +100,7 @@ window.__ModuleLoader__.load({
       const [openFailed, setOpenFailed] = useState(false)
       const [gitPending, setGitPending] = useState('')
       const [gitError, setGitError] = useState('')
+      const [gitNotice, setGitNotice] = useState('')
       const active = useRef(null)
       const headingId = useId()
       const gitHeadingId = useId()
@@ -139,6 +142,7 @@ window.__ModuleLoader__.load({
         setPhase('loading')
         setOpenFailed(false)
         setGitError('')
+        setGitNotice('')
         setRevision(value => value + 1)
       }
       const filter = (label, empty, key, value, set) => h('label', null, t(label),
@@ -161,6 +165,7 @@ window.__ModuleLoader__.load({
       const gitAction = async (taskId, action) => {
         setGitPending(`${taskId}:${action}`)
         setGitError('')
+        setGitNotice('')
         try {
           const response = await fetch('/superagent-lite/git', {
             method: 'POST', credentials: 'same-origin',
@@ -175,6 +180,7 @@ window.__ModuleLoader__.load({
           }
           if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('gitFailed'))
           refresh()
+          setGitNotice(typeof value?.message === 'string' && value.message ? value.message : t('gitSucceeded'))
         } catch (error) {
           setGitError(typeof error?.message === 'string' && error.message ? error.message : t('gitFailed'))
         } finally {
@@ -190,7 +196,7 @@ window.__ModuleLoader__.load({
         const git = task.git
         const status = `status.${task.status}`
         const pending = gitPending.startsWith(`${task.id}:`)
-        const pr = pullRequestHref(task.prUrl)
+        const pr = pullRequestHref(task.prUrl) ?? pullRequestHref(git.pr?.url)
         return h('li', { key: `git-${task.id}`, className: 'sl-board__task' },
           h('h3', null, task.title || task.id),
           h('p', { className: 'sl-board__meta' }, h('code', null, task.id), ' · ', h('code', null, git.branch)),
@@ -206,7 +212,9 @@ window.__ModuleLoader__.load({
             h('button', { type: 'button', disabled: pending || !git.canPublish, title: git.publishReason,
               onClick: () => void gitAction(task.id, 'publish') }, t('publishPullRequest')),
             pending && h('span', { className: 'sl-board__meta' }, t('gitWorking')),
-            pr && h('a', { href: pr, target: '_blank', rel: 'noopener noreferrer' }, t('pr'))))
+            pr && h('a', { href: pr, target: '_blank', rel: 'noopener noreferrer' }, t('pr'))),
+          !git.canMerge && git.mergeReason && h('p', { className: 'sl-board__meta' }, `${t('mergeUnavailable')} ${git.mergeReason}`),
+          !git.canPublish && git.publishReason && h('p', { className: 'sl-board__meta' }, `${t('publishUnavailable')} ${git.publishReason}`))
       }
 
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
@@ -242,6 +250,7 @@ window.__ModuleLoader__.load({
           phase === 'ready' && h('section', { className: 'sl-board__git', 'aria-labelledby': gitHeadingId },
             h('h2', { id: gitHeadingId }, t('gitTitle')),
             gitError && h('p', { role: 'alert', className: 'sl-board__error' }, gitError),
+            gitNotice && h('p', { role: 'status', className: 'sl-board__meta' }, gitNotice),
             branches.length === 0
               ? h('p', { role: 'status', className: 'sl-board__meta' }, t('gitEmpty'))
               : h('ul', { className: 'sl-board__list' }, ...branches.map(branchRow)))))
