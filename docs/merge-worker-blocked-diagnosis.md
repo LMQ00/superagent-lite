@@ -1,6 +1,6 @@
 # `/merge-worker` 报 “No reviewed local commit is ready for merge” 诊断
 
-基线：`8d572fa360c075fed73e564b766a5248db0bdbf9`（master）。范围：只诊断，未改代码、未执行合并。命令输入为合法 16 位任务 ID，参数本身通过校验。
+基线：`8d572fa360c075fed73e564b766a5248db0bdbf9`（master）。范围：只诊断，未改代码、未执行合并。命令输入为合法 16 位任务 ID，参数本身通过校验。证据采集时间：2026-11-21T14:02:08+08:00（Asia/Shanghai）。
 
 ## 结论（先回答）
 
@@ -29,8 +29,8 @@
 
 | 任务 | status | review.approved | review.head | failure | prUrl |
 | --- | --- | --- | --- | --- | --- |
-| `7ca2bbe11a9d6cec` | `delivery-blocked` | true | `aaad3e0ae56d41920bc933fb995b3b6d96195a38` | `gh pr exited with status 1` | `…/pull/4` |
-| `b81eddab113e99cb` | `delivery-blocked` | true | `9ccc191d2f24f3ecea0139d096dc5657f939d425` | `gh pr exited with status 1` | `…/pull/2` |
+| `7ca2bbe11a9d6cec` | `delivery-blocked` | true | `aaad3e0ae56d41920bc933fb995b3b6d96195a38` | `gh pr exited with status 1` | `https://github.com/LMQ00/superagent-lite/pull/4` |
+| `b81eddab113e99cb` | `delivery-blocked` | true | `9ccc191d2f24f3ecea0139d096dc5657f939d425` | `gh pr exited with status 1` | `https://github.com/LMQ00/superagent-lite/pull/2` |
 | `0258beac07ecaa15` | `review-required` | false | `71c9fc4e14aa0b3ef7b85584b2cfb419926c0ff3` | — | 无 |
 | `fe8473029c270882` | `review-required` | 无 review（`null`） | 无 | — | 无 |
 
@@ -40,8 +40,8 @@
 
 | 任务 | status | review.approved | review.head | failure | prUrl |
 | --- | --- | --- | --- | --- | --- |
-| `0c6e6374369b8933` | `delivery-blocked` | true | `14a59798979ab694939eee9f7af5fbdb47237330` | `gh pr exited with status 1` | `…/pull/3` |
-| `df729be001a6c1a5` | `delivery-blocked` | true | `d9539f40023ed2038da1a462377fd48235941251` | `gh pr exited with status 1` | `…/pull/5` |
+| `0c6e6374369b8933` | `delivery-blocked` | true | `14a59798979ab694939eee9f7af5fbdb47237330` | `gh pr exited with status 1` | `https://github.com/LMQ00/superagent-lite/pull/3` |
+| `df729be001a6c1a5` | `delivery-blocked` | true | `d9539f40023ed2038da1a462377fd48235941251` | `gh pr exited with status 1` | `https://github.com/LMQ00/superagent-lite/pull/5` |
 
 ### Git 证据
 
@@ -59,10 +59,10 @@
 ### GitHub 证据（PR 已建成，失败点在 required checks）
 
 ```
-#4 base=master head=sl-superagent-lite-7ca2bbe11a9d6cec headRefOid=aaad3e0… OPEN MERGEABLE CLEAN cross=false
-#2 base=master head=sl-superagent-lite-b81eddab113e99cb headRefOid=9ccc191… OPEN MERGEABLE CLEAN cross=false
-#3 base=master … 14a5979… OPEN MERGEABLE CLEAN cross=false
-#5 base=master … d9539f4… OPEN MERGEABLE CLEAN cross=false
+#4 base=master head=sl-superagent-lite-7ca2bbe11a9d6cec headRefOid=aaad3e0ae56d41920bc933fb995b3b6d96195a38 state=OPEN isDraft=false MERGEABLE CLEAN cross=false
+#2 base=master head=sl-superagent-lite-b81eddab113e99cb headRefOid=9ccc191d2f24f3ecea0139d096dc5657f939d425 state=OPEN isDraft=false MERGEABLE CLEAN cross=false
+#3 base=master headRefOid=14a59798979ab694939eee9f7af5fbdb47237330 state=OPEN isDraft=false MERGEABLE CLEAN cross=false
+#5 base=master headRefOid=d9539f40023ed2038da1a462377fd48235941251 state=OPEN isDraft=false MERGEABLE CLEAN cross=false
 
 gh pr checks 4 --repo … --required --json bucket -> "no checks reported on the 'sl-superagent-lite-7ca2bbe11a9d6cec' branch", exit 1
 gh pr checks 2 … --required --json bucket        -> "no checks reported on the '…b81eddab113e99cb' branch", exit 1
@@ -79,7 +79,7 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
 2. `index.js:112` 写 `publishing`，调用 `deliverGithub`（`src/github.js:22`）。
 3. 推送分支、`gh pr create` 成功（PR #4/#2 等已存在），`src/github.js:35` 写 `awaiting-ci` + `prUrl`。
 4. `src/github.js:40` 执行 `gh pr checks … --required --watch`；仓库没有 required checks，`gh` 以 exit 1 返回。
-5. `src/process.js:14` 把任何 `gh pr …` 失败统一包成 `gh pr exited with status 1`（只保留子命令首词）。
+5. `src/process.js:14` 把任何 `gh pr …` 失败统一包成 `gh pr exited with status 1`（只保留命令与第一个参数，具体子命令与 stderr 被丢弃）。
 6. `index.js:114-116` 捕获后写 `status='delivery-blocked'`、同名 `failure`，`prUrl` 保留。
 7. 用户执行 `/merge-worker`：`src/merge.js:25` 看到 `status !== 'awaiting-merge'`，抛 `No reviewed local commit is ready for merge`。
 8. 另外两条 `review-required` 在 `index.js:93-95` 就被写成 `review-required`，根本没进入投递；它们的报错也是同一句，但原因不同。
@@ -101,7 +101,7 @@ gh api repos/LMQ00/superagent-lite -> default_branch=master, allow_merge_commit=
    - `gh pr merge 4 --repo LMQ00/superagent-lite --merge`
    - `gh pr merge 2 --repo LMQ00/superagent-lite --merge`
    - 用 `--merge` 会保留 reviewed commit 本身进入 master 历史；若改用 `--squash`，master 上只会得到一个新的 squash 提交（内容等价、SHA 不同），reviewed SHA 不会出现在历史里。仓库无分支保护、无 required checks，不需要 `--admin`。
-   - 合并前可复核 `gh pr view 4 --json baseRefName,headRefOid,state` 仍为 `master` / `aaad3e0…` / `OPEN`。
+   - 合并前可复核 `gh pr view 4 --json baseRefName,headRefOid,state,isDraft` 仍为 `master` / `aaad3e0ae56d41920bc933fb995b3b6d96195a38` / `OPEN` / `false`（四条 PR 均已核实 `isDraft=false`，draft PR 无法直接 `gh pr merge`）。
    - 合并后本地要 `git pull` 才会看到 master 前进（当前仍是 `8d572fa`）。
 2. **PR 合并不会更新任务状态**（已知缺口）：任务 JSON 仍是 `delivery-blocked`，面板不会自动变成 `merged`，再执行 `/merge-worker` 仍报同一句。当前代码没有 PR 状态回收/重试入口（`src/continue.js:31` 也不接受 `delivery-blocked`）；不要把面板状态当成合并结果。
 3. **不要重新 `review_worker_commit`**：review 结论仍有效且已钉住 head；worker 已结束被冻结，review 工具要求 `task.status === 'running'`（`src/review.js:30`），当前也调不动。即便能调，也会再次走同一条 GitHub 投递路径，在同一个 required-checks 门禁再次失败。
