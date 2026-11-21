@@ -1,0 +1,85 @@
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -9,7 +9,7 @@
+ 
+ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
+ import type { Branded } from '@deepseek-ai/dsh-brand'
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
++import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+ import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+ 
+@@ -155,6 +155,14 @@
+   /** Content delivered as the child's user message. */
+   readonly prompt: ContentBlock[]
+   /**
++   * Optional attribution recorded on the child's initial user message.
++   * Omitted keeps the ordinary `user` source, so the creation prompt renders
++   * as a plain input row; a non-`user` source lets a waking initial turn render
++   * as a turn-trigger card. Local backends deliver this source themselves;
++   * external backends receive it on the resolved request and own delivery.
++   */
++  readonly promptSource?: MessageSource
++  /**
+    * The spawning agent. Its effective directory supplies the default cwd;
+    * in-process children retain its origin, lineage, and delegation depth.
+    */
+--- a/src/manager.ts
++++ b/src/manager.ts
+@@ -408,7 +408,7 @@
+           spec.delivery !== 'caller'
+             ? withResultDeliveryGuidance(spec.prompt)
+             : spec.prompt,
+-          { source: { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent) } },
++          { source: spec.promptSource ?? { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent) } },
+           ancestry.root,
+           () => {
+             this.assertAdmitting(parent)
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1555,7 +1555,7 @@
+ 				established = activation;
+ 				const childHeader = requireLocalActivation(activation).handle.agent.session.header;
+ 				return await this.submitMaterialized(activation, spec.delivery !== "caller" ? withResultDeliveryGuidance(spec.prompt) : spec.prompt, {
+-					source: { kind: "user" },
++					source: spec.promptSource ?? { kind: "user" },
+ 					signal,
+ 					delivery: "queue",
+ 					authorize: () => {
+--- a/lib/types/manager.js
++++ b/lib/types/manager.js
+@@ -329,7 +329,7 @@
+                 const childHeader = child.session.header;
+                 return await this.submitMaterialized(activation, spec.delivery !== 'caller'
+                     ? withResultDeliveryGuidance(spec.prompt)
+-                    : spec.prompt, { source: { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent); } }, ancestry.root, () => {
++                    : spec.prompt, { source: spec.promptSource ?? { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent); } }, ancestry.root, () => {
+                     this.assertAdmitting(parent);
+                     establishCatalogChild(parent.session, childHeader, descriptor, reservation.name);
+                 });
+--- a/lib/types/types.d.ts
++++ b/lib/types/types.d.ts
+@@ -8,7 +8,7 @@
+  */
+ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent';
+ import type { Branded } from '@deepseek-ai/dsh-brand';
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm';
++import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm';
+ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
+ import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools';
+ /** Identifies one subagent residency epoch across its lifecycle event pair. */
+@@ -144,6 +144,14 @@
+     /** Content delivered as the child's user message. */
+     readonly prompt: ContentBlock[];
+     /**
++     * Optional attribution recorded on the child's initial user message.
++     * Omitted keeps the ordinary `user` source, so the creation prompt renders
++     * as a plain input row; a non-`user` source lets a waking initial turn render
++     * as a turn-trigger card. Local backends deliver this source themselves;
++     * external backends receive it on the resolved request and own delivery.
++     */
++    readonly promptSource?: MessageSource;
++    /**
+      * The spawning agent. Its effective directory supplies the default cwd;
+      * in-process children retain its origin, lineage, and delegation depth.
+      */

@@ -93,6 +93,7 @@ export function createDispatchTool(ctx) {
           label: `${teamId}: ${title}`,
           agentPreset: 'superagent-lite-worker',
           prompt: [{ type: 'text', text: buildWorkerPrompt({ title, teamId, task: taskText, baseBranch, mode }) }],
+          promptSource: { kind: 'agent-message', form: 'relay', senderSessionId: exec.agent.id },
           signal: exec.signal,
           delivery: 'parent',
           maxDepth: ctx.subagents.resolveMaxDepth(),
