@@ -11,7 +11,7 @@ New work and existing work start differently, and neither path takes over the ot
 A user input gets one `dispatch_worker` call from the router. The call records the input's routing decision before the router answers.
 
 - `delegate=false` answers without a worker. It needs a reason of 1–2,000 characters and starts no Task.
-- `delegate=true` starts one Task and one Worker Session. The router passes the user's request and stated acceptance criteria; it adds no plan.
+- `delegate=true` starts one Task and one Worker Session. The router passes the user's request and stated acceptance criteria without rewriting or paraphrasing it; it does not omit or compress information and adds no plan.
 - `mode=report` marks a read-only task. The mode defaults to `change` when omitted.
 - The target checkout must have a branch checked out and a clean working tree. The only allowed dirty line is `?? .agents/worktrees/.gitignore`.
 - The Task ID is the first 16 hex characters of the SHA-256 of the router agent ID and the tool call ID. A repeated call for the same pair returns the existing Task unless that Task is `starting` or `failed`; those two states refuse a retry and ask for the task board.
@@ -73,7 +73,7 @@ The Router Session runs the `superagent-lite` preset. The turn guard applies to 
 - The worker is frozen when its subagent ends. It can then use no tool, including memory and message tools.
 - `review_worker_commit`, Memory and `message_router` are available only while the worker is active and inside its Worktree. `report_task` is available only for an active report-only task. A report-only worker instead sees inspection tools in the project checkout.
 - A report-only task may use `read`, `glob`, `grep`, `read_image`, `bash` or `todo_write` in the project checkout, and `report_task`. Every other tool is denied. `report_task` refuses a changed HEAD or any checkout change other than `?? .agents/worktrees/.gitignore`.
-- The `message_router` report is 1–4,000 characters; the worker sends one at the end of the work. The worker sends no routine progress.
+- The `message_router` report is 1–4,000 characters; the worker sends one at the end of the work. The worker sends no routine progress. A `COMPLETED` report needs a reviewed implementation with relevant checks passed, and it is not sent while a job whose result the report needs runs.
 - A follow-up that does not belong to the Task is left unapplied and named in the final report. A running Task that stays complete reports `COMPLETED` with the unapplied follow-up; a resumed Task whose follow-up does not belong reports `BLOCKED`.
 
 ## Review rules

@@ -161,6 +161,8 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   assert.match(message.description, /Do not send routine progress/)
   assert.match(message.description, /any unapplied follow-up/)
   assert.match(message.description, /reviewed commit when one exists/)
+  assert.match(message.description, /reviewed implementation with relevant checks passed/)
+  assert.match(message.description, /job whose result you need runs/)
   assert.doesNotMatch(message.description, /asks for status/)
   await message.execute({ message: 'Done on sl-fixture' }, { agent: worker, signal })
   assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])

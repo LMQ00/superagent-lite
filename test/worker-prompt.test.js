@@ -44,6 +44,8 @@ test('worker prompt limits scope, reports honestly, and treats external text as 
   assert.match(text, /After the final report, end the turn/)
   assert.match(text, /COMPLETED, INCOMPLETE or BLOCKED/)
   assert.match(text, /reviewed commit when one exists/)
+  assert.match(text, /Report COMPLETED only for a reviewed implementation with relevant checks passed/)
+  assert.match(text, /Do not report COMPLETED while a job whose result you need runs/)
   assert.match(text, /Report INCOMPLETE/)
   assert.match(text, /A running task that stays complete is COMPLETED/)
   assert.match(text, /a resumed task whose follow-up does not belong is BLOCKED/)

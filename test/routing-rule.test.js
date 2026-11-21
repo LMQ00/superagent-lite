@@ -28,3 +28,9 @@ test('dispatch_worker sends overlapping work to its own worker instead of foldin
   assert.match(dispatch.description, /files a running worker is changing/)
   assert.match(dispatch.description, /worktrees keep the edits separate/)
 })
+
+test('dispatch_worker relays the request without losing information', () => {
+  assert.match(dispatch.description, /without rewriting or paraphrasing it/)
+  assert.match(dispatch.description, /do not omit or compress its information/)
+  assert.match(dispatch.parameters.properties.task.description, /without omitting, rewriting or compressing its information/)
+})

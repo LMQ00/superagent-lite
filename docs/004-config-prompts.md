@@ -33,13 +33,14 @@ The router persona fixes the visible reply:
 
 ## Prompt editing rules
 
-A prompt change follows five rules:
+A prompt change follows six rules:
 
 1. One rule per line or bullet, and one sentence per rule.
 2. State the default action first, then the exception that permits another action.
 3. Let a tool description carry its mechanics; do not repeat them in the persona.
-4. Pass the user's request and stated acceptance criteria; add no plan, requirements or checklist.
-5. Keep code the enforcer: the turn guard requires a decision, the worktree tool confines edits and the review tool checks the commit.
+4. Pass the user's request and stated acceptance criteria without rewriting or paraphrasing it; do not omit or compress information and add no plan, requirements or checklist.
+5. Report `COMPLETED` only for a reviewed implementation with relevant checks passed, and not while a job whose result the report needs runs.
+6. Keep code the enforcer: the turn guard requires a decision, the worktree tool confines edits and the review tool checks the commit.
 
 ## Assembly order
 
