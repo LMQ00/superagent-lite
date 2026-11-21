@@ -2,12 +2,14 @@
 
 ## 结论（先回答）
 
-- DSH 内核 npm 包（`@deepseek-ai/dsh@0.2.2-rc.3`）不含 `/merge-worker`，包内也没有发现内核内置实现；其内置斜杠命令只有 `goal`、`plan`、`feedback`、`compact`、`permission`、`export`。本次只核查了已安装的 0.2.2-rc.3，没有逐版本回溯 npm 历史，所以准确说法是“已安装的 DSH 内核版本不含该命令”。运行中的宿主仍能使用它，是因为 web profile 通过 `@local/superagent-lite` 插件把它注册进了命令表。
-- 该命令由 superagent-lite 插件注册，引入于本仓库的第二个提交：
+- DSH 内核 npm 包（`@deepseek-ai/dsh@0.2.2-rc.3`）不含 `/merge-worker`，包内也没有发现内核内置实现；其内置斜杠命令只有 `goal`、`plan`、`feedback`、`compact`、`permission`、`export`。本次只核查了已安装的 0.2.2-rc.3，npm 上共 46 个已发布版本未逐版本下载核对，所以准确说法是“已安装的 DSH 内核版本不含该命令”。运行中的宿主仍能使用它，是因为 web profile 通过 `@local/superagent-lite` 插件把它注册进了命令表。
+- 该命令由 superagent-lite 插件注册，命令实现与注册引入于本仓库的第二个提交：
   - 提交：`f79d5dc5e2d87c524309598f1fe7d88eb18816a6`
   - 时间：2026-11-20 16:54:44 +0800
   - 标题：`feat: add project task board and reviewed delivery`
   - `git log --reverse` 前两条为 `11d64d1`（2026-11-20 16:39:19）与 `f79d5dc`，故“第二个提交”可复核。
+- “只有该命令能授权合并”的现行提示词措辞来自 `772f972`（2026-11-21 10:33:59 +0800，`refactor: 收紧路由与回复提示词，降低对人与模型的负担`），比命令本身晚一天；`772f972` 只改措辞，机制本身自 `f79d5dc` 起就存在：本地合并只由 `/merge-worker` 执行，router/worker 不合并。
+- 该机制的适用范围是“本地合并”：GitHub 项目由 `index.js:113` 的 `deliverGithub` 创建 PR 并请求 squash auto-merge，不经过 `/merge-worker`；且约束来自代码路径与提示词，不是 DSH 内核对 merge 动作的运行时权限校验。
 - 插件没有 release tag、没有发布 npm、没有 CHANGELOG，`version` 自首次提交起始终是 `1.0.0`（`private: true`）。`1.0.0` 只是未发布私有包的版本字段，不能当作发布版本证据；因此“引入版本”只能落到提交，没有可报的已发布版本号。插件绑定 `engines.dsh: 0.2.2-rc.3`。
 
 ## 实现与注册点
@@ -31,7 +33,7 @@
 
 ## `-S "merge-worker"` 的命中
 
-`git log --all --oneline -S "merge-worker" -- .` 在本文档提交前命中 4 个提交（`--all` 跨分支），逐一核对：
+`git log --all --oneline -S "merge-worker" -- . ':(exclude)docs/merge-worker-origin.md'` 命中 4 个提交（`--all` 跨分支），逐一核对：
 
 | 提交 | 时间（+0800） | 是否在 master 历史 | 对 `/merge-worker` 的改动 |
 | --- | --- | --- | --- |
@@ -70,17 +72,18 @@ grep -rn "deliverGithub" .
 
 - 给定 checkout `/home/LMQ/.npm_global/lib/node_modules/@deepseek-ai/dsh/` 是 npm 安装产物：没有 `.git`，也没有 CHANGELOG/HISTORY 文件；版本 `0.2.2-rc.3`，npm 发布时间为 2026-11-13T08:05:45.455Z。
 - 检索范围：包内 `lib/`、`src/`、`docs/`、`node_modules/`、`README*.md` 精确检索 `merge-worker`，零命中。
-- 本地源码搜索：`find /home/LMQ -maxdepth 5 -type d -name .git` 的结果中没有 deepseek-harness / dsh 内核仓库副本（只有插件仓库与 `.dsh` 配置仓库），因此没有可用的 DSH 源码 git 历史做 `git log -S`。
+- 本地源码搜索：`find /home/LMQ -maxdepth 5 -type d -name .git` 的结果中没有 deepseek-harness / dsh 内核仓库副本；加深到 `-maxdepth 8` 后只找到 `/home/LMQ/Documents/deepseek-harness/default-workspace`（普通工作区目录，无 `.git`、无 `package.json`），因此没有可用的 DSH 源码 git 历史做 `git log -S`。
 - 符号链接说明：`grep -r` 默认不跟随符号链接。`find . -type l` 共 12 个链接，全部在 `node_modules/.bin/`，没有指向外部插件的命令链接；`node_modules/@deepseek-ai/` 下 337 个包中没有 superagent/merge 相关包。
 - DSH 自带命令表（`@deepseek-ai/dsh-commands` 0.2.2-rc.3 的 `src/builtin.ts`）只有 `goal`、`plan`、`feedback`、`compact`、`permission`、`export`，不含 `merge-worker`；该包提供的是通用 `ctx.commands.register()` 注册能力。
-- 命令的实际来源可对上：`/home/LMQ/.dsh/profiles/web/package.json` 把 `@local/superagent-lite` 链到 `/home/LMQ/work/superagent-lite/` 并列入 `bundles`；`readlink -f $(which dsh)` 指向上述安装目录下的 `lib/bin.js`。
+- 命令的实际来源可对上：`/home/LMQ/.dsh/profiles/web/package.json` 把 `@local/superagent-lite` 链到主工作区 `/home/LMQ/work/superagent-lite/` 并列入 `bundles`；`readlink -f $(which dsh)` 指向上述安装目录下的 `lib/bin.js`。该链接目标当前在 `master` 的 `8d572fa`，`src/merge.js` 仍定义 `name: 'merge-worker'`（本 worktree 与主工作区同基线）。
 
 ## 状态与文档
 
 - 命令本身没有 experimental/预览标记，是插件内的普通功能路径：引入提交本身没有为命令加测试，8 分钟后提交 `a94bc85`（2026-11-20 17:03:06）加入的 `test/host.test.js` 覆盖了成功合并与只读策略拒绝。
 - 但没有稳定发布载体：插件 `private: true`、版本 `1.0.0`、无 tag/发布记录，且绑定 RC 版宿主。准确说法是“插件内的常规功能，处于未发布、RC 宿主约束下”，既不是 DSH 稳定版功能，也没有被标为实验性。
-- 文档：同一提交在 `docs/DETAIL.md` 增加 `/merge-worker` 说明；仓库没有 CHANGELOG、release notes、git tag（`git tag -l` 输出为空）。基线 `8d572fa` 的 `docs/` 只有 `DETAIL.md`、`PROMPTS.md`，根目录没有 README，也不存在编号文档索引，因此没有索引需要同步；本文档是调查记录，不属于编号文档体系。
+- 文档：同一提交在 `plugin/docs/DETAIL.md`（后上移为 `docs/DETAIL.md`）增加 `/merge-worker` 说明；仓库没有 CHANGELOG、release notes、git tag（`git tag -l` 输出为空）。基线 `8d572fa` 的 `docs/` 只有 `DETAIL.md`、`PROMPTS.md`，根目录没有 README，也不存在编号文档索引，因此没有索引需要同步；本文档是调查记录，不属于编号文档体系。
 - 当前基线（`8d572fa`）的 42 个测试全部通过：`npm test` 输出 `ℹ tests 42`、`ℹ pass 42`、`ℹ fail 0`。
+- 文档中的提交哈希与行号没有自动校验；行号绑定 `8d572fa`，仓库演进后会漂移，复核时应用 `git show 8d572fa:<path>` 取固定版本。
 
 ## 可复现证据
 
@@ -90,8 +93,8 @@ grep -rn "deliverGithub" .
 git log --reverse --format="%h %ad %s" --date=iso | head -2
 # 11d64d1 2026-11-20 16:39:19 +0800 feat: add router worker dispatch and worktrees
 # f79d5dc 2026-11-20 16:54:44 +0800 feat: add project task board and reviewed delivery
-git log --all --oneline -S "merge-worker" -- .
-# 截至 8d572fa：5b3bfd4 772f972 c7d5dc0 f79d5dc
+git log --all --oneline -S "merge-worker" -- . ':(exclude)docs/merge-worker-origin.md'
+# 5b3bfd4 772f972 c7d5dc0 f79d5dc（排除本文档后固定为 4 条）
 git log --all --follow --diff-filter=A --format="%h %ad %s" --date=iso -- src/merge.js
 # f79d5dc 2026-11-20 16:54:44 +0800 feat: add project task board and reviewed delivery
 git show f79d5dc -- plugin/router.js   # 见上文 diff 片段
@@ -119,6 +122,7 @@ grep -rIl "merge-worker" lib src docs node_modules README.md 2>/dev/null | wc -l
 find . -type l | wc -l                                             # 12，全部在 node_modules/.bin
 find . -type l -not -path "./node_modules/.bin/*"                  # 无输出
 ls node_modules/@deepseek-ai | wc -l                               # 337
+npm view @deepseek-ai/dsh versions --json | grep -c '"'            # 46 个已发布版本（未逐版本下载）
 ls node_modules/@deepseek-ai | grep -i "superagent\|merge"         # 无输出
 sed -n '/const BUILTINS/,/} as const/p' node_modules/@deepseek-ai/dsh-commands/src/builtin.ts
 #   goal / plan / feedback / compact / permission / export
