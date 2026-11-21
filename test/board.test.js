@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createBoardHandler, createGitActionHandler } from '../src/board.js'
 
-async function request(handler, method = 'GET') {
+async function request(handler, method = 'GET', url = '/') {
   const result = {}
   const response = {
     writeHead(status, headers) { Object.assign(result, { status, headers }); return this },
     end(body) { result.body = body },
   }
-  await handler({ method, headers: {} }, response)
+  await handler({ method, headers: {}, url }, response)
   return result
 }
 
@@ -83,12 +83,46 @@ test('Git action handler refuses non-owners, wrong methods and non-JSON bodies',
   assert.equal((await post(createGitActionHandler({ admit: () => ({ rejection: 401 }) }, fail), {})).status, 401)
   assert.equal((await post(createGitActionHandler({ admit: () => ({ peer: { principal: { kind: 'guest' } } }) }, fail), {})).status, 403)
   const owner = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }
-  assert.equal((await post(createGitActionHandler(owner, fail), {}, { method: 'GET' })).status, 405)
+  assert.equal((await request(createGitActionHandler(owner, fail), 'GET')).status, 400)
+  assert.equal((await request(createGitActionHandler(owner, fail), 'PUT')).status, 405)
+  assert.equal((await request(createGitActionHandler(owner, fail), 'PUT')).headers.allow, 'GET, POST')
+  assert.equal((await request(createGitActionHandler(owner, fail), 'GET', '/superagent-lite/git?taskId=not-a-task')).status, 400)
   assert.equal((await post(createGitActionHandler(owner, fail), {}, { headers: { 'content-type': 'text/plain' } })).status, 415)
   assert.equal((await post(createGitActionHandler(owner, fail), '{')).status, 400)
   assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'delete' })).status, 400)
   assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'not-a-task', action: 'merge' })).status, 400)
   assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'merge', padding: 'x'.repeat(5000) })).status, 413)
+})
+
+test('Git action handler returns branch detail to the owner', async () => {
+  const owner = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }
+  const taskId = 'a'.repeat(16)
+  const asked = []
+  const handler = createGitActionHandler(owner, {
+    async detail(id) {
+      asked.push(id)
+      return { taskId: id, commits: [{ hash: 'b'.repeat(40), subject: 'Change' }], files: [{ path: 'src/a.js', additions: 1, deletions: 0 }] }
+    },
+  })
+  const result = await request(handler, 'GET', `/superagent-lite/git?taskId=${taskId}`)
+  assert.equal(result.status, 200)
+  assert.equal(result.headers['cache-control'], 'no-store')
+  assert.deepEqual(asked, [taskId])
+  assert.equal(JSON.parse(result.body).commits[0].subject, 'Change')
+
+  const missing = createGitActionHandler(owner, { async detail() {
+    const error = new Error('Task not found')
+    error.status = 404
+    throw error
+  } })
+  const notFound = await request(missing, 'GET', `/superagent-lite/git?taskId=${taskId}`)
+  assert.equal(notFound.status, 404)
+  assert.deepEqual(JSON.parse(notFound.body), { error: 'Task not found' })
+
+  const broken = createGitActionHandler(owner, { async detail() { throw new Error('Could not read the branch history') } })
+  const failed = await request(broken, 'GET', `/superagent-lite/git?taskId=${taskId}`)
+  assert.equal(failed.status, 409)
+  assert.deepEqual(JSON.parse(failed.body), { error: 'Could not read the branch history' })
 })
 
 test('Git action handler performs the chosen action and reports failures as conflict', async () => {
