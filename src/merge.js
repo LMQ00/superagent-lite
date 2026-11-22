@@ -7,7 +7,7 @@ function dirtyTargetLine(line) {
 }
 
 function cleanMergeError(error) {
-  if (error?.exitCode === 1) return 'Merge would conflict; the target was not changed'
+  if (error?.exitCode === 1) return new Error('Merge would conflict; the target was not changed')
   return error
 }
 

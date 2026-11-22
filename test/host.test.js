@@ -173,6 +173,12 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   scopeMode = 'read-only'
   assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'error')
   scopeMode = 'danger-full-access'
+  await writeFile(join(repo, 'notes.txt'), 'main change\n')
+  git(['commit', '-am', 'change main'])
+  const conflicted = await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })
+  assert.equal(conflicted.kind, 'error')
+  assert.match(conflicted.text, /Merge would conflict/)
+  git(['reset', '--hard', baseCommit])
   assert.equal(git(['rev-parse', 'HEAD']), baseCommit)
   assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'success')
   assert.equal(git(['show', 'HEAD:notes.txt']), 'updated')
