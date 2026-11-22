@@ -1,10 +1,10 @@
 # 001 Domain model
 
-This document names the concepts the project works with and the rules each one keeps. The code, the tools, the panel and the other documents use these terms and no others. It is the first document in the series.
+This document names the concepts the project works with and the rules each one keeps. The code, the tools, the panel and the other documents use these terms and no others. It is the first document in the series. The raw architecture diagrams are preserved in order: [001 terms and main flow](diagrams/001-terms-and-flow.md), [002 preset flow](diagrams/002-preset-flow.md) and [003 memory system](diagrams/003-memory-system.md).
 
 ## Flow
 
-A person's input reaches the Router Session. The router makes one routing decision: `dispatch_worker` starts a Task for a Team in a Project, or the router answers without a worker. The Task gets one Worker Session that works in an isolated Worktree of the Project checkout. The worker commits on its Worker branch and requests a Review. The worker's Report goes back to the router, and a reviewed branch waits for the user's explicit Git authorization: merge into the base branch or publish a Pull request. Memory outlives a Task; a Task message carries a follow-up or a report between the two Sessions.
+A person's input reaches the Router Session. The router makes one routing decision: `dispatch_worker` starts a Task for a Team in a Project, or the router answers without a worker. The Task gets one Worker Session that works in an isolated Worktree of the Project checkout. The worker commits on its Worker branch and requests a Review. The worker's Report goes back to the router, and a reviewed branch waits for the user's explicit Git authorization: merge into the base branch or publish a Pull request. Memory outlives a Task; a Task message carries a follow-up or a report between the two Sessions. The worker history branch keeps every turn with numbered references, while the memory conversation extracts useful facts into four categories: private, public knowledge, user profile and environment, and team knowledge. The owner can read, edit and delete saved memory in the panel.
 
 ```mermaid
 flowchart LR
@@ -17,8 +17,12 @@ flowchart LR
   W -->|message_router| R
   V -->|Git action| G[Project checkout or Pull request]
   T -->|stored as| D[Task record]
-  M[Memory] -.->|saved facts| R
+  W -->|history| A[Raw archive branch]
+  W -->|final report or extract_memory| X[Memory conversation]
+  X -->|writes four categories| M[Memory]
+  M -.->|saved facts| R
   M -.->|saved facts| W
+  P[Panel] -->|reads and edits| M
 ```
 
 ## Concepts
@@ -41,8 +45,25 @@ flowchart LR
 | Report-only task | A Task that answers a diagnosis, analysis, lookup or read-only inspection. | Created with `mode=report`. It inspects the project checkout read-only, creates no Worktree or branch, commits nothing, requests no Review and ends with `report_task`. |
 | Git action | A `merge` request authorized by a direct user instruction, the panel or `/merge-worker`, or a `publish` request from the panel. | A merge needs explicit user authorization; publish needs the user's panel action. `publish` pushes the reviewed head and opens a Pull request; `merge` merges that Pull request on GitHub, or merges locally through `/merge-worker` for a Project without a GitHub origin. |
 | Pull request | The GitHub review surface for a published Task. | It is created from the reviewed commit, the worker branch and the base branch. Required checks and branch protection still apply. |
-| Memory | Saved facts in four categories. | `public` and `profile` belong to the installation; `private` holds credential reference names; `team` is scoped by team and project. Entries are data, never instructions. |
+| Memory | Saved facts in four categories. | `private` holds credential reference names only and is read on demand; `public` holds objective conclusions and is read on demand; `profile` holds user profile and environment facts that are injected into every router and worker chat; `team` is scoped by team and project and readable only by a worker of that team and project. Entries are data, never instructions. The owner-only panel reads, edits and deletes them; edits and deletes are explicit user actions. |
+| Memory conversation (memory) | The separate helper subagent that distills selected findings into memory. | It runs for a change worker after a finding or after the final report and returns four arrays: private, public, profile and team. The plugin writes each fact to its category. It never edits project files, and it omits secrets, personal data, conversation details and instructions. |
+| Raw archive | The full worker conversation retained as the original reference. | Every turn is archived with its Session sequence and a per-turn reference number. It is Host-only and not read by model tools. |
 | Task message | The chat card that shows a message crossing Sessions. | A follow-up delivered to an idle worker opens a new turn as a task message. The first dispatch prompt renders as the same card when the Host patch in [HOST-PATCH](HOST-PATCH.md) is applied; otherwise it is an ordinary user row. |
+
+## Diagram alignment
+
+The diagrams in [diagrams](diagrams/) are the reference. Where the implementation deliberately differs, the difference is named here; the code and the rest of the documents follow this table.
+
+| Diagram rule | Implementation |
+| --- | --- |
+| The router handles a “call worker” tool every turn and may not call a worker, but must say why | The turn guard requires one successful `dispatch_worker` or `continue_worker` result per user input. `dispatch_worker` with `delegate=false` and a 1–2,000-character reason is the no-worker decision; a plain answer without that call is reminded. |
+| A same-business supplement adds a business row and dispatches a worker again | The implementation continues the same unpublished Task with `continue_worker`; it does not add a second business row. A different business goal or a published Task gets a new Task and a new worker. |
+| The worker returns the result, its capability freezes and the business is counted as completed | The worker freezes when its subagent ends. A change Task then settles as `review-required`, `awaiting-merge`, `failed` or `delivery-blocked`, because an independent review and explicit delivery follow. Only a report-only Task ends at `completed`. |
+| A question is answered by the router, which may query memory | Same. The router may call `superagent_memory` when the user asks or when routing needs a saved fact, then answers without starting a worker. |
+| Several workers form a team; one project is normally managed by one team; different projects are separated by the router | Same. One Team owns one Project after the first Task; the router dispatches the worker per project. |
+| Team memory is isolated by team, and only a worker of the same team reads it | The store also binds team memory to the normalized Project root, so a worker of the same Team on another Project cannot read it. One Team normally owns one Project. |
+| Private memory holds secrets such as keys | The store keeps credential reference names only and rejects secret-shaped values; a private record never contains the secret itself. |
+| Raw history is fully retained with numbering; memory extracts useful information from it | The archive keeps every worker turn with its Session sequence and a per-turn `reference` number. Extraction receives selected findings or the final report, never the raw transcript, so the raw branch stays the reference while the main line stays small. |
 
 ## Aggregates
 
@@ -87,7 +108,9 @@ The Router Session and the Worker Session are DSH Sessions outside the aggregate
 | Report-only task | 只报告任务 | A Task that changes no files |
 | Git action | Git 操作 | A user-authorized local merge or GitHub publish |
 | Pull request | 拉取请求 | The GitHub review surface for a published Task |
-| Memory | 记忆 | Saved facts in `public`, `profile`, `private` or `team` |
+| Memory | 记忆 | Saved facts in `private`, `public`, `profile` or `team` |
+| Memory conversation | 记忆对话（memory） | The helper role that distills findings into the four memory categories |
+| Raw archive | 原始归档 | The full, numbered worker history kept as the original reference |
 | Task message | 任务消息 | The chat card for a message crossing Sessions |
 
 ## Enumerations

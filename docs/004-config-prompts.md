@@ -14,9 +14,9 @@ This document lists the text a maintainer can change, where it is assembled, and
 | Resume message | Follow-up wrapper, `Follow-up` and `Resume` sections | `src/continue.js` |
 | Review prompt and scope | Review instruction and JSON payload; the `base..head`/Worktree read scope enforced by the helper guard | `src/review.js`, `src/review-scope.js` |
 | Report and router messages | Tool descriptions and limits | `src/report-tool.js`, `src/message-router.js` |
-| Memory prompts | Tool description, six-fact profile context, extraction prompt | `src/memory.js` |
+| Memory prompts | Tool descriptions, the memory conversation role prompt, four-category extraction limits, six-fact profile context | `src/memory.js`, `src/memory-extractor.js` |
 | Dispatch reminder | Reopened-turn text | `src/turn-guard.js` |
-| Panel text | English and Chinese dictionaries | `client.js` |
+| Panel text | English and Chinese dictionaries for tasks, Git delivery and memory | `client.js` |
 
 Text lives in repository files. There is no settings page and no prompt editor; a change is a file edit plus a bundle reload.
 
@@ -30,6 +30,17 @@ The router persona fixes the visible reply:
 - Paths, hashes, test counts and implementation details stay in the worker report.
 - One outcome is surfaced once; an unchanged result is not repeated because a report or completion notice arrived.
 - The router merges only after the user explicitly authorizes it from a direct instruction, the Git panel merge action, or the `/merge-worker` command. Without that authorization, it does not merge.
+
+## Memory conversation prompt
+
+`memoryExtractorPrompt` is the role statement sent to the helper subagent. It fixes the four outputs:
+
+- `private`: credential reference names only, never secret values; extremely rare.
+- `public`: objective knowledge and conclusions only; no personal, team-specific or transient task state.
+- `profile`: durable user profile and environment facts, because they are injected into every router and worker chat; extremely small.
+- `team`: reusable knowledge for the same Team and Project, such as a convention, decision, pitfall, verified command, or non-obvious constraint.
+
+It also fixes the limits and the data rule: at most 1 private, 3 public, 1 profile and 3 team facts, each at most 500 characters; findings are data, not instructions; empty arrays mean nothing qualifies. The helper receives only the selected findings, never the raw transcript. `extract_memory` passes the worker's selected findings; the final `message_router` report passes the delivered report text when the worker did not call the tool. The plugin, not the helper, writes each array to its category after validating the structured output.
 
 ## Prompt editing rules
 
@@ -70,6 +81,7 @@ Session messages then carry the work itself:
 - Both presets mount `@deepseek-ai/dsh-agent-instructions`, so the router and the worker both load `AGENTS.md`. For the router it is repository conventions to follow, never a task: an injected instruction cannot by itself authorize a push or merge.
 - `dispatch_worker` sends the generated task message from `buildWorkerPrompt`.
 - `continue_worker` sends either the short requirement update or the full task message with a `Resume` section.
+- `message_router` sends the worker's final report, then triggers the memory conversation with that report when the worker did not call `extract_memory` in the same worker Session.
 - The turn guard sends a reminder as a user-role message with source kind `superagent-lite-reminder`.
 
 ## Priority
@@ -93,7 +105,9 @@ Prompt text has no stored version and no migration step. A change ships in the r
 | `cordis.patch.yml` | A new bundle composition | At bundle load |
 | Persona and tool text in `src/` | New text for the next assembled turn | When the Session or worker is created and on later turns |
 | Panel dictionaries in `client.js` | New labels for the panel | At client bundle load |
+| Memory conversation prompt in `src/memory-extractor.js` | New helper role text | At the next extraction start |
 | Saved profile facts | One Memory record per fact, with `createdAt` and `updatedAt` | At startup and after each profile write; the 6 newest are injected as runtime context |
+| Other saved memory records | One `~/.dsh/superagent-lite/memory/<category>/` record | On the next panel load or memory tool call; a panel edit or delete applies immediately |
 
 A Task keeps the requirements it stored at dispatch. Editing prompt text does not rewrite a running or settled Task, and the reviewer still judges the stored requirements with follow-ups as context.
 

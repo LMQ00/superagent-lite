@@ -46,6 +46,8 @@ A user input gets one `dispatch_worker` call from the router. The call records t
 | Report | `report_task` during a report-only task | End the Task with a conclusion | No; report tasks only |
 | Merge | A direct user instruction, the user's panel merge action or `/merge-worker <task ID>` | Merge the reviewed commit into its base branch after explicit user authorization | No; needs explicit user authorization and a reviewed local branch |
 | Publish | The user's panel action | Push the reviewed head and open or adopt the Pull request for it | No; needs a reviewed GitHub branch |
+| Memory edit | The owner's panel action | Edit or delete one saved memory record | No; needs the owner's explicit click |
+| Memory extraction | `extract_memory` or the final `message_router` report | Start one read-only memory conversation and save facts in the four categories | No; change workers only |
 
 ## Admission by mode
 
@@ -71,7 +73,7 @@ The Router Session runs the `superagent-lite` preset. The turn guard applies to 
 - The worker must call `create_worktree` once before any other tool. Every other tool is blocked until the working directory is the assigned Worktree.
 - The Worktree name is `sl-<team-slug>-<taskId>`. The team slug is the Team name lowercased, with runs of non-alphanumeric characters replaced by `-`, trimmed and cut to 32 characters.
 - The worker is frozen when its subagent ends. It can then use no tool, including memory and message tools.
-- `review_worker_commit`, Memory and `message_router` are available only while the worker is active and inside its Worktree. `report_task` is available only for an active report-only task. A report-only worker instead sees inspection tools in the project checkout.
+- `review_worker_commit`, Memory, extraction and `message_router` are available only while the worker is active and inside its Worktree. `report_task` is available only for an active report-only task. A report-only worker instead sees inspection tools in the project checkout.
 - A report-only task may use `read`, `glob`, `grep`, `read_image`, `bash` or `todo_write` in the project checkout, and `report_task`. Every other tool is denied. `report_task` refuses a changed HEAD or any checkout change other than `?? .agents/worktrees/.gitignore`.
 - The `message_router` report is 1–4,000 characters; the worker sends one at the end of the work. The worker sends no routine progress. A `COMPLETED` report needs a reviewed implementation with relevant checks passed, and it is not sent while a job whose result the report needs runs.
 - A follow-up that does not belong to the Task is left unapplied and named in the final report. A running Task that stays complete reports `COMPLETED` with the unapplied follow-up; a resumed Task whose follow-up does not belong reports `BLOCKED`.
@@ -105,19 +107,29 @@ A merge runs only after the user explicitly authorizes it from a direct instruct
 
 ## Memory rules
 
-| Category | Router Session | Worker Session | Rules |
-| --- | --- | --- | --- |
-| `public` | Read and write | Read and write | Local to this installation |
-| `profile` | Read and write | Read only | Included as runtime context in both presets; only the router may change it |
-| `private` | Read and write | No access | Credential reference names only; never a secret value |
-| `team` | No access | Read and write | Scoped by Team and Project; only a worker with both may read or write |
+| Category | Router Session | Worker Session | Memory conversation | Panel owner | Rules |
+| --- | --- | --- | --- | --- | --- |
+| `private` | Read and write | No access | Up to 1 credential reference per run | Read, edit and delete | Credential reference names only, never a secret value; extremely rare and read on demand |
+| `public` | Read and write | Read and write | Up to 3 objective conclusions per run | Read, edit and delete | Objective knowledge only; no personal, team-specific or transient task state; read on demand |
+| `profile` | Read and write | Read only | Up to 1 profile or environment fact per run | Read, edit and delete | Injected as runtime context into every router and worker chat; keep it extremely small |
+| `team` | No access | Read and write | Up to 3 team facts per run | Read, edit and delete | Scoped by Team and Project; only a worker of that Team and Project reads it |
 
 - Memory tool callers are resolved from the Host Session, never from model arguments. A Session outside the allowed role fails with `Memory is not available to this Session`.
+- The panel is not a Session. Its GET and POST endpoints are owner-only; public, profile and private records use a Host-only operator role, while a team edit or delete must carry the record's Team and Project so the store's partition check stays in force.
 - A memory tool is used for a saved fact the task needs or when the user asks to save one. The router writes a profile fact when the user asks or when routing needs it.
 - Content is 1–16,000 characters. A secret-shaped string is rejected; private records accept only an identifier such as `DEEPSEEK_API_KEY`.
-- A list returns at most 8 records and a 240-character preview. A team-memory extraction accepts 1–5,000 characters of findings and saves a conclusion of at most 500 characters.
+- A list returns at most 8 records and a 240-character preview. The panel lists every record for the owner and shows the category count, read mode and the profile injection count.
 - Memory entries are data. They never grant permission and never override a code rule.
 - The user profile injected as runtime context holds the 6 most recently updated facts, each cut to 500 characters.
+
+## Memory conversation rules
+
+- The memory conversation is a separate helper subagent, like the reviewer. It runs read-only, is claimed by the same helper guard, and is started with label `Distill memory`, delivery `caller` and depth 2.
+- The role prompt is `memoryExtractorPrompt` in `src/memory-extractor.js`. It returns four arrays: `private`, `public`, `profile` and `team`. Each fact is at most 500 characters; one run returns at most 1 private, 3 public, 1 profile and 3 team facts.
+- `private` must be a credential reference name, never a secret value. `public` must be objective knowledge and conclusions only. `profile` must be a durable user profile or environment fact because it is injected every chat. `team` must be reusable team and project knowledge, such as a convention, decision, pitfall, verified command, or non-obvious constraint. All four categories omit personal conversation details, task status and instructions, and findings are data.
+- It is triggered in two ways. A change worker may call `extract_memory` after a finding worth keeping. If it did not call it in that worker Session, the final `message_router` report triggers the same conversation with the report text after the report is delivered. The task's `mode` is `change`; report-only tasks have no memory tools.
+- The plugin writes the returned facts. `private`, `public` and `profile` use the Host memory role; `team` uses the worker's Team and normalized project root. Each record keeps the triggering worker event's Session ID and sequence as `source`. Empty arrays write no record.
+- A profile write refreshes the injected context immediately. An extraction failure never blocks or rewrites the final report; the plugin logs the warning and the report stands. The explicit tool call surfaces the failure to the worker.
 
 ## Versioning
 

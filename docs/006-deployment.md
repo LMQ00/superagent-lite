@@ -4,13 +4,14 @@ Use this document to install, configure, upgrade and troubleshoot the bundle. It
 
 ## What runs
 
-The bundle runs inside one DeepSeek Harness Web process. It adds two presets, one worktree service, the router tools, the worker tools, the task record store and the panel. It starts no separate daemon and opens no port of its own.
+The bundle runs inside one DeepSeek Harness Web process. It adds two presets, one worktree service, the router tools, the worker tools, the task and memory stores, the memory conversation role and the panel. It starts no separate daemon and opens no port of its own.
 
 | Component | Role |
 | --- | --- |
 | DSH Web host | Runs the plugin, the Sessions and the panel |
-| `@local/superagent-lite` bundle | Adds presets, tools, routes and the task store |
+| `@local/superagent-lite` bundle | Adds presets, tools, routes, the task store and the memory store |
 | Worktree service | Creates and retains one Worktree per Task |
+| Memory conversation | Distills findings into the four memory categories for a change worker |
 | GitHub CLI `gh` | Optional; required for publish and for merging a GitHub Pull request |
 | GitHub repository | Optional; needed for publish, not for a local merge |
 
@@ -81,22 +82,24 @@ The plugin has no standalone process and no CLI, so it has no process exit code.
 | Stop | Disable the bundle, or stop DSH Web |
 | Task status | Open **项目任务**; the five category groups in [005 Panel](005-panel.md), with each row's stage from [003 Lifecycle](003-lifecycle.md) |
 | Git delivery | The panel's Git area lists branches and actions only; it has no separate state. A failed action shows the host error and the Task stays `delivery-blocked` or `awaiting-merge` |
+| Memory | The panel's memory block lists private, public, profile and team records, their counts and read modes, and the current profile injection; edits and deletes apply only from the owner's explicit click |
 | Record location | `~/.dsh/superagent-lite/`, split into `tasks/` and `memory/` |
 
-Plugin warnings that are not tied to a Task go to the DSH host log. Dispatch and delivery errors are also stored on the Task in its `failure` field; review and memory errors surface as tool errors.
+Plugin warnings that are not tied to a Task go to the DSH host log. Dispatch and delivery errors are also stored on the Task in its `failure` field; review and explicit memory errors surface as tool errors, and a failure of the automatic final-report memory extraction is logged without replacing that report.
 
 The panel endpoints answer with HTTP status codes:
 
 | Code | Meaning |
 | --- | --- |
-| `200` | The list or the Git action succeeded |
-| `400` | A task ID, action or JSON body was malformed |
+| `200` | The list, the Git action or the memory action succeeded |
+| `400` | A task ID, memory action, category, record ID, body field or JSON body was malformed |
 | `401` | The request was not authenticated |
 | `403` | The authenticated peer is not the installation owner |
+| `404` | The memory record does not exist |
 | `405` | The method is not the one the endpoint accepts |
-| `409` | The Git action was refused or failed |
-| `413` | The request body exceeded 4 KB |
-| `415` | The Git action body was not `application/json` |
+| `409` | The Git action was refused or failed, or the memory store rejected the action |
+| `413` | The request body exceeded 4 KB for a Git action or 32 KB for a memory action |
+| `415` | The action body was not `application/json` |
 
 ## Set up
 
@@ -107,6 +110,7 @@ The panel endpoints answer with HTTP status codes:
 5. Set the router Session to full access if you intend to merge or publish.
 6. Ask a read-only question first: the router should answer without starting a worker.
 7. Ask for one small file change: the panel should show a Task that reaches `awaiting-merge` with a reviewed branch.
+8. Open the memory block: it should list saved records when any exist, and an edit or delete should apply on the owner's click.
 
 ## Upgrade
 
@@ -153,5 +157,12 @@ To roll back, stop the bundle, check out the previous commit of this repository,
 | `Report-only tasks must leave the project checkout unchanged` | Revert the checkout change, then call `report_task` again |
 | `Only the active worker for this task can message its router` | `message_router` is a worker tool; the router cannot call it |
 | `Memory is not available to this Session` | The Session is frozen or outside its Worktree; memory tools need an active worker or the router |
+| `A memory update or delete action, category and record id are required` | The panel request is missing one of them; reload the panel and retry |
+| `Team memory requires teamId and projectRoot` | The team record lost its scope pair; reload the panel so the row carries its Team and Project |
+| `Memory record not found` | The record was deleted in another tab or the ID is stale; refresh the panel |
+| `Memory content must contain 1–16000 characters` | Keep the fact within the limit; an empty or over-long edit is refused |
+| `Memory extraction did not finish` | Rerun `extract_memory`; the memory conversation must return the four category arrays |
+| `Memory fact exceeded 500 characters` | Split or shorten the fact; one extracted fact stays at 500 characters or less |
+| `Memory extraction returned too many private facts` | The private output is capped at one credential reference per run |
 | `The reviewer did not return a usable verdict` | Run `review_worker_commit` again; the review subagent must return `approved` and `findings` |
 | `... output exceeded N bytes` | A `git` or `gh` command produced more output than the plugin's cap; narrow the command or the range |

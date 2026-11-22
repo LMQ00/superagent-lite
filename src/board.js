@@ -30,7 +30,7 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git) {
   }
 }
 
-async function readJsonBody(request, limit) {
+export async function readJsonBody(request, limit) {
   const chunks = []
   let size = 0
   for await (const chunk of request) {

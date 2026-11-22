@@ -3,7 +3,8 @@ import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, worktreeHead } from './src/review.js'
 import { createGitManager } from './src/git-actions.js'
-import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
+import { archiveWorkerTurn, createMemoryTool, createExtractTool, originFor, refreshProfile, registerProfileContext, runMemoryExtraction } from './src/memory.js'
+import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
@@ -22,6 +23,10 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
       handler: createGitActionHandler(web.connection, gitManager),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/memory',
+      handler: createMemoryPanelHandler(web.connection),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -67,9 +72,19 @@ export async function apply(ctx) {
     })
     const caller = { role: 'worker', teamId: task.teamId, projectRoot: task.projectRoot }
     const canUseMemory = candidate => candidate === agent && !state.frozen && inCheckout()
+    let memoryAttempted = false
     const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
-    const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
-    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory, () => { memoryAttempted = true }), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (text, exec) => {
+      if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
+      memoryAttempted = true
+      try {
+        return await runMemoryExtraction(ctx, agent, caller, text, originFor(exec), exec.signal)
+      } catch (error) {
+        ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+    }), { when: ({ agent: candidate }) => canUseMemory(candidate) })
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
