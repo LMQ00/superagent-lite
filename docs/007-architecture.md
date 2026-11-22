@@ -87,7 +87,7 @@ Stores memory records and raw turn archives. It owns category and scope checks, 
 
 ### `src/merge.js`
 
-Owns the local merge and branch deletion. `mergeWorkerBranch` checks the reviewed head, target branch, clean checkout and conflict-free `merge-tree` preflight, switches to the chosen target, runs `git merge --no-ff`, switches back and records `merging`, `merged` or `delivery-blocked`. `deleteWorkerBranch` removes a merged Worktree and deletes its branch. `/merge-worker` wraps the same merge for the Task's base branch.
+Owns the local merge and branch deletion. `mergeWorkerBranch` checks the reviewed head, target branch, clean checkout and conflict-free `merge-tree` preflight, switches to the chosen target, runs `git merge --no-ff`, re-checks the target branch, switches back and records `merging`, `merged` or `delivery-blocked`. Merges and deletions for one Project root are queued in this module, so the panel and `/merge-worker` never switch the shared checkout at the same time. `deleteWorkerBranch` removes a merged Worktree and deletes its branch. `/merge-worker` wraps the same merge for the Task's base branch.
 
 ### `src/git-actions.js`
 

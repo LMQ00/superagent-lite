@@ -156,6 +156,21 @@ test('a reviewed current head is unmerged with merge and publish actions', async
   assert.equal((await store.readTask(taskId)).status, 'awaiting-merge')
 })
 
+test('a dirty project checkout disables merge and explains why', async () => {
+  const facts = await setupRepo()
+  await writeFile(join(facts.repo, 'dirty.txt'), 'dirty\n')
+  const record = recordFor(facts)
+  const store = memoryStore([record])
+  const dirty = (await managerFor(store).list([record], signal)).get(taskId)
+  assert.equal(dirty.status, 'unmerged')
+  assert.equal(dirty.git.canMerge, false)
+  assert.equal(dirty.git.mergeReason, 'The project checkout has uncommitted changes')
+  assert.equal(dirty.git.canPublish, true)
+  await rm(join(facts.repo, 'dirty.txt'))
+  const clean = (await managerFor(store).list([record], signal)).get(taskId)
+  assert.equal(clean.git.canMerge, true)
+})
+
 test('a branch whose head moved after approval is unreviewed and not mergeable', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { review: { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true } })
@@ -338,6 +353,69 @@ test('deleting a branch before the merge is refused', async () => {
   const facts = await setupRepo()
   const store = memoryStore([recordFor(facts, { status: 'awaiting-merge' })])
   await assert.rejects(managerFor(store).perform(taskId, 'delete-branch', {}, signal), /only after the task is merged/)
+})
+
+test('merges for one Project root are serialized across tasks and restore the checkout', async () => {
+  const facts = await setupRepo()
+  const other = join(facts.root, 'worktree2')
+  await git(['worktree', 'add', '-b', 'sl-other', other, facts.baseCommit], facts.repo)
+  await writeFile(join(other, 'other.txt'), 'other\n')
+  await git(['add', 'other.txt'], other)
+  await git(['commit', '-m', 'other change'], other)
+  const otherHead = await git(['rev-parse', 'HEAD'], other)
+  const idA = '1'.repeat(16)
+  const idB = '2'.repeat(16)
+  const first = recordFor(facts, { id: idA })
+  const second = recordFor(facts, {
+    id: idB, review: { head: otherHead, reviewerSessionId: 'reviewer', approved: true },
+    worktree: { path: other, branch: 'sl-other', baseCommit: facts.baseCommit, repositoryRoot: facts.repo, sourceBranch: 'main' },
+  })
+  const store = memoryStore([first, second])
+  let active = 0
+  let maxActive = 0
+  const base = context()
+  base.subprocess = {
+    async resolveExecutable(name) { return name },
+    spawn(spec) {
+      const merging = spec.argv.includes('--no-ff')
+      if (merging) {
+        active += 1
+        maxActive = Math.max(maxActive, active)
+      }
+      const child = context().subprocess.spawn(spec)
+      return {
+        ...child,
+        done: child.done.then(async outcome => {
+          if (merging) {
+            await new Promise(resolve => setTimeout(resolve, 60))
+            active -= 1
+          }
+          return outcome
+        }),
+      }
+    },
+  }
+  const manager = createGitManager(base, {
+    store,
+    git: (args, cwd) => git(args, cwd),
+    gh: async () => { throw new Error('gh unavailable') },
+    checkedHead: async task => git(['rev-parse', '--verify', 'HEAD^{commit}'], task.worktree.path),
+    policy: () => ({ mode: 'danger-full-access' }),
+  })
+  const [mergedA, mergedB] = await Promise.all([
+    manager.perform(idA, 'merge', { target: 'release' }, signal),
+    manager.perform(idB, 'merge', { target: 'main' }, signal),
+  ])
+  assert.equal(mergedA.target, 'release')
+  assert.equal(mergedB.target, 'main')
+  assert.equal(maxActive, 1)
+  const releaseHead = await git(['rev-parse', 'refs/heads/release'], facts.repo)
+  assert.equal(await git(['merge-base', '--is-ancestor', facts.workerHead, releaseHead], facts.repo), '')
+  assert.equal(await git(['merge-base', '--is-ancestor', otherHead, 'refs/heads/main'], facts.repo), '')
+  await assert.rejects(git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/main'], facts.repo))
+  assert.equal(await git(['symbolic-ref', '--short', 'HEAD'], facts.repo), 'main')
+  assert.equal((await store.readTask(idA)).mergeTarget, 'release')
+  assert.equal((await store.readTask(idB)).mergeTarget, 'main')
 })
 
 test('publish pushes to the selected remote and records the pull request', async () => {

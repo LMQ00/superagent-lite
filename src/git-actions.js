@@ -210,6 +210,16 @@ export function createGitManager(ctx, dependencies = {}) {
     return value
   }
 
+  async function checkoutFacts(root, signal) {
+    try {
+      const status = await git(['status', '--porcelain', '--untracked-files=all'], root, signal)
+      const branch = await git(['symbolic-ref', '--quiet', '--short', 'HEAD'], root, signal).catch(() => undefined)
+      return { clean: !status.split('\n').some(dirtyTargetLine), branch }
+    } catch {
+      return undefined
+    }
+  }
+
   async function remotesFor(root, signal) {
     if (typeof root !== 'string' || !root) return []
     const output = await git(['remote', '-v'], root, signal)
@@ -307,14 +317,19 @@ export function createGitManager(ctx, dependencies = {}) {
     }
     const worker = ctx.agents?.get?.(task.workerSessionId)
     const githubRemotes = project.remotes.filter(remote => remote.repository)
-    const canMerge = reviewed && !merged && !closed && hasCommits
+    const canMerge = reviewed && !merged && !closed && hasCommits && project.checkout?.clean === true
     const mergeReason = merged ? 'This branch is already merged'
       : closed ? 'The pull request was closed; reopen it or dispatch a new task'
         : !hasCommits ? 'This worker branch has no commits'
-          : !reviewed ? 'The reviewed commit is not the current worker head' : undefined
-    const canPublish = canMerge && githubRemotes.length > 0
-    const publishReason = !canMerge ? mergeReason
-      : githubRemotes.length === 0 ? 'This project has no GitHub remote' : undefined
+          : !reviewed ? 'The reviewed commit is not the current worker head'
+            : !project.checkout ? 'The project checkout could not be read'
+              : !project.checkout.clean ? 'The project checkout has uncommitted changes' : undefined
+    const canPublish = reviewed && !merged && !closed && hasCommits && githubRemotes.length > 0
+    const publishReason = merged ? 'This branch is already merged'
+      : closed ? 'The pull request was closed; reopen it or dispatch a new task'
+        : !hasCommits ? 'This worker branch has no commits'
+          : !reviewed ? 'The reviewed commit is not the current worker head'
+            : githubRemotes.length === 0 ? 'This project has no GitHub remote' : undefined
     const canReview = hasCommits && !reviewed && !merged && !closed && Boolean(worker)
     const reviewReason = merged ? 'This task is already merged'
       : !hasCommits ? 'This worker branch has no commits'
@@ -363,7 +378,10 @@ export function createGitManager(ctx, dependencies = {}) {
     const entries = await Promise.all(records.map(async record => {
       let project = projects.get(record.projectRoot)
       if (!project) {
-        project = remotesFor(record.projectRoot, signal).then(remotes => ({ remotes })).catch(() => ({ remotes: [] }))
+        project = Promise.all([
+          remotesFor(record.projectRoot, signal).catch(() => []),
+          checkoutFacts(record.projectRoot, signal),
+        ]).then(([remotes, checkout]) => ({ remotes, checkout }))
         projects.set(record.projectRoot, project)
       }
       return [record.id, await viewFor(record, await project, signal, reviews)]
@@ -404,7 +422,10 @@ export function createGitManager(ctx, dependencies = {}) {
     const merged = await merge(task, target, signal)
     const message = merged.alreadyMerged
       ? `Task ${task.id} is already merged.`
-      : `Merged ${task.id} into ${merged.target}; the project checkout is at ${merged.baseHead}.`
+      : `Merged ${task.id} into ${merged.target}; the project checkout is at ${merged.baseHead}.` +
+        (merged.checkoutRestored === false
+          ? ` The project checkout is still on ${merged.target}; restore ${task.baseBranch} manually: ${merged.restoreError}`
+          : '')
     return result(task, 'merge', {
       status: 'merged',
       target: merged.target,

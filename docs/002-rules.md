@@ -103,7 +103,7 @@ A merge runs only after the user explicitly authorizes it from a direct instruct
 - `GET /superagent-lite/git?taskId=` returns the local branches, the configured remotes with their GitHub repository when one exists, and the `gh` account status used by the merge and Pull request dialogs.
 - `/merge-worker` accepts one 16-hex task ID, must be run from the Task's Router Session, requires the same full-access policy, and merges into the recorded base branch.
 - A merge marks the Task `merging`, runs `git merge --no-ff`, and marks it `merged` with `mergeTarget`. A merge that does not report success marks it `delivery-blocked`.
-- Merges, publishes, reviews and deletions for one Task are serialized. Actions on different Tasks are not queued together.
+- Actions for one Task are serialized. Merges and branch deletions for one Project root are also serialized across Tasks, and the panel and `/merge-worker` share the same queue, so the shared project checkout is never switched by two merges at once.
 - The publish path pushes the reviewed head to `refs/heads/<worker branch>` of the chosen remote and opens a Pull request against the base branch; an existing Pull request for the same head is adopted and the Task settles as `awaiting-ci`. Required checks and branch protection still apply.
 - A Pull request whose head, head branch, base branch or cross-repository flag does not match the Task is not used. A merged exact Pull request sets `merged`; an exact closed Pull request sets `delivery-blocked`.
 - GitHub writes are not retried after an interrupted run. Deleting a branch is local and permanent after the merge.
