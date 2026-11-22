@@ -90,6 +90,6 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | profile 记忆 | 每条一条 Memory 记录，带 `createdAt` 和 `updatedAt` | 插件启动时和每次 profile 写入后；最近 6 条作为运行时上下文注入 |
 | 其他 Memory 记录 | `~/.dsh/superagent-lite/memory/<category>/` 下的一条记录 | 下一次面板加载或记忆工具调用时；面板编辑或删除立即生效 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/task-store.js:126-136`、`src/review.js:20-32`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:69-83`、`src/review.js:20-32`）。
 
 profile 上下文在插件启动时由 `refreshProfile()` 刷新，并在每次写入 `profile` 分类后刷新；每条事实截到 500 字符，最多 6 条进入提示词，按 `updatedAt` 从新到旧（`index.js:16`、`src/memory.js:10-18`、`src/memory.js:80`）。

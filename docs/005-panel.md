@@ -84,7 +84,7 @@ Git 交付没有第二套状态系统：没有打开/已合并/已关闭页签�
 | 同一分支已有打开的精确 PR | 发送 PR 不可用；原因 `A pull request already exists for this branch` |
 | 审查未通过或 reviewed HEAD 已移动 | 合并和发送都不可用；服务端分别返回 `The review has not approved this branch` 或 `The worker branch no longer matches its reviewed commit` |
 | 文件策略不是 full access | 合并和发送都不可用；返回 `Git delivery is unavailable under the current Session file policy` |
-| 本地合并目标不满足 | 合并不可用；原因来自 `src/merge.js` 的预检，例如目标分支未检出、工作区脏、已有进行中的 merge 或冲突 |
+| 本地合并目标不满足 | 合并不可用；原因来自 `src/git-actions.js:181-228` 和 `src/merge.js:28-43` 的预检，例如目标分支未检出、工作区脏、已有进行中的 merge 或冲突 |
 
 - 点击「合并到 <基础分支>」后，GitHub 项目会复用或打开该 reviewed HEAD 的 PR，再通过 `gh pr merge --merge --match-head-commit` 合并；没有 GitHub `origin` 的项目走 `/merge-worker` 的本地 `git merge --no-ff` 路径（`src/git-actions.js:464-525`、`src/github.js:115-137`）。
 - 点击「发送 PR」只适用于 GitHub 项目：推送 reviewed HEAD 到 worker 分支并创建或复用 PR；PR 打开后 Task 进入 `awaiting-ci`（`src/github.js:77-113`）。
