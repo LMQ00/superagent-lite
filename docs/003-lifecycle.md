@@ -4,24 +4,39 @@ This document follows one accepted Task from dispatch to its end. It builds on [
 
 ## Stages
 
-Read the table from top to bottom; the first row whose condition holds is the Task's stage. The stored status is one value; an exact merged Pull request can override a stored delivery state, and the panel computes `unconfirmed` at read time.
+The Task record stores one lifecycle status. The panel does not display that value directly; it derives one of the six panel statuses below from the stored status, the worker branch, the review record and the Pull request. The derived status answers what a person can do with the Task now.
 
-| Stage | Condition | Panel text |
+| Panel status | Condition, read from top to bottom |
+| --- | --- |
+| `running` / 运行中 | The stored status is `starting`, `running`, `resuming`, `publishing` or `merging` |
+| `completed` / 已完成 | The stored status is `merged`, or the worker head is an ancestor of the base branch tip, or an exact Pull request for the reviewed head is `MERGED` |
+| `failed` / 失败 | The stored status is `cancelled`, `interrupted` or `merge-conflict`, or an exact Pull request for the head is `CLOSED` |
+| `unmerged` / 未合并 | The current worker head has an approved review and is not merged. A review recorded for the same commit by another Task of the same Project counts; the panel then writes that review onto this Task |
+| `completed` / 已完成 | The worker turn ended `completed` and its branch has no commits after the base commit, so there is nothing to review |
+| `unreviewed` / 未审查 | The worker branch has commits and the current head has no approved review |
+| `failed` / 失败 | Any other stored failure value (`failed`, `delivery-blocked`) |
+| `answer` / 仅回答 | The Task is report-only and stored `completed`; report-only tasks otherwise show `running` or `failed` |
+
+A stored `review-required`, `delivery-blocked` or `failed` Task whose current head has an approved review is healed to `awaiting-merge` when the panel reads it. A stored `review-required` Task whose head is merged is healed to `merged`.
+
+Read the stored stage table from top to bottom; the first row whose condition holds is the recorded stage. An exact merged Pull request can override a stored delivery state, and the panel computes `unconfirmed` at read time.
+
+| Stage | Condition | Panel status |
 | --- | --- | --- |
-| `unconfirmed` | The stored status is `starting`, `running` or `resuming`, and no live worker agent has the Task's worker Session ID | 未确认 / Not confirmed |
-| `merged` | The stored status is `merged`, or the exact Pull request for the reviewed head is `MERGED` | 已合并 / Merged |
-| `delivery-blocked` | The stored status is `delivery-blocked` | 交付受阻 / Delivery blocked |
-| `merging` | The stored status is `merging` | 正在合并 / Merging |
-| `publishing` | The stored status is `publishing` | 正在发布拉取请求 / Publishing pull request |
-| `awaiting-ci` | The stored status is `awaiting-ci` | 等待 CI / Waiting for CI |
-| `merge-queued` | The stored status is `merge-queued` | 已进入合并队列 / Merge queued |
-| `awaiting-merge` | The stored status is `awaiting-merge` | 等待合并 / Waiting for merge |
-| `review-required` | The stored status is `review-required` | 需要审查 / Review required |
-| `completed` | The stored status is `completed` | 已完成 / Completed |
-| `failed` | The stored status is `failed` | 失败 / Failed |
-| `resuming` | The stored status is `resuming` and a live worker agent exists | 正在恢复 / Resuming |
-| `running` | The stored status is `running` and a live worker agent exists | 进行中 / In progress |
-| `starting` | The stored status is `starting` and a live worker agent exists | 启动中 / Starting |
+| `unconfirmed` | The stored status is `starting`, `running` or `resuming`, and no live worker agent has the Task's worker Session ID | `running` / 运行中, with the 未确认 / Not confirmed tag |
+| `merged` | The stored status is `merged`, or the exact Pull request for the reviewed head is `MERGED` | `completed` / 已完成 |
+| `delivery-blocked` | The stored status is `delivery-blocked`, and the head is not reviewed | `failed` / 失败 |
+| `merging` | The stored status is `merging` | `running` / 运行中 |
+| `publishing` | The stored status is `publishing` | `running` / 运行中 |
+| `awaiting-ci` | The stored status is `awaiting-ci` | `unmerged` / 未合并 |
+| `merge-queued` | The stored status is `merge-queued` | `unmerged` / 未合并 |
+| `awaiting-merge` | The stored status is `awaiting-merge` | `unmerged` / 未合并 |
+| `review-required` | The stored status is `review-required`, or a covered commit has no approved review | `unreviewed` / 未审查, or `completed` when the branch has no commits |
+| `completed` | The stored status is `completed` | `answer` / 仅回答 for report-only tasks, otherwise `completed` / 已完成 |
+| `failed` | The stored status is `failed` and the head is not reviewed | `failed` / 失败 |
+| `resuming` | The stored status is `resuming` and a live worker agent exists | `running` / 运行中 |
+| `running` | The stored status is `running` and a live worker agent exists | `running` / 运行中 |
+| `starting` | The stored status is `starting` and a live worker agent exists | `running` / 运行中 |
 
 ## Execution
 
@@ -52,7 +67,9 @@ The worker is frozen when its subagent ends. A frozen worker keeps no tool acces
 
 `review_worker_commit` starts a separate subagent with label `Independent code review`, the Worktree as its working directory, delivery `caller` and depth 2. It receives the stored requirements, recorded follow-up texts, the base and head commits and the Worktree path, and reads the `base..head` diff and changed files itself. The helper guard claims it before it is created and installs the read-only boundary, which confines reads and git commands to that range and Worktree.
 
-The reviewer returns `approved` and `findings`. The tool records `review.head`, `review.reviewerSessionId` and `review.approved` only when the verdict is usable and the worker head has not moved.
+The reviewer records its verdict with the `submit_review` tool. Content `通过` is an approval; any other content is a finding. The tool records `review.head`, `review.reviewerSessionId` and `review.approved` only when the verdict arrived, the reviewer inspected the change, and the worker head has not moved.
+
+The panel's `review` action runs the same review from the live worker Session. It is available on an `unreviewed` Task while that Session still exists; an approval heals the Task to `awaiting-merge`.
 
 ### Memory conversation
 
@@ -91,7 +108,7 @@ A change Task ends its worker turn in one of three ways:
 | The worker ends without an approved review, or the head moved after approval | `review-required` |
 | The worker ends without `completed`, without a Worktree, or the head check throws | `failed`, or `delivery-blocked` when the post-review head check throws |
 
-`awaiting-merge` is the end of the worker's work, not of the Task. The Task reaches `merged` only through a merge the user explicitly authorized (a direct instruction, the panel merge action or `/merge-worker`) or an exact merged Pull request. A report-only Task ends at `completed` when `report_task` runs; a report-only turn that ends without it becomes `failed` with `Report-only task ended without report_task`.
+`awaiting-merge` is the end of the worker's work, not of the Task. The Task reaches `merged` only through a merge the user explicitly authorized (a direct instruction, the panel merge action or `/merge-worker`) or an exact merged Pull request. A panel merge is a local `git merge --no-ff` into the local branch the user picked and needs no GitHub account; after it succeeds the user may delete the worker branch and its Worktree. A report-only Task ends at `completed` when `report_task` runs; a report-only turn that ends without it becomes `failed` with `Report-only task ended without report_task`.
 
 An input that needs no worker is not a Task: `dispatch_worker` returns `delegate=false` with a reason and the turn answers.
 
@@ -109,7 +126,7 @@ The review record stays `approved: false` and the Task settles as `review-requir
 
 ### Host restart or plugin reload
 
-Task and Memory records survive in `~/.dsh/superagent-lite/`; Worktrees survive under the project's `.agents/worktrees/`. A Task whose stored status is still in flight and whose worker Session is gone shows `unconfirmed`. `continue_worker` can wake an idle worker; a dispatch whose Task is `starting` or `failed` is refused for the same call and needs a new input.
+Task and Memory records survive in `~/.dsh/superagent-lite/`; Worktrees survive under the project's `.agents/worktrees/`. A Task whose stored status is still in flight and whose worker Session is gone shows 运行中 with the 未确认 tag. `continue_worker` can wake an idle worker; a dispatch whose Task is `starting` or `failed` is refused for the same call and needs a new input.
 
 ### GitHub delivery fails
 

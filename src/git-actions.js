@@ -1,16 +1,17 @@
-import { readTask, updateTask } from './task-store.js'
+import { readTask, updateTask, listTasks } from './task-store.js'
 import { runCommand, runProcess } from './process.js'
-import { githubOrigin, mergeGithub, publishGithub, pullRequestUrl } from './github.js'
-import { mergeCommand } from './merge.js'
-import { worktreeHead } from './review.js'
+import { githubRepository, publishGithub, pullRequestUrl } from './github.js'
+import { deleteWorkerBranch, mergeWorkerBranch } from './merge.js'
+import { runReview, worktreeHead } from './review.js'
+import { panelStatus, reviewIndex, reviewKey } from './status.js'
 
 export { pullRequestUrl }
 
 const TASK_ID = /^[a-f0-9]{16}$/
-const ORIGIN_CACHE_MS = 30_000
 const PR_CACHE_MS = 30_000
 const PR_TIMEOUT_MS = 10_000
 const DELIVERY_STATUSES = ['review-required', 'awaiting-merge', 'awaiting-ci', 'merge-queued', 'publishing', 'merging', 'delivery-blocked']
+const HEALABLE = ['review-required', 'delivery-blocked', 'failed', 'ready']
 
 const FAILED_CHECKS = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'ERROR', 'STARTUP_FAILURE', 'STALE'])
 const PENDING_CHECKS = new Set(['PENDING', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'EXPECTED', 'REQUESTED'])
@@ -63,18 +64,17 @@ function dirtyTargetLine(line) {
 }
 
 export function createGitManager(ctx, dependencies = {}) {
-  const store = dependencies.store ?? { readTask, updateTask }
+  const store = dependencies.store ?? { readTask, updateTask, listTasks }
   const git = dependencies.git ?? ((args, cwd, signal) => runCommand(ctx, args, cwd, signal))
-  const originOf = dependencies.originOf ?? ((root, signal) => githubOrigin(ctx, root, signal))
-  const merge = dependencies.merge ?? mergeCommand(ctx)
+  const merge = dependencies.merge ?? ((task, target, signal) => mergeWorkerBranch(ctx, task, target, signal, store.updateTask))
+  const removeBranch = dependencies.deleteBranch ?? ((task, signal) => deleteWorkerBranch(ctx, task, signal, store.updateTask))
   const publish = dependencies.publish ?? ((task, origin, signal, record) => publishGithub(ctx, task, origin, signal, record))
-  const mergeRemote = dependencies.mergeRemote ?? ((task, origin, signal, record) => mergeGithub(ctx, task, origin, signal, record))
+  const reviewer = dependencies.review ?? ((agent, task, signal) => runReview(ctx, agent, task, signal))
   const gh = dependencies.gh ?? ((args, cwd, signal) => runProcess(ctx, 'gh', args, cwd, signal))
   const checkedHead = dependencies.checkedHead ?? ((task, signal) => worktreeHead(ctx, task, signal))
   const policy = dependencies.policy
   const now = dependencies.now ?? (() => Date.now())
 
-  const origins = new Map()
   const pullRequests = new Map()
   const inFlight = new Map()
 
@@ -107,26 +107,6 @@ export function createGitManager(ctx, dependencies = {}) {
     if (deliveryMode(task) !== 'danger-full-access') {
       throw new Error('Git delivery is unavailable under the current Session file policy')
     }
-  }
-
-  function routerFor(task) {
-    const agent = ctx.agents?.get(task.parentSessionId)
-    if (!agent) throw new Error('The router Session is not running')
-    return agent
-  }
-
-  async function resolveOrigin(root, signal, fresh = false) {
-    if (typeof root !== 'string' || !root) return { error: new Error('This task has no project checkout') }
-    const cached = origins.get(root)
-    if (!fresh && cached && now() - cached.at < ORIGIN_CACHE_MS) return cached.value
-    let value
-    try {
-      value = { origin: await originOf(root, signal) }
-    } catch (error) {
-      value = { error }
-    }
-    origins.set(root, { at: now(), value })
-    return value
   }
 
   async function worktreeFacts(task, signal) {
@@ -178,64 +158,6 @@ export function createGitManager(ctx, dependencies = {}) {
     return head
   }
 
-  async function assertCheckoutReady(task, signal) {
-    const root = task.projectRoot
-    if (await git(['rev-parse', '--show-toplevel'], root, signal) !== root) {
-      throw new Error('The target checkout no longer resolves to the project root')
-    }
-    if (await git(['symbolic-ref', '--quiet', 'HEAD'], root, signal) !== `refs/heads/${task.baseBranch}`) {
-      throw new Error('The target checkout no longer has its original branch checked out')
-    }
-    try {
-      await git(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], root, signal)
-      throw new Error('The target already has an in-progress merge')
-    } catch (error) {
-      if (error.exitCode !== 1) throw error
-    }
-    const dirty = await git(['status', '--porcelain', '--untracked-files=all'], root, signal)
-    if (dirty.split('\n').some(dirtyTargetLine)) throw new Error('The target checkout has uncommitted changes')
-  }
-
-  async function assertTargetReady(task, head, signal) {
-    await assertCheckoutReady(task, signal)
-    const root = task.projectRoot
-    try {
-      await git(['merge-tree', '--write-tree', 'HEAD', head], root, signal)
-    } catch (error) {
-      if (error.exitCode === 1 && !signal?.aborted) throw new Error('Merge would conflict; the target was not changed')
-      throw error
-    }
-  }
-
-  async function syncBaseCheckout(task, signal) {
-    await assertCheckoutReady(task, signal)
-    await git(['pull', '--ff-only', 'origin', task.baseBranch], task.projectRoot, signal)
-    return git(['rev-parse', '--verify', 'HEAD^{commit}'], task.projectRoot, signal)
-  }
-
-  async function assertMergeReady(task, project, signal) {
-    if (project.error) throw project.error
-    const head = await reviewedHead(task, signal)
-    requireFullAccess(task)
-    if (project.origin) {
-      await assertCheckoutReady(task, signal)
-      return { head, github: true }
-    }
-    if (task.status !== 'awaiting-merge') throw new Error('This branch is not waiting for merge')
-    const agent = routerFor(task)
-    await assertTargetReady(task, head, signal)
-    return { head, github: false, agent }
-  }
-
-  async function assertPublishReady(task, project, signal) {
-    if (project.error) throw project.error
-    const head = await reviewedHead(task, signal)
-    if (!project.origin) throw new Error('This project has no GitHub origin')
-    if (task.status === 'merged') throw new Error('This branch is already merged')
-    requireFullAccess(task)
-    return head
-  }
-
   async function syncPullRequest(task, signal) {
     const url = pullRequestUrl(task.prUrl)
     if (!url) return undefined
@@ -271,7 +193,7 @@ export function createGitManager(ctx, dependencies = {}) {
           : { status: 'merged', prState: 'MERGED' })
         value.status = next.status
       } else if (exact && view.state === 'CLOSED') {
-        const next = await store.updateTask(task.id, latest => ['awaiting-merge', 'awaiting-ci', 'merge-queued', 'publishing', 'merging'].includes(latest.status)
+        const next = await store.updateTask(task.id, latest => DELIVERY_STATUSES.includes(latest.status)
           ? { status: 'delivery-blocked', prState: 'CLOSED', failure: 'The pull request was closed' }
           : {})
         value.status = next.status
@@ -288,20 +210,77 @@ export function createGitManager(ctx, dependencies = {}) {
     return value
   }
 
-  async function selfHeal(task, signal) {
-    if (!task.worktree?.branch || task.review?.approved !== true) return task
+  async function checkoutFacts(root, signal) {
+    try {
+      const status = await git(['status', '--porcelain', '--untracked-files=all'], root, signal)
+      const branch = await git(['symbolic-ref', '--quiet', '--short', 'HEAD'], root, signal).catch(() => undefined)
+      return { clean: !status.split('\n').some(dirtyTargetLine), branch }
+    } catch {
+      return undefined
+    }
+  }
+
+  async function remotesFor(root, signal) {
+    if (typeof root !== 'string' || !root) return []
+    const output = await git(['remote', '-v'], root, signal)
+    const byName = new Map()
+    for (const line of output.split('\n').filter(Boolean)) {
+      const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(line)
+      if (!match) continue
+      const [, name, url, kind] = match
+      const entry = byName.get(name) ?? { name }
+      if (kind === 'fetch') entry.fetchUrl = url
+      else entry.pushUrl = url
+      byName.set(name, entry)
+    }
+    return [...byName.values()].map(entry => {
+      const repository = githubRepository(entry.fetchUrl)
+      return {
+        ...entry,
+        ...(repository && repository === githubRepository(entry.pushUrl) ? { repository } : {}),
+      }
+    })
+  }
+
+  async function branchesFor(root, signal) {
+    const output = await git(['for-each-ref', '--format=%(refname:short)', 'refs/heads/'], root, signal)
+    let current
+    try {
+      current = await git(['symbolic-ref', '--quiet', '--short', 'HEAD'], root, signal)
+    } catch {
+      current = undefined
+    }
+    return output.split('\n').filter(Boolean).map(name => ({ name, current: name === current }))
+  }
+
+  async function ghStatus(root, signal) {
+    try {
+      const output = await gh(['auth', 'status', '--hostname', 'github.com'], root, signal)
+      const match = output.match(/(?:account|as)\s+([A-Za-z0-9-]+)/)
+      return { ok: true, ...(match ? { account: match[1] } : {}) }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  async function adoptReview(task, signal, records) {
+    if (task.review?.approved === true) return task
     let head
     try {
       head = await checkedHead(task, signal)
     } catch {
       return task
     }
-    if (head !== task.review.head) return task
-    if (task.status === 'review-required') return settle(task, { status: 'awaiting-merge' })
-    return task
+    if (task.review?.head === head && task.review?.approved === false) return task
+    const candidates = records ?? (store.listTasks ? await store.listTasks() : [task])
+    const review = reviewIndex(candidates).get(reviewKey(task.projectRoot, head))
+    if (!review) return task
+    return store.updateTask(task.id, {
+      review: { head: review.head, reviewerSessionId: review.reviewerSessionId, approved: true },
+    })
   }
 
-  async function viewFor(record, project, signal) {
+  async function viewFor(record, project, signal, reviews) {
     let task = record
     let pr
     if (task.prUrl) {
@@ -312,69 +291,68 @@ export function createGitManager(ctx, dependencies = {}) {
       task = await settle(task, { status: 'completed' })
     }
     const branch = task.worktree?.branch
-    if (!branch) return { status: task.status, git: undefined }
+    if (!branch) return { status: panelStatus(task), git: undefined }
     const facts = await worktreeFacts(task, signal)
-    const approved = task.review?.approved === true
-    const reviewed = approved && facts?.head !== undefined && facts.head === task.review.head
+    const head = facts?.head
+    const base = task.worktree?.baseCommit ?? task.baseCommit
+    const hasCommits = head === undefined ? undefined : head !== base
+    let reviewed = task.review?.approved === true && head !== undefined && head === task.review.head
+    if (!reviewed && head !== undefined) {
+      const adopted = reviews?.get(reviewKey(task.projectRoot, head))
+      if (adopted && !(task.review?.head === head && task.review?.approved === false)) {
+        task = await store.updateTask(task.id, {
+          review: { head: adopted.head, reviewerSessionId: adopted.reviewerSessionId, approved: true },
+        })
+        reviewed = true
+      }
+    }
     const mergedInPr = pr?.exact === true && pr.state === 'MERGED'
-    // A squash-merged pull request is not an ancestor of the base branch; keep the stored merge state
-    // when GitHub cannot be read. Otherwise the row would claim both merged and unmerged at once.
-    const merged = mergedInPr || task.status === 'merged' || await isMerged(task, facts?.head ?? task.review?.head, signal)
+    const merged = mergedInPr || task.status === 'merged' ||
+      (hasCommits && await isMerged(task, head, signal))
+    const closed = pr?.exact === true && pr.state === 'CLOSED'
     if (merged && DELIVERY_STATUSES.includes(task.status)) {
       task = await settle(task, { status: 'merged', ...(mergedInPr ? { prState: 'MERGED' } : {}) })
-    } else if (!merged && task.status === 'review-required' && reviewed) {
-      task = await settle(task, { status: 'awaiting-merge' })
+    } else if (!merged && reviewed && !closed && HEALABLE.includes(task.status)) {
+      task = await settle(task, { status: 'awaiting-merge', failure: undefined })
     }
-    const closed = pr?.exact === true && pr.state === 'CLOSED'
-    let mergeReason
-    let publishReason
-    let canMerge = false
-    let canPublish = false
-    try {
-      await assertMergeReady(task, project, signal)
-      canMerge = true
-    } catch (error) {
-      mergeReason = error.message
-    }
-    try {
-      await assertPublishReady(task, project, signal)
-      canPublish = true
-    } catch (error) {
-      publishReason = error.message
-    }
-    if (merged) {
-      canMerge = false
-      canPublish = false
-      mergeReason = 'This branch is already merged'
-      publishReason = 'This branch is already merged'
-    } else if (closed) {
-      canMerge = false
-      canPublish = false
-      mergeReason = 'The pull request was closed; reopen it or dispatch a new task'
-      publishReason = mergeReason
-    } else if (pr?.mergeable === 'CONFLICTING') {
-      canMerge = false
-      mergeReason = 'The pull request has merge conflicts; resolve them before merging'
-    }
-    if (project.origin && pr?.exact === true && pr.state === 'OPEN' && !merged) {
-      canPublish = false
-      publishReason = 'A pull request already exists for this branch'
-    }
+    const worker = ctx.agents?.get?.(task.workerSessionId)
+    const githubRemotes = project.remotes.filter(remote => remote.repository)
+    const canMerge = reviewed && !merged && !closed && hasCommits &&
+      project.checkout?.clean === true && typeof project.checkout?.branch === 'string'
+    const mergeReason = merged ? 'This branch is already merged'
+      : closed ? 'The pull request was closed; reopen it or dispatch a new task'
+        : !hasCommits ? 'This worker branch has no commits'
+          : !reviewed ? 'The reviewed commit is not the current worker head'
+            : !project.checkout ? 'The project checkout could not be read'
+              : typeof project.checkout.branch !== 'string' ? 'The project checkout is not on a branch'
+                : !project.checkout.clean ? 'The project checkout has uncommitted changes' : undefined
+    const canPublish = reviewed && !merged && !closed && hasCommits && githubRemotes.length > 0
+    const publishReason = merged ? 'This branch is already merged'
+      : closed ? 'The pull request was closed; reopen it or dispatch a new task'
+        : !hasCommits ? 'This worker branch has no commits'
+          : !reviewed ? 'The reviewed commit is not the current worker head'
+            : githubRemotes.length === 0 ? 'This project has no GitHub remote' : undefined
+    const canReview = hasCommits && !reviewed && !merged && !closed && Boolean(worker)
+    const reviewReason = merged ? 'This task is already merged'
+      : !hasCommits ? 'This worker branch has no commits'
+        : reviewed ? 'This commit is already reviewed'
+          : !worker ? 'The worker Session is not running; open it to review the commit there' : undefined
+    const canDelete = Boolean(task.status === 'merged' || merged) && !task.branchDeletedAt
     return {
-      status: task.status,
+      status: panelStatus(task, { merged, reviewed, hasCommits, closed, branch: true }),
       git: {
         branch,
         baseBranch: task.baseBranch,
-        head: facts?.head,
+        head,
         reviewedHead: task.review?.head,
-        approved,
+        approved: task.review?.approved === true,
         reviewed,
         merged,
-        unmerged: !merged && Boolean(facts?.head),
+        unmerged: !merged && Boolean(head),
         uncommitted: facts?.uncommitted ?? false,
         onBranch: facts?.onBranch ?? false,
-        repository: project.origin?.repo,
         author: facts?.author,
+        hasCommits,
         pr: pr ? {
           url: pr.url,
           state: pr.state,
@@ -386,22 +364,29 @@ export function createGitManager(ctx, dependencies = {}) {
           checks: pr.checks,
         } : undefined,
         canMerge,
-        canPublish,
         mergeReason,
+        canPublish,
         publishReason,
+        canReview,
+        reviewReason,
+        canDelete,
       },
     }
   }
 
   async function list(records, signal) {
     const projects = new Map()
+    const reviews = reviewIndex(records)
     const entries = await Promise.all(records.map(async record => {
       let project = projects.get(record.projectRoot)
       if (!project) {
-        project = resolveOrigin(record.projectRoot, signal)
+        project = Promise.all([
+          remotesFor(record.projectRoot, signal).catch(() => []),
+          checkoutFacts(record.projectRoot, signal),
+        ]).then(([remotes, checkout]) => ({ remotes, checkout }))
         projects.set(record.projectRoot, project)
       }
-      return [record.id, await viewFor(record, await project, signal)]
+      return [record.id, await viewFor(record, await project, signal, reviews)]
     }))
     return new Map(entries)
   }
@@ -410,22 +395,55 @@ export function createGitManager(ctx, dependencies = {}) {
     return { taskId: task.id, action, ...changes }
   }
 
-  async function alreadyMerged(task, action, project, signal) {
-    let message = `Task ${task.id} is already merged`
-    let baseHead
-    if (project.origin && !project.error) {
-      try {
-        baseHead = await syncBaseCheckout(task, signal)
-        message = `${message}; the project checkout is at ${baseHead}`
-      } catch (error) {
-        throw new Error(`Task ${task.id} is already merged, but the project checkout could not be fast-forwarded: ${error.message}`)
-      }
-    }
-    return result(task, action, { status: 'merged', prUrl: task.prUrl, ...(baseHead ? { baseHead } : {}), message: `${message}.` })
+  async function reviewAction(task, signal) {
+    if (task.mode === 'report') throw new Error('Report-only tasks have no review')
+    if (task.status === 'merged') throw new Error('This task is already merged')
+    if (!task.worktree?.branch) throw new Error('This task has no worker branch')
+    const agent = ctx.agents?.get?.(task.workerSessionId)
+    if (!agent) throw new Error('The worker Session is not running; open its conversation to review the commit there')
+    const verdict = await reviewer(agent, task, signal)
+    const next = await store.updateTask(task.id, {
+      review: { head: verdict.head, reviewerSessionId: verdict.reviewerSessionId, approved: verdict.approved },
+      status: verdict.approved ? 'awaiting-merge' : 'review-required',
+      failure: verdict.approved ? undefined : task.failure,
+    })
+    return result(task, 'review', {
+      status: next.status,
+      approved: verdict.approved,
+      findings: verdict.findings,
+      head: verdict.head,
+      message: verdict.approved
+        ? `Review approved ${verdict.head} for ${task.id}.`
+        : `Review requested changes for ${verdict.head}: ${verdict.findings.slice(0, 6000)}`,
+    })
   }
 
-  async function publishAction(task, project, signal) {
-    const head = await assertPublishReady(task, project, signal)
+  async function mergeAction(task, target, signal) {
+    if (typeof target !== 'string' || !target) throw new Error('A merge target branch is required')
+    requireFullAccess(task)
+    const merged = await merge(task, target, signal)
+    const message = merged.alreadyMerged
+      ? `Task ${task.id} is already merged.`
+      : `Merged ${task.id} into ${merged.target}; the project checkout is at ${merged.baseHead}.` +
+        (merged.checkoutRestored === false
+          ? ` The project checkout is still on ${merged.target}; restore ${task.baseBranch} manually: ${merged.restoreError}`
+          : '')
+    return result(task, 'merge', {
+      status: 'merged',
+      target: merged.target,
+      ...(merged.baseHead ? { baseHead: merged.baseHead } : {}),
+      message,
+    })
+  }
+
+  async function publishAction(task, remoteName, signal) {
+    if (typeof remoteName !== 'string' || !remoteName) throw new Error('A remote is required to send a pull request')
+    requireFullAccess(task)
+    const head = await reviewedHead(task, signal)
+    const remotes = await remotesFor(task.projectRoot, signal)
+    const remote = remotes.find(candidate => candidate.name === remoteName)
+    if (!remote) throw new Error('The selected remote is not configured for this project')
+    if (!remote.repository) throw new Error('The selected remote is not a single GitHub fetch/push repository')
     if (task.prUrl) {
       const pr = await syncPullRequest(task, signal)
       if (pr?.exact && pr.state === 'OPEN') {
@@ -433,7 +451,7 @@ export function createGitManager(ctx, dependencies = {}) {
       }
       if (pr?.exact && pr.state === 'MERGED') {
         await settle(task, { status: 'merged', prState: 'MERGED' })
-        return alreadyMerged({ ...task, status: 'merged' }, 'publish', project, signal)
+        return result(task, 'publish', { status: 'merged', prUrl: task.prUrl, prState: 'MERGED', message: `Task ${task.id} is already merged.` })
       }
       if (pr?.exact && pr.state === 'CLOSED') throw new Error('The pull request was closed; reopen it or dispatch a new task')
     }
@@ -443,7 +461,7 @@ export function createGitManager(ctx, dependencies = {}) {
       return { status: 'publishing', failure: undefined }
     })
     try {
-      const published = await publish(task, project.origin, signal, changes => store.updateTask(task.id, changes))
+      const published = await publish(task, { repo: remote.repository, pushUrl: remote.pushUrl }, signal, changes => store.updateTask(task.id, changes))
       const next = await store.readTask(task.id)
       const url = pullRequestUrl(next.prUrl) ?? published.url
       if (url) pullRequests.delete(url)
@@ -461,69 +479,18 @@ export function createGitManager(ctx, dependencies = {}) {
     }
   }
 
-  async function mergeGithubAction(task, project, signal) {
-    if (task.prUrl) {
-      const pr = await syncPullRequest(task, signal)
-      if (pr?.exact && pr.state === 'MERGED') {
-        await settle(task, { status: 'merged', prState: 'MERGED' })
-        return alreadyMerged({ ...task, status: 'merged' }, 'merge', project, signal)
-      }
-      if (pr?.exact && pr.state === 'CLOSED') throw new Error('The pull request was closed; reopen it or dispatch a new task')
-    }
-    await assertMergeReady(task, project, signal)
-    let current = await store.readTask(task.id)
-    let pr = current.prUrl ? await syncPullRequest(current, signal) : undefined
-    if (!pr?.exact || pr.state !== 'OPEN') {
-      await store.updateTask(task.id, { status: 'publishing', failure: undefined })
-      try {
-        await publish(current, project.origin, signal, changes => store.updateTask(task.id, changes))
-      } catch (error) {
-        await store.updateTask(task.id, latest => latest.status === 'merged' ? {} : { status: 'delivery-blocked', failure: error.message })
-        throw error
-      }
-      current = await store.readTask(task.id)
-      const url = pullRequestUrl(current.prUrl)
-      if (url) pullRequests.delete(url)
-      if (current.status === 'merged') return alreadyMerged(current, 'merge', project, signal)
-      pr = await syncPullRequest(current, signal)
-      if (pr?.exact && pr.state === 'MERGED') {
-        await settle(current, { status: 'merged', prState: 'MERGED' })
-        return alreadyMerged({ ...current, status: 'merged' }, 'merge', project, signal)
-      }
-      if (!pr?.exact || pr.state !== 'OPEN') throw new Error('The pull request could not be opened for the reviewed commit')
-    }
-    await store.updateTask(task.id, { status: 'merging' })
-    let merged
-    try {
-      merged = await mergeRemote(current, project.origin, signal, changes => store.updateTask(task.id, changes))
-    } catch (error) {
-      await store.updateTask(task.id, latest => latest.status === 'merged' ? {} : { status: 'delivery-blocked', failure: error.message })
-      throw error
-    }
-    await settle(current, { status: 'merged', prState: 'MERGED', failure: undefined })
-    let baseHead
-    try {
-      baseHead = await syncBaseCheckout(task, signal)
-    } catch (error) {
-      throw new Error(`Pull request ${merged.number} merged, but the project checkout could not be fast-forwarded: ${error.message}`)
-    }
-    return result(task, 'merge', {
+  async function deleteAction(task, signal) {
+    requireFullAccess(task)
+    const removed = await removeBranch(task, signal)
+    return result(task, 'delete-branch', {
       status: 'merged',
-      prUrl: merged.url,
-      prState: 'MERGED',
-      baseHead,
-      message: `Merged pull request ${merged.number} for ${task.id} into ${task.baseBranch}; the project checkout is at ${baseHead}.`,
+      branch: removed.branch,
+      deleted: removed.deleted,
+      message: removed.deleted
+        ? `Deleted the worker branch ${removed.branch} for ${task.id}.`
+        : `Task ${task.id} has no worker branch left to delete.`,
     })
   }
-
-  async function mergeLocalAction(task, project, signal) {
-    const ready = await assertMergeReady(task, project, signal)
-    const merged = await merge.handler({ agent: ready.agent, rawInput: task.id, signal })
-    if (merged.kind === 'error') throw new Error(merged.text)
-    const next = await store.readTask(task.id)
-    return result(task, 'merge', { status: next.status, prUrl: next.prUrl, message: merged.text })
-  }
-
 
   async function detail(taskId, signal) {
     if (typeof taskId !== 'string' || !TASK_ID.test(taskId)) throw new Error('Invalid task ID')
@@ -533,49 +500,49 @@ export function createGitManager(ctx, dependencies = {}) {
       error.status = 404
       throw error
     }
+    const [branches, remotes, gh] = await Promise.all([
+      branchesFor(task.projectRoot, signal).catch(() => []),
+      remotesFor(task.projectRoot, signal).catch(() => []),
+      ghStatus(task.projectRoot, signal),
+    ])
     const base = task.worktree?.baseCommit ?? task.baseCommit
     let head = task.review?.head
     if (!head && task.worktree?.path) {
       head = await git(['rev-parse', '--verify', 'HEAD^{commit}'], task.worktree.path, signal).catch(() => undefined)
     }
-    if (!base || !head) return { taskId, branch: task.worktree?.branch, baseBranch: task.baseBranch, commits: [], files: [] }
+    const common = {
+      taskId,
+      branch: task.worktree?.branch,
+      baseBranch: task.baseBranch,
+      branches,
+      remotes,
+      gh,
+    }
+    if (!base || !head) return { ...common, commits: [], files: [] }
     const range = `${base}..${head}`
     try {
       const [log, numstat] = await Promise.all([
         git(['log', '--reverse', '--format=%H%x1f%an%x1f%aI%x1f%s', range], task.projectRoot, signal),
         git(['diff', '--numstat', range], task.projectRoot, signal),
       ])
-      return {
-        taskId,
-        branch: task.worktree?.branch,
-        baseBranch: task.baseBranch,
-        commits: commitRows(log),
-        files: changedFiles(numstat),
-      }
+      return { ...common, commits: commitRows(log), files: changedFiles(numstat) }
     } catch (error) {
       throw new Error(`Could not read the branch history: ${error.message}`)
     }
   }
 
-  async function perform(taskId, action, signal) {
+  async function perform(taskId, action, options, signal) {
     if (typeof taskId !== 'string' || !TASK_ID.test(taskId)) throw new Error('Invalid task ID')
-    if (action !== 'merge' && action !== 'publish') throw new Error('Unknown Git action')
+    if (!['merge', 'publish', 'review', 'delete-branch'].includes(action)) throw new Error('Unknown Git action')
     return serialize(taskId, async () => {
-      const task = await store.readTask(taskId)
+      let task = await store.readTask(taskId)
       if (!task) throw new Error('Task not found')
       if (task.mode === 'report') throw new Error('Report-only tasks have no Git action')
-      const project = await resolveOrigin(task.projectRoot, signal, true)
-      if (task.status !== 'merged') {
-        const facts = await worktreeFacts(task, signal)
-        if (facts?.head && await isMerged(task, facts.head, signal)) {
-          return alreadyMerged(await settle(task, { status: 'merged' }), action, project, signal)
-        }
-      }
-      if (task.status === 'merged') return alreadyMerged(task, action, project, signal)
-      const healed = await selfHeal(task, signal)
-      if (action === 'publish') return publishAction(healed, project, signal)
-      if (project.origin) return mergeGithubAction(healed, project, signal)
-      return mergeLocalAction(healed, project, signal)
+      if (action === 'review') return reviewAction(task, signal)
+      if (action === 'delete-branch') return deleteAction(task, signal)
+      task = await adoptReview(task, signal)
+      if (action === 'merge') return mergeAction(task, options?.target, signal)
+      return publishAction(task, options?.remote, signal)
     })
   }
 

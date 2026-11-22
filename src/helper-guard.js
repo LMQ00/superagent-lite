@@ -19,8 +19,8 @@ const SHELL_TOOLS = ['bash', 'pwsh']
 
 // A reviewer gets no patch in its prompt; it must read base..head and the
 // worktree itself. Everything else the inherited read-only composition offers
-// is outside that scope.
-const REVIEW_TOOLS = new Set(['structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh'])
+// is outside that scope. `submit_review` is how it records the verdict.
+const REVIEW_TOOLS = new Set(['submit_review', 'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh'])
 
 export function expectHelper(parentSessionId, reviewScope) {
   const queue = pending.get(parentSessionId) ?? []
@@ -82,6 +82,9 @@ export function registerReadOnlyGuard(agent, reviewScope) {
   agent.ctx.tools.guard(({ name, arguments: input, agent: caller }) => {
     if (reviewScope && !REVIEW_TOOLS.has(name)) {
       return `Review scope: the reviewer may only inspect the worker worktree and ${reviewScope.baseCommit}..${reviewScope.headCommit}; "${name}" is not available.`
+    }
+    if (name === 'submit_review') {
+      return reviewScope ? undefined : 'Read-only helpers cannot use "submit_review"; only a reviewer records a verdict.'
     }
     if (READ_ONLY_TOOLS.has(name)) {
       return reviewScope ? reviewScope.checkFileTool(name, input) : undefined

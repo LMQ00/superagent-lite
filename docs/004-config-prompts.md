@@ -12,11 +12,11 @@ This document lists the text a maintainer can change, where it is assembled, and
 | Routing tool text | `dispatch_worker` and `continue_worker` descriptions and parameter text | `src/dispatch.js`, `src/continue.js` |
 | Worker task message | Header, requirements, mode, `Before` / `During` / `After` / `Reporting` sections | `src/worker-prompt.js` |
 | Resume message | Follow-up wrapper, `Follow-up` and `Resume` sections | `src/continue.js` |
-| Review prompt and scope | Review instruction and JSON payload; the `base..head`/Worktree read scope, the read-only command allowlist and the workdir confinement enforced by the helper guard | `src/review.js`, `src/review-scope.js` |
+| Review prompt, verdict tool and scope | Review instruction, the `submit_review` tool whose content `通过` approves, and the `base..head`/Worktree read scope, the read-only command allowlist and the workdir confinement enforced by the helper guard | `src/review.js`, `src/review-scope.js` |
 | Report and router messages | Tool descriptions and limits | `src/report-tool.js`, `src/message-router.js` |
 | Memory prompts | Tool descriptions, the memory conversation role prompt, four-category extraction limits, six-fact profile context | `src/memory.js`, `src/memory-extractor.js` |
 | Dispatch reminder | Reopened-turn text | `src/turn-guard.js` |
-| Panel text | English and Chinese dictionaries for tasks, Git delivery and memory | `client.js` |
+| Panel text | English and Chinese dictionaries for tasks, actions and memory | `client.js` |
 
 Text lives in repository files. There is no settings page and no prompt editor; a change is a file edit plus a bundle reload.
 

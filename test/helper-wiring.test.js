@@ -73,3 +73,25 @@ test('a subagent without an expectation is not treated as a read-only helper', a
   }
   await listeners.get('agent/created')({ agent })
 })
+
+test('agent/created registers submit_review for a claimed reviewer only', async () => {
+  const { apply } = await import('../index.js')
+  const { expectHelper } = await import('../src/helper-guard.js')
+  const { ctx, listeners } = context()
+  await apply(ctx)
+  const tools = []
+  const reviewer = {
+    id: 'reviewer',
+    session: { id: 'reviewer', header: { origin: 'subagent', parentSession: 'worker' }, append() {} },
+    ctx: {
+      get: name => name === 'shell' ? { sandboxMode: 'workspace-write' }
+        : name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'read-only' }) }
+        : undefined,
+      tools: { guard() {}, register(tool) { tools.push(tool) } },
+      on() {},
+    },
+  }
+  expectHelper('worker', { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) })
+  await listeners.get('agent/created')({ agent: reviewer })
+  assert.deepEqual(tools.map(tool => tool.name), ['submit_review'])
+})

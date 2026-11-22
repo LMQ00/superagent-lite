@@ -7,7 +7,7 @@ import { claimHelper, clearHelperExpectation, expectHelper, registerReadOnlyGuar
 
 const anchor = process.env.DSH_INSTALL_DIR
 
-function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy } = {}) {
+function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy, scope } = {}) {
   const appends = []
   let mode = 'danger-full-access'
   let check
@@ -24,8 +24,9 @@ function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy } =
         : name === 'sandboxPolicy' ? (policy ?? { resolve: () => ({ mode }) })
         : undefined,
       tools: { guard(fn) { check = fn } },
+      on() {},
     },
-  })
+  }, scope)
   return {
     appends,
     check: execution => check(execution),
@@ -63,7 +64,7 @@ test('the helper guard allows read-only inspection and confines its shell', () =
   for (const name of [
     'write', 'edit', 'create_worktree', 'review_worker_commit', 'message_router',
     'superagent_memory', 'extract_memory', 'subagent', 'job_kill', 'present',
-    'skill', 'todo_write', 'working_directory',
+    'skill', 'todo_write', 'working_directory', 'submit_review',
   ]) {
     assert.match(check({ name }), /Read-only helpers cannot use/, name)
   }
@@ -124,4 +125,11 @@ test('a real Session log accepts the helper read-only override', { skip: !anchor
   assert.equal(check({ name: 'read' }), undefined)
   assert.equal(check({ name: 'bash' }), undefined)
   assert.match(check({ name: 'write' }), /Read-only helpers cannot use/)
+})
+
+test('only a claimed reviewer may submit the verdict tool', () => {
+  const { check } = registerHelper({ scope: { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) } })
+  assert.equal(check({ name: 'submit_review' }), undefined)
+  const extractor = registerHelper()
+  assert.match(extractor.check({ name: 'submit_review' }), /only a reviewer records a verdict/)
 })

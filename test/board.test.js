@@ -43,11 +43,13 @@ test('board lists only its public view fields to the owner and flags unrecovered
   assert.equal((await request(handler, 'POST')).status, 405)
   const result = await request(handler)
   assert.equal(result.status, 200)
-  assert.deepEqual(JSON.parse(result.body).tasks.map(row => [row.id, row.mode, row.status, row.task]),
-    [['a', 'report', 'running', undefined], ['b', undefined, 'unconfirmed', undefined]])
+  const tasks = JSON.parse(result.body).tasks
+  assert.deepEqual(tasks.map(row => [row.id, row.mode, row.status, row.task]),
+    [['a', 'report', 'running', undefined], ['b', undefined, 'running', undefined]])
+  assert.deepEqual(tasks.map(row => row.unconfirmed), [undefined, true])
 })
 
-test('board overlays the Git branch view and reconciled status', async () => {
+test('board overlays the panel status from the Git branch view', async () => {
   const rows = [
     { id: 'a', status: 'delivery-blocked', workerSessionId: 'w1', updatedAt: '2026-01-01T00:00:00.000Z' },
     { id: 'b', status: 'running', workerSessionId: 'w2', updatedAt: '2026-01-01T00:00:00.000Z' },
@@ -55,43 +57,42 @@ test('board overlays the Git branch view and reconciled status', async () => {
   const git = {
     async list() {
       return new Map([
-        ['a', { status: 'merged', git: { branch: 'sl-a', unmerged: false } }],
+        ['a', { status: 'completed', git: { branch: 'sl-a', unmerged: false } }],
         ['b', { status: 'running', git: { branch: 'sl-b', unmerged: true } }],
       ])
     },
   }
   const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, { get: () => undefined }, () => rows, git)
   const tasks = JSON.parse((await request(handler)).body).tasks
-  assert.equal(tasks[0].status, 'merged')
+  assert.equal(tasks[0].status, 'completed')
   assert.deepEqual(tasks[0].git, { branch: 'sl-a', unmerged: false })
-  assert.equal(tasks[1].status, 'unconfirmed')
+  assert.equal(tasks[1].status, 'running')
+  assert.equal(tasks[1].unconfirmed, true)
   assert.equal(tasks[1].git.branch, 'sl-b')
 })
 
-test('board shows merged, completed and review-required states from the reconciled Git view', async () => {
-  const rows = ['merged', 'completed', 'pending'].map(id => ({ id, status: 'review-required' }))
+test('board keeps the failure text and the six panel statuses from the reconciled view', async () => {
+  const rows = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
+    .map(id => ({ id, status: 'review-required', failure: id === 'failed' ? 'turn failed' : undefined }))
   const git = {
     async list() {
-      return new Map([
-        ['merged', { status: 'merged', git: { branch: 'sl-merged' } }],
-        ['completed', { status: 'completed', git: undefined }],
-        ['pending', { status: 'review-required', git: { branch: 'sl-pending', unmerged: true } }],
-      ])
+      return new Map(rows.map(row => [row.id, { status: row.id, git: { branch: `sl-${row.id}` } }]))
     },
   }
   const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {}, () => rows, git)
   const tasks = JSON.parse((await request(handler)).body).tasks
-  assert.deepEqual(tasks.map(row => row.status), ['merged', 'completed', 'review-required'])
+  assert.deepEqual(tasks.map(row => row.status), ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer'])
+  assert.equal(tasks[4].failure, 'turn failed')
 })
 
 test('board keeps listing tasks when the Git branch view is unavailable', async () => {
   const handler = createBoardHandler(
     { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {},
-    () => [{ id: 'a', status: 'awaiting-merge' }],
+    () => [{ id: 'a', status: 'awaiting-merge' }, { id: 'b', status: 'completed', mode: 'report' }, { id: 'c', status: 'review-required', review: { head: 'a'.repeat(40), approved: true } }],
     { async list() { throw new Error('git unavailable') } },
   )
   const tasks = JSON.parse((await request(handler)).body).tasks
-  assert.equal(tasks[0].status, 'awaiting-merge')
+  assert.deepEqual(tasks.map(row => row.status), ['unmerged', 'answer', 'unmerged'])
   assert.equal(tasks[0].git, undefined)
 })
 
@@ -107,8 +108,10 @@ test('Git action handler refuses non-owners, wrong methods and non-JSON bodies',
   assert.equal((await post(createGitActionHandler(owner, fail), {}, { headers: { 'content-type': 'text/plain' } })).status, 415)
   assert.equal((await post(createGitActionHandler(owner, fail), '{')).status, 400)
   assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'delete' })).status, 400)
-  assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'not-a-task', action: 'merge' })).status, 400)
-  assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'merge', padding: 'x'.repeat(5000) })).status, 413)
+  assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'not-a-task', action: 'merge', target: 'main' })).status, 400)
+  assert.match(JSON.parse((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'merge' })).body).error, /merge target/)
+  assert.match(JSON.parse((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'publish' })).body).error, /remote/)
+  assert.equal((await post(createGitActionHandler(owner, fail), { taskId: 'a'.repeat(16), action: 'merge', target: 'main', padding: 'x'.repeat(5000) })).status, 413)
 })
 
 test('Git action handler returns branch detail to the owner', async () => {
@@ -118,14 +121,17 @@ test('Git action handler returns branch detail to the owner', async () => {
   const handler = createGitActionHandler(owner, {
     async detail(id) {
       asked.push(id)
-      return { taskId: id, commits: [{ hash: 'b'.repeat(40), subject: 'Change' }], files: [{ path: 'src/a.js', additions: 1, deletions: 0 }] }
+      return { taskId: id, commits: [{ hash: 'b'.repeat(40), subject: 'Change' }], files: [{ path: 'src/a.js', additions: 1, deletions: 0 }], branches: [{ name: 'main', current: true }], remotes: [], gh: { ok: false, error: 'not logged in' } }
     },
   })
   const result = await request(handler, 'GET', `/superagent-lite/git?taskId=${taskId}`)
   assert.equal(result.status, 200)
   assert.equal(result.headers['cache-control'], 'no-store')
   assert.deepEqual(asked, [taskId])
-  assert.equal(JSON.parse(result.body).commits[0].subject, 'Change')
+  const value = JSON.parse(result.body)
+  assert.equal(value.commits[0].subject, 'Change')
+  assert.deepEqual(value.branches, [{ name: 'main', current: true }])
+  assert.equal(value.gh.ok, false)
 
   const missing = createGitActionHandler(owner, { async detail() {
     const error = new Error('Task not found')
@@ -142,23 +148,31 @@ test('Git action handler returns branch detail to the owner', async () => {
   assert.deepEqual(JSON.parse(failed.body), { error: 'Could not read the branch history' })
 })
 
-test('Git action handler performs the chosen action and reports failures as conflict', async () => {
+test('Git action handler passes the chosen merge target or PR remote and reports failures', async () => {
   const owner = { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }
   const performed = []
   const handler = createGitActionHandler(owner, {
-    async perform(taskId, action) {
-      performed.push([taskId, action])
+    async perform(taskId, action, options) {
+      performed.push([taskId, action, options])
       return { taskId, action, status: 'merged', message: `Published ${taskId}.` }
     },
   })
   const taskId = 'a'.repeat(16)
-  const result = await post(handler, { taskId, action: 'publish' })
-  assert.equal(result.status, 200)
-  assert.deepEqual(JSON.parse(result.body), { taskId, action: 'publish', status: 'merged', message: `Published ${taskId}.` })
-  assert.deepEqual(performed, [[taskId, 'publish']])
+  const merge = await post(handler, { taskId, action: 'merge', target: 'release' })
+  assert.equal(merge.status, 200)
+  assert.deepEqual(JSON.parse(merge.body), { taskId, action: 'merge', status: 'merged', message: `Published ${taskId}.` })
+  const publish = await post(handler, { taskId, action: 'publish', remote: 'origin' })
+  assert.equal(publish.status, 200)
+  const review = await post(handler, { taskId, action: 'review' })
+  assert.equal(review.status, 200)
+  const removed = await post(handler, { taskId, action: 'delete-branch' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(performed.map(([, action]) => action), ['merge', 'publish', 'review', 'delete-branch'])
+  assert.deepEqual(performed[0][2], { target: 'release', remote: undefined })
+  assert.deepEqual(performed[1][2], { target: undefined, remote: 'origin' })
 
   const refused = createGitActionHandler(owner, { async perform() { throw new Error('Merge would conflict') } })
-  const failure = await post(refused, { taskId, action: 'merge' })
+  const failure = await post(refused, { taskId, action: 'merge', target: 'main' })
   assert.equal(failure.status, 409)
   assert.deepEqual(JSON.parse(failure.body), { error: 'Merge would conflict' })
 })

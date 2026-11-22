@@ -9,33 +9,22 @@ window.__ModuleLoader__.load({
         loadFailed: 'Could not load tasks. Try refreshing.', openFailed: 'Could not open the session.',
         empty: 'No tasks yet.', noMatch: 'No tasks match the filters.',
         emptyCategory: 'No tasks in this status.',
-        intro: 'Status belongs to the task list only. Git delivery below carries branches and pull request actions.',
+        intro: 'Task status lives only in this list. Unmerged tasks can be merged or published as a pull request.',
         taskFilters: 'Task status', all: 'All',
-        'category.failed': 'Failed', 'category.ongoing': 'In progress', 'category.merged': 'Merged',
-        'category.review': 'Needs review', 'category.answer': 'Answer only',
+        'status.unmerged': 'Unmerged', 'status.running': 'In progress', 'status.unreviewed': 'Not reviewed',
+        'status.completed': 'Completed', 'status.failed': 'Failed', 'status.answer': 'Answer only',
         team: 'Team', project: 'Project', allTeams: 'All teams', allProjects: 'All projects',
         router: 'Router session', worker: 'Worker session', pr: 'Pull request', updated: 'Updated',
-        'status.merging': 'Merging', 'status.resuming': 'Resuming', 'status.publishing': 'Publishing pull request',
-        'status.review-required': 'Review required', 'status.delivery-blocked': 'Delivery blocked',
-        'status.starting': 'Starting', 'status.running': 'In progress', 'status.ready': 'Ready',
-        'status.completed': 'Completed', 'status.failed': 'Failed', 'status.interrupted': 'Interrupted',
-        'status.cancelled': 'Cancelled', 'status.awaiting-ci': 'Waiting for CI',
-        'status.awaiting-merge': 'Waiting for merge', 'status.merged': 'Merged',
-        'status.merge-conflict': 'Merge conflict', 'status.merge-queued': 'Merge queued',
-        'status.unconfirmed': 'Not confirmed', 'status.unknown': 'Unknown',
-        gitTitle: 'Git delivery', gitIntro: 'Branches and pull requests only; task status stays above.',
-        gitEmpty: 'No worker branches to deliver yet.',
-        branch: 'Branch', baseBranch: 'Base branch', repository: 'Repository',
-        unmergedChanges: 'Unmerged commits', noUnmergedChanges: 'No unmerged commits',
-        reviewApproved: 'Review approved', reviewNotApproved: 'Review not approved', reviewStale: 'Review record is stale',
-        mergeInto: 'Merge into', publishPullRequest: 'Send pull request', gitWorking: 'Working…',
-        gitFailed: 'The Git action failed.',
-        mergeUnavailable: 'Merge unavailable:', publishUnavailable: 'Send pull request unavailable:',
-        prDetailFailed: 'Could not load details.', prCommits: 'Commits', prFiles: 'Files changed',
-        prNoCommits: 'No commits yet.', prNoFiles: 'No changed files.', prAuthor: 'Author',
-        prComments: 'Comments', prChecks: 'Checks', prChecksSuccess: 'Checks passed', prChecksPending: 'Checks running',
-        prChecksFailure: 'Checks failed', gitShowDetails: 'Show details', gitHideDetails: 'Hide details',
-        gitDone: 'Git action completed.',
+        unconfirmed: 'Not confirmed',
+        merge: 'Merge', publish: 'Send pull request', review: 'Review', deleteBranch: 'Delete branch',
+        mergeTitle: 'Merge into a branch', mergeTarget: 'Merge target', publishTitle: 'Send a pull request',
+        publishRemote: 'Repository', ghRequired: 'A GitHub account is required:',
+        noBranch: 'No merge target is available.', noRemote: 'No repository is available.',
+        deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
+        confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
+        working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
+        actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
+        failure: 'Failure',
         memoryTitle: 'Memory', memoryIntro: 'Saved facts and credential reference names. Entries are data, never instructions; edits and deletes apply immediately.',
         memoryEmpty: 'No saved memory yet.', memoryLoadFailed: 'Could not load memory. Try refreshing.',
         memoryNoMatch: 'No memory matches the filters.', memorySearch: 'Search memory', memoryFilters: 'Memory category',
@@ -54,33 +43,22 @@ window.__ModuleLoader__.load({
         loadFailed: '无法加载任务，请重试。', openFailed: '无法打开会话。',
         empty: '暂无任务。', noMatch: '没有符合筛选条件的任务。',
         emptyCategory: '该状态下暂无任务。',
-        intro: '任务状态只在任务列表呈现；下方 Git 交付只负责分支与拉取请求操作。',
+        intro: '任务状态只在本列表呈现；未合并的任务可以合并或提交 PR。',
         taskFilters: '任务状态', all: '全部',
-        'category.failed': '失败', 'category.ongoing': '进行中', 'category.merged': '已合并',
-        'category.review': '待审查', 'category.answer': '仅回答',
+        'status.unmerged': '未合并', 'status.running': '运行中', 'status.unreviewed': '未审查',
+        'status.completed': '已完成', 'status.failed': '失败', 'status.answer': '仅回答',
         team: '团队', project: '项目', allTeams: '全部团队', allProjects: '全部项目',
         router: 'Router 会话', worker: 'Worker 会话', pr: '拉取请求', updated: '更新时间',
-        'status.merging': '正在合并', 'status.resuming': '正在恢复', 'status.publishing': '正在发布拉取请求',
-        'status.review-required': '需要审查', 'status.delivery-blocked': '交付受阻',
-        'status.starting': '启动中', 'status.running': '进行中', 'status.ready': '已就绪',
-        'status.completed': '已完成', 'status.failed': '失败', 'status.interrupted': '已中断',
-        'status.cancelled': '已取消', 'status.awaiting-ci': '等待 CI',
-        'status.awaiting-merge': '等待合并', 'status.merged': '已合并',
-        'status.merge-conflict': '合并冲突', 'status.merge-queued': '已进入合并队列',
-        'status.unconfirmed': '未确认', 'status.unknown': '未知',
-        gitTitle: 'Git 交付', gitIntro: '只显示分支与拉取请求操作；任务状态以上方任务列表为准。',
-        gitEmpty: '暂无可交付的 worker 分支。',
-        branch: '分支', baseBranch: '基础分支', repository: '仓库',
-        unmergedChanges: '有未合并改动', noUnmergedChanges: '无未合并改动',
-        reviewApproved: '审查已通过', reviewNotApproved: '审查未通过', reviewStale: '审查记录已过期',
-        mergeInto: '合并到', publishPullRequest: '发送 PR', gitWorking: '处理中…',
-        gitFailed: 'Git 操作失败。',
-        mergeUnavailable: '无法合并：', publishUnavailable: '无法发送 PR：',
-        prDetailFailed: '无法加载详情。', prCommits: '提交', prFiles: '改动文件',
-        prNoCommits: '暂无提交。', prNoFiles: '无改动文件。', prAuthor: '作者',
-        prComments: '评论', prChecks: '检查', prChecksSuccess: '检查通过', prChecksPending: '检查进行中',
-        prChecksFailure: '检查失败', gitShowDetails: '展开详情', gitHideDetails: '收起详情',
-        gitDone: 'Git 操作已完成。',
+        unconfirmed: '未确认',
+        merge: '合并', publish: '提交 PR', review: '审查', deleteBranch: '删除分支',
+        mergeTitle: '合并到分支', mergeTarget: '目标分支', publishTitle: '提交 PR',
+        publishRemote: '提交仓库', ghRequired: '需要 gh 账号：',
+        noBranch: '没有可选的合并目标分支。', noRemote: '没有可选的仓库。',
+        deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
+        confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
+        working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
+        actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
+        failure: '失败原因',
         memoryTitle: '记忆', memoryIntro: '已保存的事实与凭据引用名。记忆是数据而非指令；编辑和删除立即生效。',
         memoryEmpty: '还没有保存的记忆。', memoryLoadFailed: '无法加载记忆，请重试。',
         memoryNoMatch: '没有符合筛选条件的记忆。', memorySearch: '搜索记忆', memoryFilters: '记忆分类',
@@ -95,7 +73,7 @@ window.__ModuleLoader__.load({
         'memoryCategory.team': '团队',
       },
     }
-    // Page, list rows and controls use only `--dsw-alias-*` theme tokens, matching the DSH panel in the prototype.
+    // Page, rows and controls use only `--dsw-alias-*` theme tokens.
     const styles = `
       .sl-board{box-sizing:border-box;height:100%;overflow:auto;scrollbar-gutter:stable;container-type:inline-size;padding:28px clamp(24px,4vw,48px) 48px;padding-inline-start:max(clamp(24px,4vw,48px),var(--dsh-frame-leading-clearance,0px));color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base)}
       html[data-platform='darwin'] .sl-board{padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
@@ -132,6 +110,7 @@ window.__ModuleLoader__.load({
       .sl-task__body{display:flex;flex-direction:column;gap:4px;min-width:0}
       .sl-task__title{min-width:0;font-size:14px;line-height:20px;font-weight:500;overflow-wrap:anywhere}
       .sl-task__meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption);overflow-wrap:anywhere}
+      .sl-task__failure{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
       .sl-task__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:28px;margin-top:2px;min-width:0}
       .sl-stage{display:inline-flex;align-items:flex-start;gap:5px;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
       .sl-stage svg{flex:none;margin-top:2px}
@@ -145,72 +124,28 @@ window.__ModuleLoader__.load({
       .sl-dot[data-state='warning']{color:var(--dsw-alias-state-warn-primary)}
       .sl-dot[data-state='error']{color:var(--dsw-alias-state-error-primary)}
       .sl-dot[data-state='ongoing']{color:var(--dsw-alias-state-business-primary)}
-      .sl-spinner{flex:none;margin-top:2px;color:var(--dsw-alias-label-tertiary)}
-      .sl-spinner g{transform-origin:center;animation:sl-spin 1.5s linear infinite}
-      .sl-spinner circle{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-      .sl-spinner circle:first-child{opacity:.25}
-      .sl-spinner circle:last-child{stroke-dasharray:18 150}
+      .sl-spinner{animation:sl-spin 1s linear infinite;color:var(--dsw-alias-state-business-primary)}
+      .sl-spinner circle{fill:none;stroke:currentColor;stroke-width:2.5;stroke-dasharray:42 18;stroke-linecap:round}
       @keyframes sl-spin{to{transform:rotate(360deg)}}
-      .sl-chip{display:inline-flex;flex-wrap:wrap;max-width:100%;border:0.5px solid var(--dsw-alias-border-l3);border-radius:6px;overflow:hidden;font-size:11px;line-height:18px;color:var(--dsw-alias-label-secondary)}
-      .sl-chip__label{padding:0 6px;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-bg-module-platform);white-space:nowrap}
-      .sl-chip__value{box-sizing:border-box;min-width:0;max-width:min(420px,100%);padding:0 6px;border-left:0.5px solid var(--dsw-alias-border-l3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
-      code.sl-chip__value{font-family:var(--ds-font-family-code,Menlo,monospace)}
-      .sl-lv{display:inline-flex;align-items:baseline;gap:6px;min-width:0;font-size:12px;line-height:18px;white-space:nowrap}
-      .sl-lv__label{color:var(--dsw-alias-label-caption)}
-      .sl-lv__value{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-      .sl-code{font-family:var(--ds-font-family-code,Menlo,monospace);font-size:11px;line-height:18px;color:var(--dsw-alias-label-caption);overflow-wrap:anywhere}
-      .sl-tag{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:11px;line-height:17px;font-weight:500;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-      .sl-tag[data-tone='neutral']{background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary)}
-      .sl-tag[data-tone='success']{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary)}
-      .sl-tag[data-tone='warning']{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent);color:var(--dsw-alias-state-warn-primary)}
-      .sl-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;max-width:100%;padding:0 10px;border:0;border-radius:14px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;white-space:nowrap;text-decoration:none;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-      .sl-btn:disabled{cursor:not-allowed;opacity:.4}
+      .sl-btn{display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;height:28px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
       .sl-btn:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}
-      .sl-btn--outline{border:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-btn:disabled{cursor:not-allowed;color:var(--dsw-alias-label-caption)}
+      .sl-btn--outline{border:0.5px solid var(--dsw-alias-border-l4);color:var(--dsw-alias-label-secondary)}
+      .sl-btn--primary{background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base)}
+      .sl-btn--primary:not(:disabled):hover{background:var(--dsw-alias-brand-primary)}
+      .sl-btn--danger{color:var(--dsw-alias-state-error-primary)}
       .sl-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-      .sl-btn svg{flex:none}
-      .sl-session{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
-      .sl-git-section{display:flex;flex-direction:column;gap:8px;min-width:0;padding-top:8px}
-      .sl-git-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0}
-      .sl-git-head h2{margin:0;font-size:13px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-secondary)}
-      .sl-git-count{font-size:13px;line-height:20px;font-weight:400;color:var(--dsw-alias-label-caption);font-variant-numeric:tabular-nums}
-      .sl-git-item{min-width:0}
-      .sl-git__head{box-sizing:border-box;display:grid;grid-template-columns:16px minmax(0,1fr) 16px;column-gap:10px;align-items:start;width:100%;padding:10px 8px;border:0;border-bottom:0.5px solid var(--dsw-alias-border-l3);border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-      .sl-git__head:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}
-      .sl-git__head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-      .sl-git__icon{display:inline-flex;margin-top:2px;color:var(--dsw-alias-label-tertiary)}
-      .sl-git__main{display:flex;flex-direction:column;gap:3px;min-width:0}
-      .sl-git__titleline{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;min-width:0}
-      .sl-git__title{min-width:0;font-size:14px;line-height:20px;font-weight:500;overflow-wrap:anywhere}
-      .sl-git__number{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
-      .sl-git__meta{display:flex;align-items:center;flex-wrap:wrap;gap:2px 10px;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-      .sl-git__meta code{color:var(--dsw-alias-label-secondary)}
-      .sl-git__arrow{color:var(--dsw-alias-label-tertiary)}
-      .sl-git__chevron{display:inline-flex;margin-top:2px;color:var(--dsw-alias-label-tertiary);transition:transform .12s ease}
-      .sl-git__head[aria-expanded='true'] .sl-git__chevron{transform:rotate(180deg)}
-      .sl-git__detail{padding:0 8px 14px 34px;border-bottom:0.5px solid var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-layer-1)}
-      .sl-git__facts{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;padding-top:10px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-      .sl-link{position:relative;z-index:1;color:var(--dsw-alias-link,var(--dsw-alias-brand-primary));text-decoration:none}
+      .sl-tag{display:inline-flex;align-items:center;box-sizing:border-box;height:20px;padding:0 8px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+      .sl-tag[data-tone='warning']{color:var(--dsw-alias-state-warn-primary)}
+      .sl-tag[data-tone='success']{color:var(--dsw-alias-state-success-primary)}
+      .sl-chip{display:inline-flex;align-items:baseline;gap:4px;min-width:0}
+      .sl-chip__label{color:var(--dsw-alias-label-caption)}
+      .sl-chip__value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+      .sl-lv{display:inline-flex;align-items:baseline;gap:4px}
+      .sl-lv__label{color:var(--dsw-alias-label-caption)}
+      .sl-code{font-family:var(--dsw-font-mono,monospace);font-size:12px;color:var(--dsw-alias-label-tertiary)}
+      .sl-link{color:var(--dsw-alias-brand-primary);text-decoration:none}
       .sl-link:hover{text-decoration:underline}
-      .sl-git__grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding-top:12px}
-      .sl-git__section{min-width:0}
-      .sl-git__section h3{display:flex;align-items:baseline;gap:6px;margin:0 0 6px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-weight:600}
-      .sl-git__section-count{color:var(--dsw-alias-label-tertiary);font-weight:400}
-      .sl-git__items{display:grid;gap:6px;margin:0;padding:0;list-style:none}
-      .sl-git__commit{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:13px;line-height:20px}
-      .sl-git__commit code{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px}
-      .sl-git__commit-subject{min-width:0;overflow-wrap:anywhere}
-      .sl-git__commit-meta{display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:1px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
-      .sl-git__file{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0;font-size:13px;line-height:20px}
-      .sl-git__file code{min-width:0;overflow-wrap:anywhere}
-      .sl-git__stats{display:inline-flex;flex:none;gap:6px;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
-      .sl-git__add{color:var(--dsw-alias-state-success-primary)}
-      .sl-git__del{color:var(--dsw-alias-state-error-primary)}
-      .sl-git__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
-      .sl-board .sl-git__primary{border-color:transparent;background:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-label-on-color)}
-      .sl-board .sl-git__primary:not(:disabled):hover{background:var(--dsw-alias-state-success-secondary)}
-      .sl-git__hint{margin:6px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
-      .sl-git__error{margin:6px 0 0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
       .sl-memory-section{display:flex;flex-direction:column;gap:8px;min-width:0;padding-top:8px}
       .sl-memory-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0}
       .sl-memory-head h2{margin:0;font-size:13px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-secondary)}
@@ -227,11 +162,15 @@ window.__ModuleLoader__.load({
       .sl-memory__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:28px}
       .sl-textarea{box-sizing:border-box;display:block;width:100%;min-height:72px;padding:8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;resize:vertical}
       .sl-textarea:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .sl-modal-backdrop{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 30%,transparent)}
+      .sl-modal{box-sizing:border-box;width:min(420px,100%);display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:14px;background:var(--dsw-alias-bg-base);box-shadow:0 12px 40px color-mix(in srgb,var(--dsw-alias-label-primary) 24%,transparent)}
+      .sl-modal h2{margin:0;font-size:16px;line-height:24px;font-weight:500}
+      .sl-modal p{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
+      .sl-modal__field{display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+      .sl-modal__actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
       @container (max-width:640px){
         .sl-task{grid-template-columns:minmax(0,1fr);row-gap:4px}
         .sl-task__stage{border-right:0;padding-top:0}
-        .sl-git__grid{grid-template-columns:minmax(0,1fr)}
-        .sl-git__detail{padding-left:8px}
         .sl-head h1{font-size:17px;line-height:24px}
         .sl-board{padding-top:20px}
         html[data-platform='darwin'] .sl-board{padding-top:calc(20px + var(--dsh-frame-top-clearance,0px))}
@@ -242,34 +181,18 @@ window.__ModuleLoader__.load({
       }
       @media (prefers-reduced-motion:reduce){
         .sl-spinner g{animation:none}
-        .sl-git__chevron{transition:none}
       }
     `
 
-    const ONGOING = new Set(['starting', 'running', 'resuming', 'merging', 'publishing', 'awaiting-ci', 'merge-queued'])
-    const DONE = new Set(['ready', 'completed', 'merged'])
-    const WARNING = new Set(['review-required', 'awaiting-merge', 'unconfirmed'])
-    const ERROR = new Set(['failed', 'merge-conflict', 'delivery-blocked', 'interrupted', 'cancelled'])
-    const CATEGORY_ORDER = ['failed', 'ongoing', 'merged', 'review', 'answer']
+    const CATEGORY_ORDER = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
     const MEMORY_CATEGORIES = ['private', 'public', 'profile', 'team']
-    const FAILED_CATEGORY = new Set(['failed', 'merge-conflict', 'delivery-blocked', 'interrupted', 'cancelled'])
-    const REVIEW_CATEGORY = new Set(['review-required', 'awaiting-merge', 'ready', 'completed'])
-
-    function statusTone(status) {
-      if (ERROR.has(status)) return 'error'
-      if (WARNING.has(status)) return 'warning'
-      if (ONGOING.has(status)) return 'ongoing'
-      if (DONE.has(status)) return 'done'
-      return 'idle'
+    const TONE = {
+      unmerged: 'warning', running: 'ongoing', unreviewed: 'warning',
+      completed: 'done', failed: 'error', answer: 'done',
     }
 
-    // The task list is the only place that classifies a task. Git delivery never derives a second state.
-    function taskCategory(task) {
-      if (task.status === 'merged') return 'merged'
-      if (FAILED_CATEGORY.has(task.status)) return 'failed'
-      if (task.mode === 'report' && task.status === 'completed') return 'answer'
-      if (REVIEW_CATEGORY.has(task.status)) return 'review'
-      return 'ongoing'
+    function statusTone(status) {
+      return TONE[status] ?? 'idle'
     }
 
     function spinner() {
@@ -313,8 +236,8 @@ window.__ModuleLoader__.load({
         refresh: 'M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5',
         session: 'M4 5h16v14H4zM8 10l3 2-3 2M13 15h3',
         external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
-        chevron: 'm6 9 6 6 6-6',
-        branch: 'M6 3v18M18 6v5a7 7 0 0 1-7 7H9',
+        trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5',
+        review: 'M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 8v4l3 2',
       }[name] }))
     }
 
@@ -326,11 +249,13 @@ window.__ModuleLoader__.load({
       const [project, setProject] = useState('')
       const [category, setCategory] = useState('')
       const [openFailed, setOpenFailed] = useState(false)
-      const [gitPending, setGitPending] = useState('')
-      const [gitError, setGitError] = useState('')
-      const [gitNotice, setGitNotice] = useState('')
-      const [expanded, setExpanded] = useState('')
-      const [details, setDetails] = useState({})
+      const [pending, setPending] = useState('')
+      const [error, setError] = useState('')
+      const [notice, setNotice] = useState('')
+      const [dialog, setDialog] = useState(null)
+      const [dialogData, setDialogData] = useState({ phase: 'loading' })
+      const [dialogChoice, setDialogChoice] = useState('')
+      const [dialogError, setDialogError] = useState('')
       const [memories, setMemories] = useState([])
       const [memoryInjection, setMemoryInjection] = useState(undefined)
       const [memoryPhase, setMemoryPhase] = useState('loading')
@@ -399,17 +324,17 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [revision])
 
-      const optionsFor = (key) => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
+      const optionsFor = key => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
         .sort((a, b) => a.localeCompare(b))
       const scoped = tasks.filter(task => (!team || task.teamId === team) && (!project || task.projectRoot === project))
       const categoryCounts = CATEGORY_ORDER.reduce((counts, key) => {
-        counts[key] = scoped.filter(task => taskCategory(task) === key).length
+        counts[key] = scoped.filter(task => task.status === key).length
         return counts
       }, {})
-      const shown = category ? scoped.filter(task => taskCategory(task) === category) : scoped
+      const shown = category ? scoped.filter(task => task.status === category) : scoped
       const groups = CATEGORY_ORDER
         .filter(key => !category || key === category)
-        .map(key => ({ key, tasks: shown.filter(task => taskCategory(task) === key) }))
+        .map(key => ({ key, tasks: shown.filter(task => task.status === key) }))
         .filter(group => group.tasks.length > 0)
 
       const memoryKey = record => `${record.category}:${record.id}`
@@ -433,10 +358,8 @@ window.__ModuleLoader__.load({
         setPhase('loading')
         setMemoryPhase('loading')
         setOpenFailed(false)
-        setGitError('')
-        setGitNotice('')
-        setExpanded('')
-        setDetails({})
+        setError('')
+        setNotice('')
         setMemoryEditing('')
         setMemoryConfirm('')
         setMemoryPending('')
@@ -518,11 +441,11 @@ window.__ModuleLoader__.load({
           setMemoryPending('')
         }
       }
-      const statusLabel = status => t(Object.hasOwn(dictionaries.en, `status.${status}`) ? `status.${status}` : 'status.unknown')
+      const statusLabel = status => t(Object.hasOwn(dictionaries.en, `status.${status}`) ? `status.${status}` : 'status.failed')
       const statusMark = status => {
         const tone = statusTone(status)
         return h('span', { className: 'sl-stage', 'data-state': tone },
-          ONGOING.has(status) ? spinner() : h('span', { className: 'sl-dot', 'data-state': tone, 'aria-hidden': true }),
+          status === 'running' ? spinner() : h('span', { className: 'sl-dot', 'data-state': tone, 'aria-hidden': true }),
           h('span', null, statusLabel(status)))
       }
       const chip = (label, value) => h('span', { className: 'sl-chip' },
@@ -547,35 +470,42 @@ window.__ModuleLoader__.load({
           },
         }, icon('session'), t(label))
       }
-      const gitAction = async (taskId, action) => {
-        setGitPending(`${taskId}:${action}`)
-        setGitError('')
-        setGitNotice('')
+      const post = async (taskId, action, extra = {}) => {
+        const response = await fetch('/superagent-lite/git', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ taskId, action, ...extra }),
+        })
+        let value
         try {
-          const response = await fetch('/superagent-lite/git', {
-            method: 'POST', credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ taskId, action }),
-          })
-          let value
-          try {
-            value = await response.json()
-          } catch {
-            value = undefined
-          }
-          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('gitFailed'))
+          value = await response.json()
+        } catch {
+          value = undefined
+        }
+        if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
+        return value
+      }
+      const reviewTask = async task => {
+        setPending(`${task.id}:review`)
+        setError('')
+        setNotice('')
+        try {
+          const value = await post(task.id, 'review')
           refresh()
-          setGitNotice(typeof value?.message === 'string' && value.message ? value.message : t('gitDone'))
-        } catch (error) {
-          setGitError(typeof error?.message === 'string' && error.message ? error.message : t('gitFailed'))
+          setNotice(value?.approved ? t('reviewApproved') : `${t('reviewRejected')} ${value?.findings ?? ''}`)
+        } catch (actionError) {
+          setError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('actionFailed'))
         } finally {
-          setGitPending('')
+          setPending('')
         }
       }
-      const loadDetails = async taskId => {
-        setDetails(current => ({ ...current, [taskId]: { phase: 'loading' } }))
+      const openDialog = async (kind, task) => {
+        setDialog({ kind, task })
+        setDialogData({ phase: 'loading' })
+        setDialogChoice('')
+        setDialogError('')
         try {
-          const response = await fetch(`/superagent-lite/git?taskId=${encodeURIComponent(taskId)}`, {
+          const response = await fetch(`/superagent-lite/git?taskId=${encodeURIComponent(task.id)}`, {
             method: 'GET', credentials: 'same-origin', cache: 'no-store',
           })
           let value
@@ -584,40 +514,45 @@ window.__ModuleLoader__.load({
           } catch {
             value = undefined
           }
-          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('prDetailFailed'))
-          setDetails(current => ({
-            ...current,
-            [taskId]: {
-              phase: 'ready',
-              commits: Array.isArray(value?.commits) ? value.commits : [],
-              files: Array.isArray(value?.files) ? value.files : [],
-            },
-          }))
-        } catch (error) {
-          setDetails(current => ({
-            ...current,
-            [taskId]: {
-              phase: 'error',
-              error: typeof error?.message === 'string' && error.message ? error.message : t('prDetailFailed'),
-            },
-          }))
+          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
+          const branches = (Array.isArray(value?.branches) ? value.branches : [])
+            .filter(branch => typeof branch?.name === 'string' && branch.name !== task.git?.branch)
+          const remotes = (Array.isArray(value?.remotes) ? value.remotes : [])
+            .filter(remote => typeof remote?.name === 'string' && typeof remote.repository === 'string' && remote.repository)
+          const canonical = branches.some(branch => branch.name === task.git?.baseBranch)
+            ? task.git.baseBranch : (branches[0]?.name ?? '')
+          setDialogData({ phase: 'ready', branches, remotes, gh: value?.gh })
+          setDialogChoice(kind === 'publish' ? (remotes[0]?.name ?? '') : canonical)
+        } catch (detailError) {
+          setDialogData({ phase: 'error', error: typeof detailError?.message === 'string' ? detailError.message : t('actionFailed') })
         }
       }
-      const toggleRow = taskId => {
-        if (expanded === taskId) {
-          setExpanded('')
-          return
+      const confirmDialog = async () => {
+        if (!dialog) return
+        const { kind, task } = dialog
+        const action = kind === 'merge' ? 'merge' : kind === 'publish' ? 'publish' : 'delete-branch'
+        const extra = kind === 'merge' ? { target: dialogChoice } : kind === 'publish' ? { remote: dialogChoice } : {}
+        setPending(`${task.id}:${action}`)
+        setDialogError('')
+        try {
+          const value = await post(task.id, action, extra)
+          setDialog(null)
+          refresh()
+          setNotice(typeof value?.message === 'string' && value.message ? value.message : t('actionDone'))
+        } catch (actionError) {
+          setDialogError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('actionFailed'))
+        } finally {
+          setPending('')
         }
-        setExpanded(taskId)
-        if (details[taskId]?.phase !== 'ready') void loadDetails(taskId)
       }
-      const branches = shown.filter(task => task.git && typeof task.git.branch === 'string')
       const taskRow = task => {
         const pr = pullRequestHref(task.prUrl)
         const updated = displayTime(task.updatedAt)
         const address = task.parentSessionId && task.workerSessionId ? {
           parentSessionId: task.parentSessionId, childSessionId: task.workerSessionId, mode: 'unknown',
         } : task.workerSessionId
+        const git = task.git
+        const busy = pending.startsWith(`${task.id}:`)
         return h('li', { key: task.id, className: 'sl-task' },
           h('div', { className: 'sl-task__stage' }, statusMark(task.status)),
           h('div', { className: 'sl-task__body' },
@@ -628,95 +563,74 @@ window.__ModuleLoader__.load({
               updated && h('span', { className: 'sl-lv' },
                 h('span', { className: 'sl-lv__label' }, t('updated')),
                 h('span', { className: 'sl-lv__value' }, updated)),
+              task.unconfirmed && h('span', { className: 'sl-tag', 'data-tone': 'warning' }, t('unconfirmed')),
               h('code', { className: 'sl-code', title: task.id }, task.id)),
+            task.failure && h('p', { className: 'sl-task__failure', title: task.failure }, `${t('failure')}: ${task.failure}`),
             h('div', { className: 'sl-task__actions' },
               session('router', task.parentSessionId),
               session('worker', task.workerSessionId, address),
-              pr && externalLink(pr, t('pr')))))
+              task.status === 'unmerged' && h('button', {
+                type: 'button', className: git?.canMerge ? 'sl-btn sl-btn--primary' : 'sl-btn sl-btn--outline',
+                disabled: busy || !git?.canMerge, title: git?.mergeReason,
+                onClick: () => void openDialog('merge', task),
+              }, t('merge')),
+              task.status === 'unmerged' && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline',
+                disabled: busy || !git?.canPublish, title: git?.publishReason,
+                onClick: () => void openDialog('publish', task),
+              }, t('publish')),
+              task.status === 'unreviewed' && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline', disabled: busy || !git?.canReview,
+                title: git?.reviewReason, onClick: () => void reviewTask(task),
+              }, icon('review'), t('review')),
+              task.status === 'completed' && git?.canDelete && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
+                onClick: () => void openDialog('delete', task),
+              }, icon('trash'), t('deleteBranch')),
+              pr && externalLink(pr, `${t('pr')} #${pullRequestNumber(pr) ?? ''}`.trim()),
+              busy && h('span', { className: 'sl-hint' }, t('working')))))
       }
-      const commitItem = (commit, index) => h('li', { key: commit.hash || index, className: 'sl-git__commit' },
-        h('div', { className: 'sl-git__main' },
-          h('div', { className: 'sl-git__commit-subject' }, commit.subject || ''),
-          h('div', { className: 'sl-git__commit-meta' },
-            commit.hash && h('code', null, String(commit.hash).slice(0, 7)),
-            commit.author && h('span', null, commit.author),
-            commit.date && displayTime(commit.date))))
-      const fileItem = (file, index) => h('li', { key: file.path || index, className: 'sl-git__file' },
-        h('code', null, file.path),
-        h('span', { className: 'sl-git__stats' },
-          typeof file.additions === 'number' && h('span', { className: 'sl-git__add' }, `+${file.additions}`),
-          typeof file.deletions === 'number' && h('span', { className: 'sl-git__del' }, `-${file.deletions}`)))
-      const branchRow = task => {
-        const git = task.git
-        const prUrl = pullRequestHref(task.prUrl) ?? pullRequestHref(git.pr?.url)
-        const number = pullRequestNumber(task.prUrl) ?? pullRequestNumber(git.pr?.url)
-        const pending = gitPending.startsWith(`${task.id}:`)
-        const open = expanded === task.id
-        const detail = details[task.id]
-        const reviewText = git.reviewed ? t('reviewApproved') : git.approved ? t('reviewStale') : t('reviewNotApproved')
-        const reviewTone = git.reviewed ? 'success' : git.approved ? 'warning' : 'neutral'
-        const author = git.pr?.author || git.author
-        const updated = displayTime(task.updatedAt)
-        const comments = typeof git.pr?.comments === 'number' && git.pr.comments > 0 ? git.pr.comments : undefined
-        const checks = git.pr?.checks
-        const checksLabel = checks?.state === 'success' ? t('prChecksSuccess')
-          : checks?.state === 'failure' ? t('prChecksFailure') : t('prChecksPending')
-        return h('li', { key: `git-${task.id}`, className: 'sl-git-item' },
-          h('button', {
-            type: 'button', className: 'sl-git__head', 'aria-expanded': open,
-            title: open ? t('gitHideDetails') : t('gitShowDetails'),
-            onClick: () => toggleRow(task.id),
-          },
-          h('span', { className: 'sl-git__icon' }, icon('branch')),
-          h('span', { className: 'sl-git__main' },
-            h('span', { className: 'sl-git__titleline' },
-              h('span', { className: 'sl-git__title' }, task.title || task.id),
-              number ? h('span', { className: 'sl-git__number' }, `#${number}`) : h('code', { className: 'sl-git__number' }, task.id)),
-            h('span', { className: 'sl-git__meta' },
-              author && h('span', { title: t('prAuthor') }, author),
-              updated && h('span', null, `${t('updated')}: `, updated),
-              h('span', null, h('code', null, git.branch), h('span', { className: 'sl-git__arrow' }, ' → '), h('code', null, git.baseBranch)))),
-          h('span', { className: 'sl-git__chevron' }, icon('chevron'))),
-          open && h('div', { className: 'sl-git__detail' },
-            h('div', { className: 'sl-git__facts' },
-              h('span', null, `${t('branch')}: `, h('code', null, git.branch)),
-              h('span', null, `${t('baseBranch')}: `, h('code', null, git.baseBranch)),
-              git.repository && h('span', null, `${t('repository')}: ${git.repository}`),
-              h('span', { className: 'sl-tag', 'data-tone': reviewTone }, reviewText),
-              h('span', { className: 'sl-tag', 'data-tone': git.unmerged ? 'warning' : 'neutral' },
-                git.unmerged ? t('unmergedChanges') : t('noUnmergedChanges')),
-              comments !== undefined && h('span', null, `${t('prComments')}: ${comments}`),
-              checks && h('span', null, `${t('prChecks')}: ${checksLabel}`),
-              prUrl && h('a', { className: 'sl-link', href: prUrl, target: '_blank', rel: 'noopener noreferrer' }, t('pr'))),
-            detail?.phase === 'loading' && h('p', { className: 'sl-git__hint', role: 'status' }, t('loading')),
-            detail?.phase === 'error' && h('p', { role: 'alert', className: 'sl-git__error' }, detail.error),
-            detail?.phase === 'ready' && h('div', { className: 'sl-git__grid' },
-              h('section', { className: 'sl-git__section' },
-                h('h3', null, t('prCommits'), h('span', { className: 'sl-git__section-count' }, String(detail.commits.length))),
-                detail.commits.length === 0
-                  ? h('p', { className: 'sl-git__hint' }, t('prNoCommits'))
-                  : h('ul', { className: 'sl-git__items' }, ...detail.commits.map(commitItem))),
-              h('section', { className: 'sl-git__section' },
-                h('h3', null, t('prFiles'), h('span', { className: 'sl-git__section-count' }, String(detail.files.length))),
-                detail.files.length === 0
-                  ? h('p', { className: 'sl-git__hint' }, t('prNoFiles'))
-                  : h('ul', { className: 'sl-git__items' }, ...detail.files.map(fileItem)))),
-            !git.merged && h('div', { className: 'sl-git__actions' },
+      const dialogView = () => {
+        if (!dialog) return null
+        const { kind, task } = dialog
+        const title = kind === 'merge' ? t('mergeTitle') : kind === 'publish' ? t('publishTitle') : t('deleteTitle')
+        const confirm = kind === 'merge' ? t('confirmMerge') : kind === 'publish' ? t('confirmPublish') : t('confirmDelete')
+        const busy = pending.startsWith(`${task.id}:`)
+        let body
+        if (dialogData.phase === 'loading') body = h('p', { role: 'status' }, t('dialogLoading'))
+        else if (dialogData.phase === 'error') body = h('p', { role: 'alert', className: 'sl-error' }, dialogData.error)
+        else if (kind === 'delete') body = h('p', null, `${t('deleteHint')} `, h('code', null, task.git?.branch ?? ''))
+        else if (kind === 'publish' && !dialogData.gh?.ok) {
+          body = h('p', { role: 'alert', className: 'sl-error' },
+            `${t('ghRequired')} ${dialogData.gh?.error ?? ''}`.trim())
+        } else if (kind === 'merge' && dialogData.branches.length === 0) {
+          body = h('p', { className: 'sl-hint' }, t('noBranch'))
+        } else if (kind === 'publish' && dialogData.remotes.length === 0) {
+          body = h('p', { className: 'sl-hint' }, t('noRemote'))
+        } else {
+          const options = kind === 'merge' ? dialogData.branches : dialogData.remotes
+          body = h('label', { className: 'sl-modal__field' },
+            h('span', null, kind === 'merge' ? t('mergeTarget') : t('publishRemote')),
+            h('select', {
+              className: 'sl-select', value: dialogChoice,
+              onChange: event => setDialogChoice(event.target.value),
+            }, ...options.map(option => h('option', { key: option.name, value: option.name },
+              kind === 'merge' ? option.name : `${option.name} (${option.repository})`))))
+        }
+        return h('div', { className: 'sl-modal-backdrop' },
+          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+            h('h2', null, title),
+            body,
+            dialogError && h('p', { role: 'alert', className: 'sl-error' }, dialogError),
+            h('div', { className: 'sl-modal__actions' },
+              h('button', { type: 'button', className: 'sl-btn sl-btn--outline', onClick: () => setDialog(null) }, t('cancel')),
               h('button', {
-                type: 'button', className: git.canMerge ? 'sl-btn sl-git__primary' : 'sl-btn sl-btn--outline',
-                disabled: pending || !git.canMerge, title: git.mergeReason,
-                onClick: () => void gitAction(task.id, 'merge'),
-              }, `${t('mergeInto')} ${git.baseBranch}`),
-              h('button', {
-                type: 'button', className: git.canPublish && !git.canMerge ? 'sl-btn sl-git__primary' : 'sl-btn sl-btn--outline',
-                disabled: pending || !git.canPublish, title: git.publishReason,
-                onClick: () => void gitAction(task.id, 'publish'),
-              }, t('publishPullRequest')),
-              pending && h('span', { className: 'sl-git__hint' }, t('gitWorking'))),
-            !git.merged && !git.canMerge && git.mergeReason &&
-              h('p', { className: 'sl-git__hint' }, `${t('mergeInto')} ${git.baseBranch}: ${git.mergeReason}`),
-            !git.merged && !git.canPublish && git.publishReason &&
-              h('p', { className: 'sl-git__hint' }, `${t('publishPullRequest')}: ${git.publishReason}`)))
+                type: 'button', className: 'sl-btn sl-btn--primary',
+                disabled: busy || dialogData.phase !== 'ready' ||
+                  (kind === 'merge' && ((dialogData.branches?.length ?? 0) === 0 || !dialogChoice)) ||
+                  (kind === 'publish' && (!dialogData.gh?.ok || (dialogData.remotes?.length ?? 0) === 0 || !dialogChoice)),
+                onClick: () => void confirmDialog(),
+              }, confirm))))
       }
       const memoryRow = record => {
         const key = memoryKey(record)
@@ -785,7 +699,7 @@ window.__ModuleLoader__.load({
                   disabled: pending, onClick: () => setMemoryConfirm(''),
                 }, t('memoryCancel')),
               ]),
-            pending && h('span', { key: 'pending', className: 'sl-git__hint' }, t('gitWorking'))))
+            pending && h('span', { key: 'pending', className: 'sl-hint' }, t('working'))))
       }
 
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
@@ -799,7 +713,7 @@ window.__ModuleLoader__.load({
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
                 onClick: refresh, disabled: phase === 'loading',
-              }, icon('refresh'), t('refresh'))),
+              }, icon('refresh'), t('refresh')))),
           tasks.length > 0 && h('div', { className: 'sl-filters' },
             h('div', { className: 'sl-filter-group', role: 'group', 'aria-label': t('taskFilters') },
               h('button', {
@@ -809,32 +723,24 @@ window.__ModuleLoader__.load({
               ...CATEGORY_ORDER.map(key => h('button', {
                 key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
                 onClick: () => setCategory(key),
-              }, t(`category.${key}`), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
+              }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
             h('div', { className: 'sl-scope' },
               filter('team', 'allTeams', 'teamId', team, setTeam),
               filter('project', 'allProjects', 'projectRoot', project, setProject))),
           phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
           phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
           openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
+          error && h('p', { className: 'sl-error', role: 'alert' }, error),
+          notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
           phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
           phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
             h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
           shown.length > 0 && h('div', { className: 'sl-groups' },
             ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
               h('h2', { className: 'sl-group__title' },
-                t(`category.${group.key}`),
+                statusLabel(group.key),
                 h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
-              h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow)))))),
-          phase === 'ready' && h('section', { className: 'sl-git-section' },
-            h('div', { className: 'sl-git-head' },
-              h('h2', null, t('gitTitle')),
-              branches.length > 0 && h('span', { className: 'sl-git-count' }, String(branches.length))),
-            h('p', { className: 'sl-intro' }, t('gitIntro')),
-            gitError && h('p', { role: 'alert', className: 'sl-error' }, gitError),
-            gitNotice && h('p', { role: 'status', className: 'sl-notice' }, gitNotice),
-            branches.length === 0
-              ? h('p', { role: 'status', className: 'sl-hint' }, t('gitEmpty'))
-              : h('ul', { className: 'sl-list' }, ...branches.map(branchRow))),
+              h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow))))),
           h('section', { className: 'sl-memory-section' },
             h('div', { className: 'sl-memory-head' },
               h('h2', null, t('memoryTitle')),
@@ -871,8 +777,8 @@ window.__ModuleLoader__.load({
             memoryPhase === 'ready' && memories.length > 0 && shownMemory.length === 0 &&
               h('p', { className: 'sl-hint', role: 'status' }, t('memoryNoMatch')),
             shownMemory.length > 0 &&
-              h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow)))))
-      )
+              h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow)))),
+          dialogView()))
     }
 
     function PanelIcon({ size }) {
