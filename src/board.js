@@ -16,13 +16,14 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git) {
     }
     const records = await tasks()
     const views = git ? await git.list(records, AbortSignal.timeout(30_000)).catch(() => undefined) : undefined
-    const rows = records.map(({ id, title, teamId, projectRoot, mode, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl, failure }) => {
+    const rows = records.map(record => {
+      const { id, title, teamId, projectRoot, mode, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl, failure } = record
       const view = views?.get(id)
       const unconfirmed = ['starting', 'running', 'resuming'].includes(status) && !agents.get(workerSessionId)
       const row = {
         id, title, teamId, projectRoot, mode, workerSessionId, parentSessionId, prUrl,
         updatedAt: updatedAt ?? createdAt,
-        status: view?.status ?? panelStatus({ status, mode }, {}),
+        status: view?.status ?? panelStatus({ status, mode }, { reviewed: record.review?.approved === true }),
         ...(unconfirmed ? { unconfirmed: true } : {}),
         ...(typeof failure === 'string' && failure ? { failure } : {}),
       }

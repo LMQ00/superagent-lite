@@ -93,7 +93,7 @@ The Router Session and the Worker Session are DSH Sessions outside the aggregate
 
 ## Enumerations
 
-Task status is the only status enumeration. Every value below is written to a task record except `unconfirmed`, which the panel computes.
+The lifecycle status enumeration below is stored on the Task. `unconfirmed` is not a status: the panel renders it as a tag on a running Task whose worker Session is gone. The six panel statuses are a separate, derived enum.
 
 | Group | Value | Meaning |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ Task status is the only status enumeration. Every value below is written to a ta
 | Delivery | `delivery-blocked` | GitHub delivery failed, the Pull request closed, or the local merge failed |
 | End | `completed` | A report-only task delivered its report |
 | End | `failed` | Dispatch, delivery or the worker turn failed |
-| Panel only | `unconfirmed` | The record says `starting`, `running` or `resuming`, but no live worker Session has its ID |
+
 
 ## Panel status
 

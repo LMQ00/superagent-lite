@@ -21,22 +21,22 @@ A stored `review-required`, `delivery-blocked` or `failed` Task whose current he
 
 Read the stored stage table from top to bottom; the first row whose condition holds is the recorded stage. An exact merged Pull request can override a stored delivery state, and the panel computes `unconfirmed` at read time.
 
-| Stage | Condition | Panel text |
+| Stage | Condition | Panel status |
 | --- | --- | --- |
-| `unconfirmed` | The stored status is `starting`, `running` or `resuming`, and no live worker agent has the Task's worker Session ID | 未确认 / Not confirmed |
-| `merged` | The stored status is `merged`, or the exact Pull request for the reviewed head is `MERGED` | 已合并 / Merged |
-| `delivery-blocked` | The stored status is `delivery-blocked` | 交付受阻 / Delivery blocked |
-| `merging` | The stored status is `merging` | 正在合并 / Merging |
-| `publishing` | The stored status is `publishing` | 正在发布拉取请求 / Publishing pull request |
-| `awaiting-ci` | The stored status is `awaiting-ci` | 等待 CI / Waiting for CI |
-| `merge-queued` | The stored status is `merge-queued` | 已进入合并队列 / Merge queued |
-| `awaiting-merge` | The stored status is `awaiting-merge` | 等待合并 / Waiting for merge |
-| `review-required` | The stored status is `review-required` | 需要审查 / Review required |
-| `completed` | The stored status is `completed` | 已完成 / Completed |
-| `failed` | The stored status is `failed` | 失败 / Failed |
-| `resuming` | The stored status is `resuming` and a live worker agent exists | 正在恢复 / Resuming |
-| `running` | The stored status is `running` and a live worker agent exists | 进行中 / In progress |
-| `starting` | The stored status is `starting` and a live worker agent exists | 启动中 / Starting |
+| `unconfirmed` | The stored status is `starting`, `running` or `resuming`, and no live worker agent has the Task's worker Session ID | `running` / 运行中, with the 未确认 / Not confirmed tag |
+| `merged` | The stored status is `merged`, or the exact Pull request for the reviewed head is `MERGED` | `completed` / 已完成 |
+| `delivery-blocked` | The stored status is `delivery-blocked`, and the head is not reviewed | `failed` / 失败 |
+| `merging` | The stored status is `merging` | `running` / 运行中 |
+| `publishing` | The stored status is `publishing` | `running` / 运行中 |
+| `awaiting-ci` | The stored status is `awaiting-ci` | `unmerged` / 未合并 |
+| `merge-queued` | The stored status is `merge-queued` | `unmerged` / 未合并 |
+| `awaiting-merge` | The stored status is `awaiting-merge` | `unmerged` / 未合并 |
+| `review-required` | The stored status is `review-required`, or a covered commit has no approved review | `unreviewed` / 未审查, or `completed` when the branch has no commits |
+| `completed` | The stored status is `completed` | `answer` / 仅回答 for report-only tasks, otherwise `completed` / 已完成 |
+| `failed` | The stored status is `failed` and the head is not reviewed | `failed` / 失败 |
+| `resuming` | The stored status is `resuming` and a live worker agent exists | `running` / 运行中 |
+| `running` | The stored status is `running` and a live worker agent exists | `running` / 运行中 |
+| `starting` | The stored status is `starting` and a live worker agent exists | `running` / 运行中 |
 
 ## Execution
 
@@ -111,7 +111,7 @@ The review record stays `approved: false` and the Task settles as `review-requir
 
 ### Host restart or plugin reload
 
-Task and Memory records survive in `~/.dsh/superagent-lite/`; Worktrees survive under the project's `.agents/worktrees/`. A Task whose stored status is still in flight and whose worker Session is gone shows `unconfirmed`. `continue_worker` can wake an idle worker; a dispatch whose Task is `starting` or `failed` is refused for the same call and needs a new input.
+Task and Memory records survive in `~/.dsh/superagent-lite/`; Worktrees survive under the project's `.agents/worktrees/`. A Task whose stored status is still in flight and whose worker Session is gone shows 运行中 with the 未确认 tag. `continue_worker` can wake an idle worker; a dispatch whose Task is `starting` or `failed` is refused for the same call and needs a new input.
 
 ### GitHub delivery fails
 

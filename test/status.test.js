@@ -17,6 +17,7 @@ test('a reviewed unmerged head is unmerged, even when the stored record says fai
 test('a merged or pushed head is completed and a closed pull request is failed', () => {
   assert.equal(panelStatus(task({ status: 'awaiting-ci' }), { reviewed: true, merged: true, hasCommits: true }), 'completed')
   assert.equal(panelStatus(task({ status: 'merged' }), {}), 'completed')
+  assert.equal(panelStatus(task({ status: 'cancelled' }), { merged: true, hasCommits: true }), 'completed')
   assert.equal(panelStatus(task({ status: 'delivery-blocked' }), { reviewed: true, closed: true, hasCommits: true }), 'failed')
 })
 

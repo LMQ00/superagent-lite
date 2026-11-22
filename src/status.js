@@ -18,10 +18,9 @@ export function panelStatus(task, facts = {}) {
     return 'running'
   }
   if (RUNNING.has(status)) return 'running'
-  if (status === 'merged') return 'completed'
-  if (STOPPED.has(status)) return 'failed'
-  if (facts.merged === true) return 'completed'
+  if (status === 'merged' || facts.merged === true) return 'completed'
   if (facts.closed === true) return 'failed'
+  if (STOPPED.has(status)) return 'failed'
   if (facts.reviewed === true) return 'unmerged'
   // A completed worker turn that committed nothing has no Review to wait for;
   // legacy records used to sit in review-required forever.

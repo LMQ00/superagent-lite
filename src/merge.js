@@ -73,12 +73,6 @@ export async function deleteWorkerBranch(ctx, task, signal, update = updateTask)
   const git = args => runCommand(ctx, args, root, signal)
   const exists = await git(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]).then(() => true, () => false)
   if (exists) {
-    const target = task.mergeTarget ?? task.baseBranch
-    try {
-      await git(['merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/heads/${target}`])
-    } catch {
-      throw new Error(`The worker branch is not merged into ${target}; merge it before deleting it`)
-    }
     if (typeof path === 'string' && path) {
       const listed = (await git(['worktree', 'list', '--porcelain']).catch(() => '')).split('\n\n')
         .some(block => block.split('\n').includes(`worktree ${path}`))

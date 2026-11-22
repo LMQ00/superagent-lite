@@ -77,7 +77,7 @@ Starts one independent review of the committed head from the corresponding worke
 
 ### 删除分支 / Delete branch
 
-Appears on a completed Task whose worker branch still exists. It opens a confirmation dialog, removes the worker Worktree when it is registered and clean, then deletes the branch. A branch that is not merged into the recorded `mergeTarget` or base branch is refused. After deletion the Task stays completed and the button disappears.
+Appears on a completed Task whose worker branch still exists. It opens a confirmation dialog, removes the worker Worktree when it is registered and clean, then deletes the branch. The button exists only on a `merged` record, including a merged Pull request whose commit is not an ancestor of the local base branch. After deletion the Task stays completed and the button disappears.
 
 ## Settings
 

@@ -324,6 +324,16 @@ test('deleting the worker branch removes its worktree and keeps the task complet
   assert.equal(view.status, 'completed')
 })
 
+test('a branch deleted after a merged Pull request does not need to be an ancestor of the local base', async () => {
+  const facts = await setupRepo()
+  const record = recordFor(facts, { status: 'merged', prState: 'MERGED' })
+  const store = memoryStore([record])
+  const manager = managerFor(store)
+  const removed = await manager.perform(taskId, 'delete-branch', {}, signal)
+  assert.equal(removed.deleted, true)
+  await assert.rejects(git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo))
+})
+
 test('deleting a branch before the merge is refused', async () => {
   const facts = await setupRepo()
   const store = memoryStore([recordFor(facts, { status: 'awaiting-merge' })])

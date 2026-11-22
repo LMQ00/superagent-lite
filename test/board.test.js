@@ -88,11 +88,11 @@ test('board keeps the failure text and the six panel statuses from the reconcile
 test('board keeps listing tasks when the Git branch view is unavailable', async () => {
   const handler = createBoardHandler(
     { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {},
-    () => [{ id: 'a', status: 'awaiting-merge' }, { id: 'b', status: 'completed', mode: 'report' }],
+    () => [{ id: 'a', status: 'awaiting-merge' }, { id: 'b', status: 'completed', mode: 'report' }, { id: 'c', status: 'review-required', review: { head: 'a'.repeat(40), approved: true } }],
     { async list() { throw new Error('git unavailable') } },
   )
   const tasks = JSON.parse((await request(handler)).body).tasks
-  assert.deepEqual(tasks.map(row => row.status), ['unmerged', 'answer'])
+  assert.deepEqual(tasks.map(row => row.status), ['unmerged', 'answer', 'unmerged'])
   assert.equal(tasks[0].git, undefined)
 })
 
