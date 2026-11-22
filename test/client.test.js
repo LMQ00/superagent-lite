@@ -87,7 +87,7 @@ function setup({ fetch, openSession, language = 'en' }) {
 }
 
 function nodes(value) {
-  return value?.type ? [value, ...value.children.flatMap(nodes)] : []
+  return value?.type ? [value, ...(value.children ?? []).flatMap(nodes)] : []
 }
 
 function text(value) {
@@ -96,20 +96,41 @@ function text(value) {
 }
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
-
-const tasks = [
-  { id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'running', mode: 'change',
-    workerSessionId: 'worker-a', parentSessionId: 'parent-a', prUrl: 'https://github.com/owner/repo/pull/1' },
-  { id: 'b', title: 'Task B', teamId: 'beta', projectRoot: '/two', status: 'awaiting-ci', mode: 'change',
-    prUrl: 'javascript:alert(1)' },
-]
-
 const byClass = (tree, className) => nodes(tree).filter(node => node.props?.className === className)
-const button = (tree, label) => nodes(tree).find(node => node.type === 'button' && text(node).startsWith(label))
+const button = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label).at(-1)
+const filterButton = (tree, label) => nodes(tree).find(node => node.type === 'button' && text(node).startsWith(label))
+const buttons = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label)
+const select = (tree, predicate) => nodes(tree).find(node => node.type === 'select' && predicate?.(node))
 
-test('registers matching slots and renders a localized, status-filtered read-only board with navigation', async () => {
+const task = overrides => ({
+  id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', mode: 'change', status: 'unmerged',
+  workerSessionId: 'worker-a', parentSessionId: 'parent-a', updatedAt: '2026-01-01T00:00:00.000Z',
+  ...overrides,
+})
+
+const gitFacts = overrides => ({
+  branch: 'sl-a', baseBranch: 'main', reviewed: true, approved: true, merged: false, hasCommits: true,
+  canMerge: true, canPublish: true, canReview: false, canDelete: false,
+  ...overrides,
+})
+
+function detail(overrides = {}) {
+  return {
+    branches: [{ name: 'main', current: true }, { name: 'release', current: false }],
+    remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git', repository: 'owner/repo' }],
+    gh: { ok: true, account: 'octocat' },
+    commits: [], files: [],
+    ...overrides,
+  }
+}
+
+test('renders the six status categories, navigation and session links without a Git delivery block', async () => {
   const requests = []
   const opened = []
+  const tasks = [
+    task({ prUrl: 'https://github.com/owner/repo/pull/1', git: gitFacts(), status: 'unmerged' }),
+    task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
+  ]
   const board = setup({
     fetch: async (path, options) => {
       requests.push({ path, options })
@@ -119,58 +140,39 @@ test('registers matching slots and renders a localized, status-filtered read-onl
     language: 'zh',
   })
   assert.equal(board.definition.id, '@local/superagent-lite')
-  const main = board.slots.get('main')
   const sidebar = board.slots.get('sidebar.panellist')
-  assert.equal(main.options.key, sidebar.options.id)
   assert.equal(sidebar.options.label(), '项目任务')
-  assert.equal(sidebar.Component({ size: 16 }).type, 'svg')
 
   assert.match(text(board.render()), /正在加载任务/)
   await flush()
   let tree = board.render()
-  assert.match(text(tree), /任务状态只在任务列表呈现/)
+  assert.match(text(tree), /未合并的任务可以合并或提交 PR/)
   assert.match(text(tree), /Task A/)
   assert.match(text(tree), /Task B/)
-  assert.match(text(tree), /进行中2/)
-  assert.match(text(tree), /等待 CI/)
-  assert.equal(byClass(tree, 'sl-group').length, 1)
-  for (const label of ['失败0', '进行中2', '已合并0', '待审查0', '仅回答0']) assert.ok(text(tree).includes(label))
+  for (const label of ['未合并1', '运行中1', '未审查0', '已完成0', '失败0', '仅回答0']) assert.ok(text(tree).includes(label), label)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1', '运行中1'])
+  assert.equal(byClass(tree, 'sl-git-section').length, 0)
+  assert.doesNotMatch(text(tree), /Git 交付/)
   assert.deepEqual(nodes(tree).filter(node => node.type === 'a').map(node => node.props.href),
     ['https://github.com/owner/repo/pull/1'])
-
-  button(tree, '待审查').props.onClick()
-  tree = board.render()
-  assert.match(text(tree), /该状态下暂无任务/)
-  assert.doesNotMatch(text(tree), /Task A/)
-  button(tree, '全部').props.onClick()
-  tree = board.render()
-  assert.match(text(tree), /Task A/)
-
-  const [team, project] = nodes(tree).filter(node => node.type === 'select')
-  team.props.onChange({ target: { value: 'alpha' } })
-  tree = board.render()
-  assert.match(text(tree), /Task A/)
-  assert.doesNotMatch(text(tree), /Task B/)
-  project.props.onChange({ target: { value: '/two' } })
-  assert.match(text(board.render()), /没有符合筛选条件的任务/)
-  project.props.onChange({ target: { value: '' } })
-  tree = board.render()
-  assert.match(text(tree), /Task A/)
-  assert.doesNotMatch(text(tree), /Task B/)
 
   nodes(tree).find(node => node.type === 'button' && text(node) === 'Worker 会话').props.onClick()
   nodes(tree).find(node => node.type === 'button' && text(node) === 'Router 会话').props.onClick()
   assert.equal(opened[0].childSessionId, 'worker-a')
   assert.equal(opened[0].parentSessionId, 'parent-a')
-  assert.equal(opened[0].mode, 'unknown')
   assert.equal(opened[1], 'parent-a')
+
+  filterButton(tree, '未审查').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /该状态下暂无任务/)
+  filterButton(tree, '全部').props.onClick()
+  tree = board.render()
   button(tree, '刷新').props.onClick()
   assert.match(text(board.render()), /正在加载任务/)
   await flush()
   assert.match(text(board.render()), /Task A/)
-  assert.equal(requests.length, 2)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 2)
   for (const request of requests) {
-    assert.equal(request.path, '/superagent-lite/tasks')
     assert.equal(request.options.method, 'GET')
     assert.equal(request.options.credentials, 'same-origin')
   }
@@ -178,46 +180,35 @@ test('registers matching slots and renders a localized, status-filtered read-onl
   assert.ok(requests.every(request => request.options.signal.aborted))
 })
 
-test('groups and filters tasks by the five categories, and carries report-only tasks in their own group', async () => {
-  const categoryTasks = [
-    { id: 'a', title: 'Blocked delivery', teamId: 'alpha', projectRoot: '/one', status: 'delivery-blocked', mode: 'change' },
-    { id: 'b', title: 'Worker running', teamId: 'alpha', projectRoot: '/one', status: 'running', mode: 'change' },
-    { id: 'c', title: 'Merged branch', teamId: 'alpha', projectRoot: '/one', status: 'merged', mode: 'change' },
-    { id: 'd', title: 'Review required', teamId: 'alpha', projectRoot: '/one', status: 'review-required', mode: 'change' },
-    { id: 'e', title: 'Answer only', teamId: 'alpha', projectRoot: '/one', status: 'completed', mode: 'report' },
-  ]
+test('groups tasks by the six statuses in the specified order', async () => {
+  const statuses = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
+  const tasks = statuses.map((status, index) => task({ id: `t${index}`, title: `T ${status}`, status }))
   const board = setup({
-    fetch: async () => ({ ok: true, json: async () => ({ tasks: categoryTasks }) }),
+    fetch: async () => ({ ok: true, json: async () => ({ tasks }) }),
     language: 'zh',
   })
   board.render()
   await flush()
   let tree = board.render()
   assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)),
-    ['失败1', '进行中1', '已合并1', '待审查1', '仅回答1'])
-  assert.deepEqual(byClass(tree, 'sl-stage').map(node => node.props['data-state']),
-    ['error', 'ongoing', 'done', 'warning', 'done'])
-  const titles = () => byClass(tree, 'sl-task__title').map(node => text(node))
-  assert.deepEqual(titles(), ['Blocked delivery', 'Worker running', 'Merged branch', 'Review required', 'Answer only'])
-  assert.match(text(tree), /仅回答1.*已完成.*Answer only/s)
-  for (const [filter, title] of [['失败', 'Blocked delivery'], ['进行中', 'Worker running'], ['已合并', 'Merged branch'],
-    ['待审查', 'Review required'], ['仅回答', 'Answer only']]) {
-    button(tree, filter).props.onClick()
+    ['未合并1', '运行中1', '未审查1', '已完成1', '失败1', '仅回答1'])
+  for (const [label, title] of [['未合并', 'T unmerged'], ['运行中', 'T running'], ['未审查', 'T unreviewed'],
+    ['已完成', 'T completed'], ['失败', 'T failed'], ['仅回答', 'T answer']]) {
+    filterButton(tree, label).props.onClick()
     tree = board.render()
-    assert.deepEqual(titles(), [title])
-    assert.equal(byClass(tree, 'sl-group').length, 1)
-    assert.equal(text(byClass(tree, 'sl-group__title')[0]), `${filter}1`)
+    assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)), [title])
   }
-  button(tree, '全部').props.onClick()
+  filterButton(tree, '全部').props.onClick()
   tree = board.render()
-  assert.deepEqual(titles(), ['Blocked delivery', 'Worker running', 'Merged branch', 'Review required', 'Answer only'])
+  assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)),
+    ['T unmerged', 'T running', 'T unreviewed', 'T completed', 'T failed', 'T answer'])
   board.dispose()
 })
 
 test('reports a load error and can refresh without workspace navigation', async () => {
   let attempt = 0
   const board = setup({ fetch: async () => ++attempt === 1 ? { ok: false } : {
-    ok: true, json: async () => ({ tasks: [{ ...tasks[0], status: 'unconfirmed' }] }),
+    ok: true, json: async () => ({ tasks: [task({ status: 'running', unconfirmed: true })] }),
   } })
   board.render()
   await flush()
@@ -227,153 +218,210 @@ test('reports a load error and can refresh without workspace navigation', async 
   board.render()
   await flush()
   tree = board.render()
-  assert.match(text(tree), /Not confirmed.*Worker session/)
+  assert.match(text(tree), /Not confirmed/)
   assert.equal(nodes(tree).find(node => text(node) === 'Worker session').type, 'span')
   board.dispose()
 })
 
-test('lists branches under Git delivery without a second status system and sends the chosen merge action', async () => {
+test('opens a merge dialog, lists target branches and posts the chosen target', async () => {
   const requests = []
-  let merged = false
-  const branchTasks = () => [{
-    id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', mode: 'change',
-    status: merged ? 'merged' : 'awaiting-merge', workerSessionId: 'worker-a', parentSessionId: 'parent-a',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    git: {
-      branch: 'sl-a', baseBranch: 'master', author: 'dsh', approved: true, reviewed: true,
-      merged, unmerged: !merged, uncommitted: false, onBranch: true,
-      canMerge: !merged, canPublish: false,
-      publishReason: 'This project has no GitHub origin',
-    },
-  }]
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
       if (path === '/superagent-lite/git') {
         assert.equal(options.method, 'POST')
-        assert.equal(options.credentials, 'same-origin')
-        assert.equal(options.headers['content-type'], 'application/json')
-        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'merge' })
-        merged = true
-        return { ok: true, json: async () => ({ status: 'merged', message: 'Merged a into master.' }) }
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'merge', target: 'release' })
+        return { ok: true, json: async () => ({ message: 'Merged a into release.' }) }
       }
       if (path === '/superagent-lite/git?taskId=a') {
         assert.equal(options.method, 'GET')
-        assert.equal(options.credentials, 'same-origin')
-        assert.equal(options.cache, 'no-store')
-        return { ok: true, json: async () => ({
-          commits: [{ hash: 'b'.repeat(40), author: 'dsh', date: '2026-01-01T00:00:00.000Z', subject: 'Task A change' }],
-          files: [{ path: 'src/a.js', additions: 3, deletions: 1 }],
-        }) }
+        return { ok: true, json: async () => detail() }
       }
-      return { ok: true, json: async () => ({ tasks: branchTasks() }) }
+      return { ok: true, json: async () => ({ tasks: [task({ git: gitFacts() })] }) }
     },
     language: 'zh',
   })
   board.render()
   await flush()
   let tree = board.render()
-  assert.match(text(tree), /Git 交付/)
-  assert.match(text(tree), /sl-a.*master/s)
-  assert.match(text(tree), /dsh/)
-  assert.equal(nodes(tree).filter(node => node.props?.role === 'tab').length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'input' && node.props.type === 'search').length, 0)
-  assert.doesNotMatch(text(byClass(tree, 'sl-git-section')[0]), /打开|已关闭/)
-  byClass(tree, 'sl-git__head')[0].props.onClick()
+  assert.equal(buttons(tree, '合并').length, 1)
+  button(tree, '合并').props.onClick()
   await flush()
   tree = board.render()
-  assert.match(text(tree), /提交/)
-  assert.match(text(tree), /改动文件/)
-  assert.match(text(tree), /审查已通过/)
-  assert.match(text(tree), /有未合并改动/)
-  assert.match(text(tree), /src\/a\.js.*\+3.*-1/)
-  const merge = nodes(tree).find(node => node.type === 'button' && text(node) === '合并到 master')
-  assert.ok(merge)
-  assert.equal(merge.props.disabled, false)
-  merge.props.onClick()
+  assert.match(text(tree), /合并到分支/)
+  const target = select(tree, node => node.props.value === 'main')
+  assert.ok(target)
+  target.props.onChange({ target: { value: 'release' } })
+  tree = board.render()
+  assert.equal(select(tree, node => node.props.value === 'release').props.value, 'release')
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
+  button(tree, '合并').props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
   }
   tree = board.render()
+  assert.match(text(tree), /Merged a into release/)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
   assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
-  assert.match(text(tree), /Merged a into master/)
-  assert.equal(nodes(tree).find(node => node.type === 'button' && text(node) === '合并到 master'), undefined)
-  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已合并1'])
-  assert.equal(byClass(tree, 'sl-git__head').length, 1)
   board.dispose()
 })
 
-test('shows the Git action error returned by the host', async () => {
+test('the merge dialog refuses to submit without a target branch', async () => {
   const board = setup({
-    fetch: async (path) => path === '/superagent-lite/git'
-      ? { ok: false, json: async () => ({ error: 'Merge would conflict' }) }
-      : path.startsWith('/superagent-lite/git?taskId=')
-        ? { ok: true, json: async () => ({ commits: [], files: [] }) }
-        : { ok: true, json: async () => ({ tasks: [{
-          id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', status: 'awaiting-merge', mode: 'change',
-          workerSessionId: 'worker-a', parentSessionId: 'parent-a',
-          git: { branch: 'sl-a', baseBranch: 'master', approved: true, reviewed: true, canMerge: true, canPublish: false },
-        }] }) },
+    fetch: async path => path.startsWith('/superagent-lite/git?taskId=')
+      ? { ok: true, json: async () => detail({ branches: [] }) }
+      : { ok: true, json: async () => ({ tasks: [task({ git: gitFacts() })] }) },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  button(board.render(), 'Merge').props.onClick()
+  await flush()
+  const tree = board.render()
+  assert.match(text(tree), /No merge target is available/)
+  assert.equal(button(tree, 'Merge').props.disabled, true)
+  board.dispose()
+})
+
+test('opens a publish dialog with the gh account and posts the chosen remote', async () => {
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'publish', remote: 'origin' })
+        return { ok: true, json: async () => ({ message: 'Published the reviewed commit as pull request 7.' }) }
+      }
+      if (path === '/superagent-lite/git?taskId=a') return { ok: true, json: async () => detail() }
+      return { ok: true, json: async () => ({ tasks: [task({ git: gitFacts() })] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  button(board.render(), '提交 PR').props.onClick()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /提交仓库/)
+  assert.match(text(tree), /origin \(owner\/repo\)/)
+  button(tree, '提交').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  assert.match(text(board.render()), /Published the reviewed commit/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
+  board.dispose()
+})
+
+test('a publish dialog without a gh account explains the requirement and cannot submit', async () => {
+  const board = setup({
+    fetch: async path => path.startsWith('/superagent-lite/git?taskId=')
+      ? { ok: true, json: async () => detail({ gh: { ok: false, error: 'You are not logged into any GitHub hosts.' } }) }
+      : { ok: true, json: async () => ({ tasks: [task({ git: gitFacts() })] }) },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  button(board.render(), '提交 PR').props.onClick()
+  await flush()
+  const tree = board.render()
+  assert.match(text(tree), /需要 gh 账号/)
+  assert.match(text(tree), /not logged into any GitHub hosts/)
+  assert.equal(button(tree, '提交').props.disabled, true)
+  board.dispose()
+})
+
+test('starts a review from the unreviewed row and reports the verdict', async () => {
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'review' })
+        return { ok: true, json: async () => ({ approved: true, status: 'awaiting-merge', message: 'Review approved.' }) }
+      }
+      return { ok: true, json: async () => ({ tasks: [task({
+        status: 'unreviewed',
+        git: gitFacts({ reviewed: false, canMerge: false, canPublish: false, canReview: true, reviewReason: undefined }),
+      })] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  button(board.render(), '审查').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  assert.match(text(board.render()), /审查已通过/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
+  board.dispose()
+})
+
+test('deletes the worker branch from a completed merged row after confirmation', async () => {
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'delete-branch' })
+        return { ok: true, json: async () => ({ message: 'Deleted the worker branch sl-a.' }) }
+      }
+      if (path === '/superagent-lite/git?taskId=a') {
+        return { ok: true, json: async () => detail({ branches: [{ name: 'main', current: true }] }) }
+      }
+      return { ok: true, json: async () => ({ tasks: [task({
+        status: 'completed', git: gitFacts({ merged: true, canMerge: false, canPublish: false, canDelete: true }),
+      })] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  button(board.render(), '删除分支').props.onClick()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /删除修改分支/)
+  assert.match(text(tree), /sl-a/)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  assert.match(text(board.render()), /Deleted the worker branch sl-a/)
+  board.dispose()
+})
+
+test('shows the failure text and the action error returned by the host', async () => {
+  let posted = false
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      if (path === '/superagent-lite/git') {
+        posted = true
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'merge', target: 'main' })
+        return { ok: false, json: async () => ({ error: 'Merge would conflict' }) }
+      }
+      if (path === '/superagent-lite/git?taskId=a') return { ok: true, json: async () => detail() }
+      return { ok: true, json: async () => ({ tasks: [task({ failure: 'turn failed', git: gitFacts() })] }) }
+    },
     language: 'en',
   })
   board.render()
   await flush()
   let tree = board.render()
-  byClass(tree, 'sl-git__head')[0].props.onClick()
+  assert.match(text(tree), /Failure: turn failed/)
+  button(tree, 'Merge').props.onClick()
   await flush()
-  tree = board.render()
-  nodes(tree).find(node => node.type === 'button' && text(node) === 'Merge into master').props.onClick()
+  button(board.render(), 'Merge').props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
   }
   tree = board.render()
   assert.match(text(tree), /Merge would conflict/)
-  board.dispose()
-})
-
-test('does not show pull request state tabs, counts or search, and keeps review facts inside delivery details', async () => {
-  const base = { teamId: 'alpha', projectRoot: '/one', updatedAt: '2026-01-01T00:00:00.000Z', mode: 'change' }
-  const rows = [
-    { ...base, id: 'a', title: 'Add dashboard', status: 'awaiting-ci',
-      git: { branch: 'sl-a', baseBranch: 'master', author: 'dsh', approved: true, reviewed: true, merged: false, unmerged: true,
-        pr: { url: 'https://github.com/owner/repo/pull/12', state: 'OPEN', exact: true, draft: false, author: 'octocat', comments: 2, checks: { state: 'success', total: 3 } },
-        canMerge: false, mergeReason: 'GitHub projects must merge through a pull request',
-        canPublish: false, publishReason: 'All required CI checks must pass' } },
-    { ...base, id: 'b', title: 'Merged feature', status: 'merged',
-      git: { branch: 'sl-b', baseBranch: 'master', approved: true, reviewed: true, merged: true, unmerged: false,
-        pr: { url: 'https://github.com/owner/repo/pull/11/', state: 'MERGED', exact: true, draft: false, author: 'octocat', comments: 1, checks: { state: 'success', total: 2 } },
-        canMerge: false, canPublish: false } },
-  ]
-  const board = setup({
-    fetch: async (path) => path.startsWith('/superagent-lite/git?taskId=')
-      ? { ok: true, json: async () => ({ commits: [], files: [{ path: 'src/panel.js', additions: 4, deletions: 2 }] }) }
-      : { ok: true, json: async () => ({ tasks: rows }) },
-    language: 'zh',
-  })
-  board.render()
-  await flush()
-  let tree = board.render()
-  const gitText = () => text(byClass(tree, 'sl-git-section')[0])
-  assert.match(gitText(), /Add dashboard/)
-  assert.match(gitText(), /Merged feature/)
-  assert.match(gitText(), /#12/)
-  assert.match(gitText(), /#11/)
-  assert.doesNotMatch(gitText(), /打开|已关闭/)
-  assert.equal(nodes(tree).filter(node => node.props?.role === 'tab').length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'input').length, 0)
-  byClass(tree, 'sl-git__head')[0].props.onClick()
-  await flush()
-  tree = board.render()
-  assert.match(gitText(), /Comment: 2|评论: 2/)
-  assert.match(gitText(), /Check|检查/)
-  assert.match(gitText(), /src\/panel\.js.*\+4.*-2/)
-  const merge = nodes(tree).find(node => node.type === 'button' && text(node) === '合并到 master')
-  const publish = nodes(tree).find(node => node.type === 'button' && text(node) === '发送 PR')
-  assert.equal(merge.props.disabled, true)
-  assert.equal(publish.props.disabled, true)
-  assert.match(gitText(), /GitHub projects must merge through a pull request/)
-  assert.match(gitText(), /All required CI checks must pass/)
+  assert.equal(posted, true)
   board.dispose()
 })

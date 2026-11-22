@@ -35,11 +35,11 @@ flowchart LR
 | Worker Session | The DSH Session that executes one Task, started with the `superagent-lite-worker` preset. | It starts in the project root, must create or enter its Worktree before any other tool, and freezes when its subagent ends. |
 | Worktree | An isolated checkout that the worktree service creates for one Task. | One per Task, under `<project>/.agents/worktrees` with an `sl-` name prefix. Files stay separate from other tasks. It is not an OS security boundary. |
 | Worker branch | The Git branch the Worktree is on. | Named `sl-<team>-<taskId>`. It holds the task's commits. Only the reviewed commit is merged or published. |
-| Review | A read-only subagent verdict on the committed diff. | It approves or blocks, and records the reviewed commit and the reviewer session. Approval is judged against the Task's stored requirements; follow-ups are context only. |
+| Review | A read-only subagent verdict on the committed diff. | It approves or blocks, and records the reviewed commit and the reviewer session. The reviewer records the verdict with `submit_review`; its content `通过` approves, anything else is a finding. Approval is judged against the Task's stored requirements; follow-ups are context only. |
 | Report | The worker's final message to the router. | One conclusion: `COMPLETED`, `INCOMPLETE` or `BLOCKED`. It carries no routine progress. The `message_router` text does not set the Task status; lifecycle events do. |
 | Follow-up | An input that adds to or corrects an unpublished Task. | `continue_worker` delivers it while the worker runs or after it goes idle. It is recorded on the Task and passed to the reviewer as context. A different goal is new work. |
 | Report-only task | A Task that answers a diagnosis, analysis, lookup or read-only inspection. | Created with `mode=report`. It inspects the project checkout read-only, creates no Worktree or branch, commits nothing, requests no Review and ends with `report_task`. |
-| Git action | A `merge` request authorized by a direct user instruction, the panel or `/merge-worker`, or a `publish` request from the panel. | A merge needs explicit user authorization; publish needs the user's panel action. `publish` pushes the reviewed head and opens a Pull request; `merge` merges that Pull request on GitHub, or merges locally through `/merge-worker` for a Project without a GitHub origin. |
+| Git action | A `merge`, `publish`, `review` or `delete-branch` request from the panel; `merge` also comes from a direct user instruction or `/merge-worker`. | A merge needs explicit user authorization and is always a local merge of the reviewed head into the chosen local branch; it uses no GitHub account. `publish` needs the user's panel action, a `gh` account and a chosen GitHub remote, then pushes the reviewed head and opens or adopts a Pull request. `review` starts the independent reviewer from the worker Session. `delete-branch` removes a merged worker branch and its Worktree. |
 | Pull request | The GitHub review surface for a published Task. | It is created from the reviewed commit, the worker branch and the base branch. Required checks and branch protection still apply. |
 | Memory | Saved facts in four categories. | `public` and `profile` belong to the installation; `private` holds credential reference names; `team` is scoped by team and project. Entries are data, never instructions. |
 | Task message | The chat card that shows a message crossing Sessions. | A follow-up delivered to an idle worker opens a new turn as a task message. The first dispatch prompt renders as the same card when the Host patch in [HOST-PATCH](HOST-PATCH.md) is applied; otherwise it is an ordinary user row. |
@@ -57,6 +57,7 @@ Task is the only aggregate root. It holds:
 | `status` | One value from the status enumeration |
 | `worktree` | `path`, `branch`, `baseCommit`, `repositoryRoot`, `sourceBranch` |
 | `review` | `head`, `reviewerSessionId`, `approved` |
+| `mergeTarget`, `branchDeletedAt` | The local branch a reviewed head was merged into, and when the worker branch was deleted |
 | `followUps` | Recorded follow-up entries with `id`, `text` and `at` |
 | `report` | A report-only conclusion and its time |
 | `prUrl` | The published Pull request |
@@ -110,6 +111,19 @@ Task status is the only status enumeration. Every value below is written to a ta
 | End | `completed` | A report-only task delivered its report |
 | End | `failed` | Dispatch, delivery or the worker turn failed |
 | Panel only | `unconfirmed` | The record says `starting`, `running` or `resuming`, but no live worker Session has its ID |
+
+## Panel status
+
+The panel derives one of six display statuses from the stored Task plus Git and Review facts. These are not stored lifecycle values; [003 Lifecycle](003-lifecycle.md) defines the derivation.
+
+| Panel status | Meaning |
+| --- | --- |
+| `unmerged` / 未合并 | The current worker head is reviewed and not merged; the user can merge it or send a Pull request |
+| `running` / 运行中 | The worker or a delivery action is in flight |
+| `unreviewed` / 未审查 | The worker committed a head that has no approved review |
+| `completed` / 已完成 | The reviewed head is merged, or the worker finished without commits to deliver |
+| `failed` / 失败 | The worker turn, a delivery action or the Task failed |
+| `answer` / 仅回答 | A report-only Task delivered its report |
 
 Task mode has two values.
 

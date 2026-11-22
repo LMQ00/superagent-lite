@@ -76,7 +76,7 @@ test('the read-only sandbox permits git inspection and denies writes', {
   const repo = await mkdtemp(join(tmp, 'helper-sandbox-'))
   t.after(() => rm(repo, { recursive: true, force: true }))
   const git = args => {
-    const result = spawnSync('git', ['-c', 'user.name=dsh', '-c', 'user.email=dsh@local', ...args], { cwd: repo, encoding: 'utf8' })
+    const result = spawnSync('git', ['-c', 'user.name=dsh', '-c', 'user.email=dsh@local', '-c', 'commit.gpgsign=false', ...args], { cwd: repo, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     return result.stdout.trim()
   }

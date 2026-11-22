@@ -1,7 +1,7 @@
 import { taskForSession, updateTask } from './src/task-store.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
-import { createReviewTool, worktreeHead } from './src/review.js'
+import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
 import { createGitManager } from './src/git-actions.js'
 import { archiveWorkerTurn, createMemoryTool, createExtractTool, refreshProfile, registerProfileContext } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
@@ -39,6 +39,7 @@ export async function apply(ctx) {
     const helper = claimHelper(agent.session.header.parentSession)
     if (helper) {
       registerReadOnlyGuard(agent, helper.scope)
+      if (helper.scope) agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
       return
     }
     const task = await taskForSession(undefined, agent.id)

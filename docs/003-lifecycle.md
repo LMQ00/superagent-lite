@@ -4,7 +4,22 @@ This document follows one accepted Task from dispatch to its end. It builds on [
 
 ## Stages
 
-Read the table from top to bottom; the first row whose condition holds is the Task's stage. The stored status is one value; an exact merged Pull request can override a stored delivery state, and the panel computes `unconfirmed` at read time.
+The Task record stores one lifecycle status. The panel does not display that value directly; it derives one of the six panel statuses below from the stored status, the worker branch, the review record and the Pull request. The derived status answers what a person can do with the Task now.
+
+| Panel status | Condition, read from top to bottom |
+| --- | --- |
+| `running` / 运行中 | The stored status is `starting`, `running`, `resuming`, `publishing` or `merging` |
+| `completed` / 已完成 | The stored status is `merged`, or the worker head is an ancestor of the base branch tip, or an exact Pull request for the reviewed head is `MERGED` |
+| `failed` / 失败 | The stored status is `cancelled`, `interrupted` or `merge-conflict`, or an exact Pull request for the head is `CLOSED` |
+| `unmerged` / 未合并 | The current worker head has an approved review and is not merged. A review recorded for the same commit by another Task of the same Project counts; the panel then writes that review onto this Task |
+| `completed` / 已完成 | The worker turn ended `completed` and its branch has no commits after the base commit, so there is nothing to review |
+| `unreviewed` / 未审查 | The worker branch has commits and the current head has no approved review |
+| `failed` / 失败 | Any other stored failure value (`failed`, `delivery-blocked`) |
+| `answer` / 仅回答 | The Task is report-only and stored `completed`; report-only tasks otherwise show `running` or `failed` |
+
+A stored `review-required`, `delivery-blocked` or `failed` Task whose current head has an approved review is healed to `awaiting-merge` when the panel reads it. A stored `review-required` Task whose head is merged is healed to `merged`.
+
+Read the stored stage table from top to bottom; the first row whose condition holds is the recorded stage. An exact merged Pull request can override a stored delivery state, and the panel computes `unconfirmed` at read time.
 
 | Stage | Condition | Panel text |
 | --- | --- | --- |
@@ -52,7 +67,9 @@ The worker is frozen when its subagent ends. A frozen worker keeps no tool acces
 
 `review_worker_commit` starts a separate subagent with label `Independent code review`, the Worktree as its working directory, delivery `caller` and depth 2. It receives the stored requirements, recorded follow-up texts, the base and head commits and the Worktree path, and reads the `base..head` diff and changed files itself. The helper guard claims it before it is created and installs the read-only boundary, which confines reads and git commands to that range and Worktree.
 
-The reviewer returns `approved` and `findings`. The tool records `review.head`, `review.reviewerSessionId` and `review.approved` only when the verdict is usable and the worker head has not moved.
+The reviewer records its verdict with the `submit_review` tool. Content `通过` is an approval; any other content is a finding. The tool records `review.head`, `review.reviewerSessionId` and `review.approved` only when the verdict arrived, the reviewer inspected the change, and the worker head has not moved.
+
+The panel's `review` action runs the same review from the live worker Session. It is available on an `unreviewed` Task while that Session still exists; an approval heals the Task to `awaiting-merge`.
 
 ### Memory extractor
 
@@ -76,7 +93,7 @@ A change Task ends its worker turn in one of three ways:
 | The worker ends without an approved review, or the head moved after approval | `review-required` |
 | The worker ends without `completed`, without a Worktree, or the head check throws | `failed`, or `delivery-blocked` when the post-review head check throws |
 
-`awaiting-merge` is the end of the worker's work, not of the Task. The Task reaches `merged` only through a merge the user explicitly authorized (a direct instruction, the panel merge action or `/merge-worker`) or an exact merged Pull request. A report-only Task ends at `completed` when `report_task` runs; a report-only turn that ends without it becomes `failed` with `Report-only task ended without report_task`.
+`awaiting-merge` is the end of the worker's work, not of the Task. The Task reaches `merged` only through a merge the user explicitly authorized (a direct instruction, the panel merge action or `/merge-worker`) or an exact merged Pull request. A panel merge is a local `git merge --no-ff` into the local branch the user picked and needs no GitHub account; after it succeeds the user may delete the worker branch and its Worktree. A report-only Task ends at `completed` when `report_task` runs; a report-only turn that ends without it becomes `failed` with `Report-only task ended without report_task`.
 
 An input that needs no worker is not a Task: `dispatch_worker` returns `delegate=false` with a reason and the turn answers.
 

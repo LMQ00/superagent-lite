@@ -44,8 +44,8 @@ A user input gets one `dispatch_worker` call from the router. The call records t
 | Edit | `create_worktree` during an active change task | Work from the Task's Worktree; project tools are blocked until the worker is there | No; the worker is blocked from other tools until it creates or enters the Worktree |
 | Review | `review_worker_commit` after a commit | Read the committed diff and start one read-only reviewer | No; needs a clean committed Worktree |
 | Report | `report_task` during a report-only task | End the Task with a conclusion | No; report tasks only |
-| Merge | A direct user instruction, the user's panel merge action or `/merge-worker <task ID>` | Merge the reviewed commit into its base branch after explicit user authorization | No; needs explicit user authorization and a reviewed local branch |
-| Publish | The user's panel action | Push the reviewed head and open or adopt the Pull request for it | No; needs a reviewed GitHub branch |
+| Merge | A direct user instruction, the user's panel merge action or `/merge-worker <task ID>` | Merge the reviewed commit into a local branch after explicit user authorization, without a GitHub account | No; needs explicit user authorization and a reviewed local branch |
+| Publish | The user's panel action | Push the reviewed head to the chosen GitHub remote and open or adopt the Pull request for it | No; needs a `gh` account, a GitHub remote and a reviewed branch |
 
 ## Admission by mode
 
@@ -79,12 +79,14 @@ The Router Session runs the `superagent-lite` preset. The turn guard applies to 
 ## Review rules
 
 - `review_worker_commit` requires an active Task in `running`, a Worktree, a clean working tree, at least one commit after the base commit, and a non-empty net diff between the base commit and HEAD.
-- The tool records the reviewed head only after the reviewer returns a usable `approved` boolean and a `findings` string. It re-reads HEAD after the review; a head that moved during review fails the call.
+- The reviewer records its verdict with the `submit_review` tool: content `通过` approves, any other content is recorded as the findings. The tool records the reviewed head only after that verdict exists, the reviewer inspected the change, and the head did not move during the review. A reviewer that never calls `submit_review` has no usable verdict.
 - The reviewer is a separate subagent. It receives the stored requirements, recorded follow-up texts, the base and head commits and the Worktree path. It reads the `base..head` diff and the changed files itself; the diff is not sent to it. It judges the committed diff, treats follow-ups as context, and blocks only on concrete correctness, regression or missing-test problems.
-- The reviewer runs read-only and is confined to `base..head` and the Worktree; out-of-scope reads and git commands are refused. It may use `structured_output`, `read`, `read_image`, `glob`, `grep`, and `bash`/`pwsh` limited to scoped git inspection.
+- The reviewer runs read-only and is confined to `base..head` and the Worktree; out-of-scope reads and git commands are refused. It may use `submit_review`, `structured_output`, `read`, `read_image`, `glob`, `grep`, and `bash`/`pwsh` limited to scoped git inspection. Only a claimed reviewer may use `submit_review`.
 - A verdict returned without inspecting the change is rejected and records no `review`.
 - `bash` and `pwsh` are admitted only when the mounted shell confines file writes, the helper session resolves to the read-only sandbox mode, and the call requests no wider sandbox permissions. File writes, mutating tools and control tools are denied. Network and process effects are outside the sandbox vocabulary.
 - A review that blocks does not change the Task status by itself. The worker fixes the findings, commits again and requests another review. The Task settles as `review-required` if the worker ends without an approved review.
+- The panel's `review` action runs the same review for an `unreviewed` Task while its worker Session is alive. An approval moves the Task to `awaiting-merge`; a finding moves it to `review-required`.
+- An approved review belongs to its commit. A Task of the same Project whose current head is that commit may adopt it when the panel reads the Task.
 
 ## Git action rules
 
@@ -92,16 +94,19 @@ A merge runs only after the user explicitly authorizes it from a direct instruct
 
 | Action | Required Task state | Additional conditions |
 | --- | --- | --- |
-| `merge` | not `merged`, review approved for the current head | A running Router Session with `danger-full-access`; the worker branch still at the reviewed head. On GitHub it reuses or opens the Pull request for that head, merges it with `gh pr merge --merge --match-head-commit`, then fast-forwards the project checkout. Without a GitHub origin it merges locally through `/merge-worker`: the target checkout on its base branch, clean, without an in-progress merge, and `merge-tree` reports no conflict |
-| `publish` | `awaiting-merge` or `delivery-blocked`, review approved for the current head | A GitHub `origin` whose fetch and push URLs name the same repository; `gh` authenticated; a running Router Session with `danger-full-access`; the worker branch still at the reviewed head. An existing Pull request for the same head is adopted |
+| `merge` | not `merged`, review approved for the current head | A running Router Session with `danger-full-access`; the worker branch still at the reviewed head; a local target branch other than the worker branch; the project checkout clean and on a branch; `merge-tree` reports no conflict. It switches to the target, runs `git merge --no-ff`, and switches back. No `gh` account or remote is involved |
+| `publish` | not `merged`, review approved for the current head | The user picks a configured remote whose fetch and push URLs name the same GitHub repository; `gh auth status --hostname github.com` succeeds; a running Router Session with `danger-full-access`; the worker branch still at the reviewed head. An existing Pull request for the same head is adopted |
+| `review` | not `merged`, an `unreviewed` committed head | The worker Session is still live; the Worktree is clean and on its branch. It runs the independent reviewer and records the verdict |
+| `delete-branch` | `merged` | The project checkout is clean enough to run Git; the worker branch is an ancestor of `mergeTarget` or `baseBranch`; the Worktree has no uncommitted changes. It removes the Worktree, then deletes the branch |
 
-- The panel posts the action to `POST /superagent-lite/git` with a 16-hex task ID and `merge` or `publish`. The body limit is 4 KB and the action timeout is 15 minutes.
-- `/merge-worker` accepts one 16-hex task ID, must be run from the Task's Router Session, and requires the same full-access policy.
-- A local merge marks the Task `merging`, runs `git merge --no-ff`, and marks it `merged`. On GitHub, `merge` marks it `merging`, merges the Pull request, marks it `merged` and fast-forwards the project checkout. A merge that does not report success marks it `delivery-blocked`.
-- Merges for one Project root are serialized. Publishing and merging are not queued together.
-- The publish path pushes the reviewed head to `refs/heads/<worker branch>` and opens a Pull request against the base branch; an existing Pull request for the same head is adopted and the Task settles as `awaiting-ci`. Required checks and branch protection apply when the merge action merges the Pull request.
-- A Pull request whose head, head branch, base branch or cross-repository flag does not match the Task is not used. A merged exact Pull request sets `merged`; an exact closed Pull request in `publishing`, `awaiting-ci` or `merge-queued` sets `delivery-blocked`.
-- GitHub writes are not retried after an interrupted run.
+- The panel posts the action to `POST /superagent-lite/git` with a 16-hex task ID, the action and, for `merge`, the `target` branch or, for `publish`, the `remote` name. The body limit is 4 KB and the action timeout is 15 minutes.
+- `GET /superagent-lite/git?taskId=` returns the local branches, the configured remotes with their GitHub repository when one exists, and the `gh` account status used by the merge and Pull request dialogs.
+- `/merge-worker` accepts one 16-hex task ID, must be run from the Task's Router Session, requires the same full-access policy, and merges into the recorded base branch.
+- A merge marks the Task `merging`, runs `git merge --no-ff`, and marks it `merged` with `mergeTarget`. A merge that does not report success marks it `delivery-blocked`.
+- Merges, publishes, reviews and deletions for one Task are serialized. Actions on different Tasks are not queued together.
+- The publish path pushes the reviewed head to `refs/heads/<worker branch>` of the chosen remote and opens a Pull request against the base branch; an existing Pull request for the same head is adopted and the Task settles as `awaiting-ci`. Required checks and branch protection still apply.
+- A Pull request whose head, head branch, base branch or cross-repository flag does not match the Task is not used. A merged exact Pull request sets `merged`; an exact closed Pull request sets `delivery-blocked`.
+- GitHub writes are not retried after an interrupted run. Deleting a branch is local and permanent after the merge.
 
 ## Memory rules
 

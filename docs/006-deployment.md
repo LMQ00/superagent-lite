@@ -11,8 +11,8 @@ The bundle runs inside one DeepSeek Harness Web process. It adds two presets, on
 | DSH Web host | Runs the plugin, the Sessions and the panel |
 | `@local/superagent-lite` bundle | Adds presets, tools, routes and the task store |
 | Worktree service | Creates and retains one Worktree per Task |
-| GitHub CLI `gh` | Optional; required for publish and for merging a GitHub Pull request |
-| GitHub repository | Optional; needed for publish, not for a local merge |
+| GitHub CLI `gh` | Optional; required for the panel's Pull request action. A merge is a local Git action and needs no account |
+| GitHub remote | Optional; needed for the panel's Pull request action, not for a merge |
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ The bundle runs inside one DeepSeek Harness Web process. It adds two presets, on
 | DeepSeek Harness | `0.2.2-rc.3`, the value in `engines.dsh` |
 | Node.js | 24.9.0 or newer, the DSH engine requirement |
 | Git | A version where `git merge-tree --write-tree HEAD HEAD` succeeds |
-| GitHub CLI | Required for publish and GitHub merge; `gh auth status --hostname github.com` must succeed |
+| GitHub CLI | Required for the Pull request action; `gh auth status --hostname github.com` must succeed |
 | Project checkout | A Git repository with a branch checked out |
 
 Enable this bundle with a worktrees service that no other bundle mounts.
@@ -65,10 +65,9 @@ External setup is separate:
 | Setting | Required for | How |
 | --- | --- | --- |
 | Session file policy | Merge and publish | Set the router Session to full access; the action checks `danger-full-access` |
-| GitHub `origin` | Publish | `git remote -v` must show `origin` with matching GitHub fetch and push URLs |
-| `gh` login | Publish and GitHub merge | `gh auth status --hostname github.com` |
-| Required CI checks | Publish | Configure at least one required check on the GitHub branch |
-| GitHub merge permission | Publish | The `gh` account needs permission to merge under the repository's branch protection |
+| GitHub remote | Pull request | `git remote -v` must show a remote with matching GitHub fetch and push URLs; the panel lists the remotes and the user chooses one |
+| `gh` login | Pull request | `gh auth status --hostname github.com` |
+| Required CI checks | Merging the Pull request on GitHub | Configure at least one required check on the GitHub branch |
 
 ## Start, stop and status
 
@@ -79,8 +78,8 @@ The plugin has no standalone process and no CLI, so it has no process exit code.
 | Start | Enable the bundle and start DSH Web |
 | Reload | Disable and enable the bundle, or restart DSH Web |
 | Stop | Disable the bundle, or stop DSH Web |
-| Task status | Open **项目任务**; the five category groups in [005 Panel](005-panel.md), with each row's stage from [003 Lifecycle](003-lifecycle.md) |
-| Git delivery | The panel's Git area lists branches and actions only; it has no separate state. A failed action shows the host error and the Task stays `delivery-blocked` or `awaiting-merge` |
+| Task status | Open **项目任务**; the six status groups in [005 Panel](005-panel.md), in the order defined by [003 Lifecycle](003-lifecycle.md) |
+| Row actions | 未合并 offers 合并 and 提交 PR; 未审查 offers 审查; 已完成 offers 删除分支. A failed action shows the host error and the Task keeps its stored lifecycle state |
 | Record location | `~/.dsh/superagent-lite/`, split into `tasks/` and `memory/` |
 
 Plugin warnings that are not tied to a Task go to the DSH host log. Dispatch and delivery errors are also stored on the Task in its `failure` field; review and memory errors surface as tool errors.
@@ -103,10 +102,10 @@ The panel endpoints answer with HTTP status codes:
 1. Confirm `node --version` meets the DSH engine requirement and `git merge-tree --write-tree HEAD HEAD` succeeds.
 2. Install and enable the bundle, then start a new Session with **Superagent 轻量版**.
 3. Open the target repository as the working directory and confirm it has a branch checked out and a clean `git status`.
-4. For GitHub publish, set `origin`, run `gh auth status --hostname github.com`, and configure at least one required CI check.
+4. For the Pull request action, configure a GitHub remote, run `gh auth status --hostname github.com`, and configure at least one required CI check.
 5. Set the router Session to full access if you intend to merge or publish.
 6. Ask a read-only question first: the router should answer without starting a worker.
-7. Ask for one small file change: the panel should show a Task that reaches `awaiting-merge` with a reviewed branch.
+7. Ask for one small file change: the panel should show a reviewed Task as 未合并 with 合并 and 提交 PR actions.
 
 ## Upgrade
 
@@ -132,26 +131,24 @@ To roll back, stop the bundle, check out the previous commit of this repository,
 | `Dispatch <id> is already being established; inspect the task board before retrying` | The Task is `starting` or `failed` for the same call. Check **项目任务**, then dispatch with a new input |
 | `The router Session is not running` | Keep the router Session open while merging or publishing |
 | `Git delivery is unavailable under this Session file policy` | Set the router Session to full access |
-| `GitHub projects must merge through a pull request` | This refusal comes from `/merge-worker`, which is the local path only. Use the panel's merge action for a GitHub project |
-| `This project has no GitHub origin` | Add a GitHub `origin`, or use the local merge path |
-| `Configure the GitHub repository as origin before automated delivery` | A GitHub remote exists but is not named `origin`; rename it |
-| `Origin is not a single matching GitHub fetch/push repository` | Point the fetch and push URLs of `origin` at the same GitHub repository |
+| `The merge target branch "<name>" was not found` | Pick an existing local branch in the merge dialog |
+| `The selected remote is not a single GitHub fetch/push repository` | Choose a remote whose fetch and push URLs name the same GitHub repository |
+| `The worker Session is not running; open its conversation to review the commit there` | The review action needs the live worker Session; resume or dispatch the Task instead |
+| `Delete the worker branch only after the task is merged` | Merge the reviewed head before deleting the branch |
 | `The review has not approved this branch` | Request `review_worker_commit` and fix the findings before delivery |
 | `The worker branch no longer matches its reviewed commit` | New commits landed after the review; review the new head |
 | `Merge would conflict; the target was not changed` | Rebase or merge the base branch into the worker branch, then review again. The plugin did not change the target |
-| `The target checkout has uncommitted changes` | Clean the target checkout before merging |
-| `The target checkout no longer has its original branch checked out` | Check out the Task's base branch again |
-| `The target already has an in-progress merge` | Finish or abort the existing merge before retrying |
+| `The project checkout has uncommitted changes` | Commit or stash the project checkout before merging |
+| `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | Clean the worker worktree before deleting its branch |
 | `All required CI checks must pass; empty, skipped or failing checks do not qualify` | Configure at least one required check and make it pass; no checks is not a pass |
-| `This branch already has a pull request` | A Pull request already exists for the Task; handle it on GitHub instead of publishing again |
 | `Only settled, unpublished worktrees can be resumed` | The Task has no resumable Worktree or is not in a resumable state; dispatch new work |
 | `This task does not belong to the current router Session.` | Run `/merge-worker` from the router Session that dispatched the Task |
 | `Local merge is unavailable under this Session file policy.` | Set the router Session to full access |
 | `No reviewed local commit is ready for merge` | The Task is not `awaiting-merge` with an approved review; review it first |
 | `Usage: /merge-worker <task ID>` | Pass one 16-hex task ID |
-| `This branch is not waiting for merge` | Use the local merge only on a Task in `awaiting-merge` |
+
 | `Report-only tasks must leave the project checkout unchanged` | Revert the checkout change, then call `report_task` again |
 | `Only the active worker for this task can message its router` | `message_router` is a worker tool; the router cannot call it |
 | `Memory is not available to this Session` | The Session is frozen or outside its Worktree; memory tools need an active worker or the router |
-| `The reviewer did not return a usable verdict` | Run `review_worker_commit` again; the review subagent must return `approved` and `findings` |
+| `The reviewer did not submit a usable verdict` | Run the review again; the reviewer must call `submit_review` with `通过` or the findings |
 | `... output exceeded N bytes` | A `git` or `gh` command produced more output than the plugin's cap; narrow the command or the range |

@@ -1,4 +1,5 @@
 import { listTasks } from './task-store.js'
+import { panelStatus } from './status.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 
@@ -15,13 +16,15 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git) {
     }
     const records = await tasks()
     const views = git ? await git.list(records, AbortSignal.timeout(30_000)).catch(() => undefined) : undefined
-    const rows = records.map(({ id, title, teamId, projectRoot, mode, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl }) => {
+    const rows = records.map(({ id, title, teamId, projectRoot, mode, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl, failure }) => {
       const view = views?.get(id)
-      const current = view?.status ?? status
+      const unconfirmed = ['starting', 'running', 'resuming'].includes(status) && !agents.get(workerSessionId)
       const row = {
         id, title, teamId, projectRoot, mode, workerSessionId, parentSessionId, prUrl,
         updatedAt: updatedAt ?? createdAt,
-        status: ['starting', 'running', 'resuming'].includes(current) && !agents.get(workerSessionId) ? 'unconfirmed' : current,
+        status: view?.status ?? panelStatus({ status, mode }, {}),
+        ...(unconfirmed ? { unconfirmed: true } : {}),
+        ...(typeof failure === 'string' && failure ? { failure } : {}),
       }
       return view?.git ? { ...row, git: view.git } : row
     })
@@ -50,6 +53,8 @@ async function readJsonBody(request, limit) {
     throw error
   }
 }
+
+const ACTIONS = new Set(['merge', 'publish', 'review', 'delete-branch'])
 
 export function createGitActionHandler(connection, git) {
   return async (req, res) => {
@@ -88,13 +93,21 @@ export function createGitActionHandler(connection, git) {
       res.writeHead(error.status ?? 400, { 'cache-control': 'no-store' }).end(JSON.stringify({ error: error.message }))
       return
     }
+    const target = typeof body?.target === 'string' ? body.target.trim() : undefined
+    const remote = typeof body?.remote === 'string' ? body.remote.trim() : undefined
+    const validTarget = body?.action === 'merge' ? Boolean(target && target.length <= 200) : true
+    const validRemote = body?.action === 'publish' ? Boolean(remote && remote.length <= 200) : true
     if (typeof body?.taskId !== 'string' || !/^[a-f0-9]{16}$/.test(body.taskId) ||
-        (body.action !== 'merge' && body.action !== 'publish')) {
-      res.writeHead(400, { 'cache-control': 'no-store' }).end(JSON.stringify({ error: 'A task ID and a merge or publish action are required' }))
+        !ACTIONS.has(body.action) || !validTarget || !validRemote) {
+      res.writeHead(400, { 'cache-control': 'no-store' }).end(JSON.stringify({
+        error: body?.action === 'merge' ? 'A task ID and a merge target branch are required'
+          : body?.action === 'publish' ? 'A task ID and a remote are required'
+            : 'A task ID and a known action are required',
+      }))
       return
     }
     try {
-      const result = await git.perform(body.taskId, body.action, AbortSignal.timeout(15 * 60_000))
+      const result = await git.perform(body.taskId, body.action, { target, remote }, AbortSignal.timeout(15 * 60_000))
       res.writeHead(200, JSON_HEADERS).end(JSON.stringify(result))
     } catch (error) {
       res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))

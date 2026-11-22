@@ -20,7 +20,7 @@ after(async () => {
 })
 
 const { createTask, readTask } = await import('../src/task-store.js')
-const { createReviewTool } = await import('../src/review.js')
+const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
 const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
 
 function git(cwd, args) {
@@ -42,7 +42,7 @@ async function setupRepo() {
   return { repo, baseCommit, head }
 }
 
-function harness({ baseCommit, head, evidence = 'diff' }) {
+function harness({ baseCommit, head, evidence = 'diff', verdict = '通过' }) {
   const activations = []
   const ctx = {
     subprocess: {
@@ -73,6 +73,7 @@ function harness({ baseCommit, head, evidence = 'diff' }) {
           },
         }
         registerReadOnlyGuard(reviewer, claim.scope)
+        const submit = createReviewResultTool(reviewer)
         const emit = event => { for (const listener of listeners) listener(reviewer.session, event) }
         const call = (callId, name, input) => ({
           type: 'tool/call', data: { callId, name, arguments: JSON.stringify(input) },
@@ -85,10 +86,8 @@ function harness({ baseCommit, head, evidence = 'diff' }) {
           emit(call('read', 'read', { file_path: 'notes.txt' }))
           emit(result('read'))
         }
-        return {
-          childId: 'reviewer',
-          result: Promise.resolve({ stopReason: 'completed', structured: { approved: true, findings: 'The change is correct.' } }),
-        }
+        if (verdict != null) await submit.execute({ content: verdict }, { agent: reviewer })
+        return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed' }) }
       },
     },
   }
@@ -132,6 +131,8 @@ test('the reviewer prompt carries scope and the worktree instead of the diff', a
   assert.match(text, /Read it yourself/)
   assert.match(text, /only commits/)
   assert.match(text, /cite the file and line/)
+  assert.match(text, /submit_review/)
+  assert.match(text, /通过/)
   assert.doesNotMatch(text, /diff --git/, 'no patch header is inlined')
   assert.doesNotMatch(text, /\+updated/, 'no patch body is inlined')
   assert.doesNotMatch(text, /"patch"/, 'no patch field is inlined')
@@ -153,4 +154,22 @@ test('reading a changed file counts as evidence', async () => {
   const { id, head, worker, review } = await fixture({ evidence: 'file' })
   assert.match(await review.execute({}, { agent: worker, signal: new AbortController().signal }), /^Approved for /)
   assert.equal((await readTask(id)).review.head, head)
+})
+
+test('a review whose content is not 通过 records findings and does not approve', async () => {
+  const { id, head, worker, review } = await fixture({ verdict: 'notes.txt:2 the updated value has no test' })
+  const result = await review.execute({}, { agent: worker, signal: new AbortController().signal })
+  assert.match(result, /^Changes requested for /)
+  assert.match(result, /notes\.txt:2/)
+  const stored = (await readTask(id)).review
+  assert.equal(stored.head, head)
+  assert.equal(stored.approved, false)
+})
+
+test('a reviewer that never submits submit_review has no usable verdict', async () => {
+  const { worker, review } = await fixture({ verdict: null })
+  await assert.rejects(
+    review.execute({}, { agent: worker, signal: new AbortController().signal }),
+    /did not submit a usable verdict/,
+  )
 })

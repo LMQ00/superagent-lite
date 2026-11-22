@@ -31,7 +31,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   })
   const { createDispatchTool } = await import('../src/dispatch.js')
   const { mergeCommand } = await import('../src/merge.js')
-  const { createReviewTool } = await import('../src/review.js')
+  const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
   const { archiveWorkerTurn, createMemoryTool } = await import('../src/memory.js')
@@ -109,18 +109,19 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
           session: { id: 'reviewer', append() {} },
           ctx: {
             get: () => undefined,
-            tools: { guard() {} },
+            tools: { guard() {}, register() {} },
             on(name, fn) { if (name === 'session/event') listeners.push(fn) },
           },
         }
         registerReadOnlyGuard(reviewer, claim.scope)
+        await createReviewResultTool(reviewer).execute({ content: '通过' }, { agent: reviewer })
         for (const event of [
           { type: 'tool/call', data: { callId: 'review-diff', name: 'bash', arguments: JSON.stringify({ command: `git diff ${baseCommit}..${head}` }) } },
           { type: 'tool/result', data: { message: { toolCallId: 'review-diff', isError: false } } },
         ]) {
           for (const listener of listeners) listener(reviewer.session, event)
         }
-        return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed', structured: { approved: true, findings: '' } }) }
+        return { childId: 'reviewer', result: Promise.resolve({ stopReason: 'completed' }) }
       },
     },
   }

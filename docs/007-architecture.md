@@ -15,14 +15,17 @@ flowchart TB
   W --> WT[Worktree]
   W -->|review_worker_commit| RV[src/review.js]
   RV --> HR[Read-only reviewer]
+  HR -->|submit_review| RV
   W -->|message_router| R
   T --> G[src/git-actions.js]
   G --> M[src/merge.js]
   G --> GH[src/github.js]
+  G --> RV
+  B --> C[client.js panel]
+  C -->|merge, publish, review, delete-branch| B
   M --> P[Project checkout]
   GH --> PR[Pull request]
   T --> B[src/board.js]
-  B --> C[client.js panel]
   R --> TG[src/turn-guard.js]
   W --> MS[src/memory.js]
   MS --> MF[(Memory files)]
@@ -32,7 +35,7 @@ flowchart TB
 
 ### `index.js`
 
-Owns the Host lifecycle. On `agent/created` it finds the Task for the new worker Session, marks `starting` or `resuming` as `running`, installs the tool guard, and registers `create_worktree`, `review_worker_commit`, memory, extraction, message and report tools under `when` conditions. On `subagent/end` it settles the Task as `review-required`, `awaiting-merge`, `failed` or `delivery-blocked`. It registers the two panel HTTP routes and the profile context refresh. It does not decide routing and does not edit project files.
+Owns the Host lifecycle. On `agent/created` it finds the Task for the new worker Session, marks `starting` or `resuming` as `running`, installs the tool guard, and registers `create_worktree`, `review_worker_commit`, memory, extraction, message and report tools under `when` conditions. On `subagent/end` it settles the Task as `review-required`, `awaiting-merge`, `failed` or `delivery-blocked`. It registers the two panel HTTP routes and the profile context refresh, and registers the `submit_review` tool for a claimed reviewer. It does not decide routing and does not edit project files.
 
 ### `router.js`
 
@@ -68,7 +71,7 @@ Creates the Worktree through `ctx.worktrees.create` on branch `sl-<team-slug>-<t
 
 ### `src/review.js`
 
-Owns `worktreeHead`, which checks the repository root, branch, clean tree and HEAD. `review_worker_commit` checks the committed diff, starts the read-only reviewer, records the verdict and re-checks the head. The reviewer receives the stored requirements, follow-ups, head and patch.
+Owns `worktreeHead`, which checks the repository root, branch, clean tree and HEAD. It starts the read-only reviewer, captures the verdict from the reviewer's `submit_review` call (content `通过` approves, anything else is a finding), records it and re-checks the head. `runReview` serves both `review_worker_commit` and the panel's review action; the reviewer reads the stored requirements, follow-ups, base, head and Worktree itself.
 
 ### `src/helper-guard.js`
 
@@ -84,15 +87,15 @@ Stores memory records and raw turn archives. It owns category and scope checks, 
 
 ### `src/merge.js`
 
-Owns `/merge-worker`. It validates the Task ID, ownership, full-access policy, non-GitHub origin, `awaiting-merge` state, approved review, target branch, clean target, absent in-progress merge and conflict-free `merge-tree` preflight, then runs `git merge --no-ff` and records `merging`, `merged` or `delivery-blocked`.
+Owns the local merge and branch deletion. `mergeWorkerBranch` checks the reviewed head, target branch, clean checkout and conflict-free `merge-tree` preflight, switches to the chosen target, runs `git merge --no-ff`, switches back and records `merging`, `merged` or `delivery-blocked`. `deleteWorkerBranch` removes a merged Worktree and deletes its branch. `/merge-worker` wraps the same merge for the Task's base branch.
 
 ### `src/git-actions.js`
 
-Lists the Git view for each Task and performs the panel's `merge` or `publish` action. It caches origin and Pull request facts for 30 seconds, reconciles an exact PR state into the Task, checks the reviewed head and target, and refuses an action when the router Session is missing or not full access.
+Derives the six panel statuses for each Task, adopts an approved review recorded for the same commit by another Task, reads local branches, remotes and the `gh` account, and performs the panel's `merge`, `publish`, `review` and `delete-branch` actions. It caches Pull request facts for 30 seconds, reconciles an exact PR state into the Task, checks the reviewed head, target and remote, and refuses an action when the router Session is missing or not full access. `src/status.js` holds the status derivation and the review index.
 
 ### `src/github.js`
 
-Detects a strict GitHub origin and delivers a reviewed commit. It pushes the reviewed head, opens or adopts the Pull request for that head, and on merge runs `gh pr merge --merge --match-head-commit`, then fast-forwards the project checkout. It re-checks the exact head and base and is the only GitHub write path.
+Resolves a remote URL to its GitHub repository and delivers a reviewed commit. It pushes the reviewed head to the chosen remote, opens or adopts the Pull request for that head against the base branch, and re-checks the exact head and base. It is the only GitHub write path.
 
 ### `src/process.js`
 
@@ -100,7 +103,7 @@ Runs `git` and `gh` through `ctx.subprocess` with a filtered environment, prompt
 
 ### `src/board.js`
 
-Serves `GET /superagent-lite/tasks` and `POST /superagent-lite/git`. It admits only the installation owner, projects the public task fields, overlays the Git view, computes `unconfirmed`, enforces the JSON body limit and maps a refused action to `409`.
+Serves `GET /superagent-lite/tasks`, `GET /superagent-lite/git?taskId=` and `POST /superagent-lite/git`. It admits only the installation owner, projects the public task fields, overlays the derived panel status, marks `unconfirmed`, enforces the JSON body limit, validates the merge target or PR remote, and maps a refused action to `409`.
 
 ### `src/report-tool.js`
 
@@ -112,7 +115,7 @@ Sends the worker's one final conclusion to the router. It requires the active wo
 
 ### `client.js`
 
-The browser panel. It registers the `main` and `sidebar.panellist` slots and the `superagent-lite` locale dictionaries, loads the task list, groups and filters tasks by the five status categories, filters by team and project, renders session and Pull request links, and posts the Git actions. Git delivery is a supporting list with no second state model. It imports no Node module and holds no state outside React.
+The browser panel. It registers the `main` and `sidebar.panellist` slots and the `superagent-lite` locale dictionaries, loads the task list, groups and filters tasks by the six statuses, filters by team and project, renders session and Pull request links, and posts the merge, publish, review and delete-branch actions. The merge dialog chooses a local target branch; the publish dialog checks the `gh` account and chooses a remote; the review action starts from the worker Session; the delete dialog confirms the branch removal. There is no separate Git delivery list. It imports no Node module and holds no state outside React.
 
 ## Dependency rules
 
@@ -122,7 +125,8 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 - `src/process.js` is the only process spawner. Every git and gh call goes through it.
 - `src/task-store.js` is the only task-record writer. Every other module calls `createTask`, `updateTask`, `readTask`, `listTasks`, `linkWorkerSession` or `taskForSession`.
 - `src/helper-guard.js` is the only helper counter and the only read-only guard installer.
-- `src/github.js` and `src/merge.js` are the only delivery paths. No other module pushes, creates a Pull request or merges.
+- `src/github.js` and `src/merge.js` are the only delivery paths. No other module pushes, creates a Pull request, merges or deletes a branch.
+- `src/status.js` is the only place that turns stored status, Git facts and review records into a panel status.
 
 ### Transition writers
 
@@ -137,7 +141,9 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 | → `merging` | `src/merge.js` |
 | → `merged` after a local merge | `src/merge.js` |
 | → `merged` after reading an exact PR | `src/git-actions.js` |
-| → `merged` or `merge-queued` after GitHub delivery | `src/github.js` |
+| → `merged` after a panel or `/merge-worker` local merge | `src/merge.js` |
+| `review` record after a panel review | `src/git-actions.js` via `src/review.js` |
+| `worktree` removed after branch deletion | `src/merge.js` |
 | → `publishing` | `src/git-actions.js` |
 | → `awaiting-ci` | `src/github.js` |
 | → `delivery-blocked` after the post-review head check | `index.js` |
@@ -155,18 +161,19 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 | Path | Responsibility |
 | --- | --- |
 | `src/board.js` | Serves the owner-only task list and Git action HTTP endpoints and projects the panel view. |
+| `src/status.js` | Derives the six panel statuses and indexes approved reviews by Project and commit. |
 | `src/continue.js` | Delivers follow-ups to running or idle workers and handles resumption records. |
 | `src/dispatch.js` | Validates a dispatch, creates the Task record and starts the Worker Session. |
-| `src/git-actions.js` | Builds the Git branch view and performs the merge and publish actions. |
-| `src/github.js` | Detects a GitHub origin and delivers a reviewed commit through a Pull request. |
+| `src/git-actions.js` | Builds the panel view and performs the merge, publish, review and delete-branch actions. |
+| `src/github.js` | Delivers a reviewed commit to a chosen GitHub remote through a Pull request. |
 | `src/helper-guard.js` | Counts expected helper subagents and confines them to read-only tools. |
 | `src/memory.js` | Registers the memory tools, profile context and turn archive. |
 | `src/memory-store.js` | Persists memory records and raw archives with scope and secret checks. |
-| `src/merge.js` | Implements the `/merge-worker` command and the local `--no-ff` merge. |
+| `src/merge.js` | Implements the local `--no-ff` merge, branch deletion and the `/merge-worker` command. |
 | `src/message-router.js` | Sends one final worker conclusion to the router Session. |
 | `src/process.js` | Spawns git and gh with a filtered environment and bounded output. |
 | `src/report-tool.js` | Ends a report-only Task with its conclusion and evidence. |
-| `src/review.js` | Checks the committed diff, runs the read-only reviewer and records the verdict. |
+| `src/review.js` | Checks the committed diff, runs the read-only reviewer, captures `submit_review` and records the verdict. |
 | `src/task-store.js` | Reads and writes task records and worker Session links. |
 | `src/turn-guard.js` | Requires one routing decision per router input and sends reminders. |
 | `src/validation.js` | Validates dispatch arguments. |
@@ -190,11 +197,11 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 
 | Test | Covers |
 | --- | --- |
-| `test/board.test.js` | Owner admission, public task projection, Git overlay, endpoint status codes. |
-| `test/client.test.js` | Slot registration, localized rendering, five-category grouping and filters, session navigation, Git delivery actions and errors. |
+| `test/board.test.js` | Owner admission, public task projection, derived panel statuses, action validation and endpoint status codes. |
+| `test/client.test.js` | Slot registration, six-status grouping and filters, session navigation, merge, publish, review and delete dialogs, and errors. |
 | `test/continue.test.js` | Running, idle and settled follow-up paths, record order and delivery failures. |
-| `test/git-actions.test.js` | Branch view, merge and publish eligibility, PR reconciliation and router access. |
-| `test/github.test.js` | Strict origin parsing, required checks and reviewed-SHA pinning. |
+| `test/git-actions.test.js` | Derived statuses, review adoption, local merge and branch deletion, remote selection, panel review and PR reconciliation. |
+| `test/github.test.js` | GitHub repository parsing and reviewed-SHA publishing. |
 | `test/helper-composition.test.js` | Installed DSH services enforce the helper boundary and read-only sandbox. |
 | `test/helper-guard.test.js` | Helper claims, read-only tool allowlist and shell confinement. |
 | `test/helper-wiring.test.js` | `agent/created` installs the guard only for an expected helper. |
@@ -203,6 +210,7 @@ The browser panel. It registers the `main` and `sidebar.panellist` slots and the
 | `test/prompt-config.test.js` | Bundled router prompt keeps replies single and concrete, and the merge-authorization policy matches across the prompt and docs. |
 | `test/report-only.test.js` | Report-only completion, no branch or commit, forged worktree refusal and report prompt. |
 | `test/routing-rule.test.js` | Routing tool descriptions keep a different goal out of `continue_worker`. |
+| `test/status.test.js` | Six panel statuses, precedence and review indexing. |
 | `test/task-store.test.js` | Private task records, Session resolution and path-shaped ID rejection. |
 | `test/turn-guard.test.js` | One decision per input, reminder budget, idle delivery and abort handling. |
 | `test/validation.test.js` | Dispatch argument rules and mode default. |
@@ -236,14 +244,16 @@ The team partition hash covers the Team ID and the normalized project root. The 
 | `/merge-worker` | User | Authorize one local merge by Task ID |
 | `create_worktree` | Change worker | Create or enter the Task's Worktree |
 | `review_worker_commit` | Change worker | Review the clean committed diff |
+| `submit_review` | Reviewer helper | Record the verdict; content `通过` approves |
 | `report_task` | Report worker | End a report-only Task |
 | `message_router` | Worker | Send the final conclusion to the router |
 | `extract_team_memory` | Worker | Distill selected findings into team memory |
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/superagent-lite/tasks` | `GET` | Return the task list and Git view for the owner |
-| `/superagent-lite/git` | `POST` | Run a `merge` or `publish` action for the owner |
+| `/superagent-lite/tasks` | `GET` | Return the task list and derived panel status for the owner |
+| `/superagent-lite/git` | `GET` | Return commits, files, local branches, remotes and the `gh` account for one Task |
+| `/superagent-lite/git` | `POST` | Run a `merge`, `publish`, `review` or `delete-branch` action for the owner |
 
 | Surface | Value |
 | --- | --- |
@@ -262,7 +272,7 @@ The team partition hash covers the Team ID and the normalized project root. The 
 | Tool text in `src/` | To the next assembled turn after the bundle loads |
 | `client.js` dictionaries | At the next client bundle load |
 | A profile memory write | Immediately refreshes the injected profile context |
-| A task or memory record | On the next panel load or tool call |
-| GitHub origin and Pull request facts | Cached for 30 seconds; a panel refresh reads them again after the cache expires |
+| A task or memory record | On the next panel load or tool call; the panel heals a reviewed head and adopts a review recorded for the same commit |
+| Pull request facts | Cached for 30 seconds; a panel refresh reads them again after the cache expires |
 
 The profile context is registered with order `170` and is read when the Host assembles the runtime context for a model call.
