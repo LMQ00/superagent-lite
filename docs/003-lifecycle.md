@@ -8,7 +8,7 @@
 
 | 阶段 | 成立条件 | 面板文字 |
 | --- | --- | --- |
-| `merged` | 存储状态是 `merged`，或 reviewed HEAD 的精确 PR 是 `MERGED`，或 worker 分支 HEAD 已包含在基础分支中 | 已合并 |
+| `merged` | 存储状态是 `merged`；或 reviewed HEAD 的精确 PR 是 `MERGED`；或 worker HEAD 不是基础 commit、已包含在基础分支中，且存储状态属于交付状态 | 已合并 |
 | `unconfirmed` | 存储状态是 `starting`、`running` 或 `resuming`，但没有活着的 Worker agent | 未确认 |
 | `delivery-blocked` | 存储状态是 `delivery-blocked` | 交付受阻 |
 | `merging` | 存储状态是 `merging` | 正在合并 |
@@ -104,7 +104,11 @@ change 任务的 Worker 回合按以下顺序落定（`index.js:114-146`）：
 | Review 通过且 HEAD 仍匹配 | `awaiting-merge` |
 | 结束后的 HEAD 检查抛错 | `delivery-blocked` |
 
-`awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。Task 在用户明确授权后经面板合并或 `/merge-worker` 合并、精确 PR 已合并，或面板读取时发现 worker 分支 HEAD 已包含在基础分支中时，才到 `merged`（`src/merge.js:23-55`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`、`src/git-actions.js:464-517`）。
+`awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。Task 到 `merged` 的路径有三种：
+
+- 用户明确授权后经面板合并或 `/merge-worker` 合并（`src/merge.js:23-55`、`src/git-actions.js:464-525`）。
+- 精确匹配的 PR 已合并（`src/git-actions.js:268-271`、`src/github.js:125-136`）。
+- 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`）。没有自有提交的分支不算合并。
 
 report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:123-125`）。
 

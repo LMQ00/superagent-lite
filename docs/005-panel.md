@@ -19,7 +19,7 @@
 | 全部 | 所有 Task | 只显示 scope 筛选后的总数 |
 | 失败 | `failed`、`merge-conflict`、`delivery-blocked`、`interrupted`、`cancelled` | 当前代码写入 `failed`、`delivery-blocked`；其余是面板已识别的文案（`client.js:255`） |
 | 进行中 | `starting`、`running`、`resuming`、`merging`、`publishing`、`awaiting-ci`、`merge-queued`，以及未归入其他分类的状态 | 默认落点（`client.js:249`、`client.js:267-273`） |
-| 已合并 | `merged` | 本地或 GitHub 合并完成 |
+| 已合并 | `merged` | 本地或 GitHub 合并完成；面板读取时确认 worker HEAD 已进入基础分支也归入这里 |
 | 待审查 | `review-required`、`awaiting-merge`、`ready`、`completed` | report 任务的 `completed` 归入「仅回答」（`client.js:256`） |
 | 仅回答 | `mode=report` 且 `completed` | 只报告任务已经交付结论 |
 
@@ -92,7 +92,7 @@ Git 交付没有第二套状态系统：没有打开/已合并/已关闭页签�
 - 合并 GitHub PR 后，插件用 `git pull --ff-only origin <基础分支>` 快进项目 checkout；快进失败时动作报错，PR 已经合并的事实保留（`src/git-actions.js:504-509`）。
 - 必需检查和分支保护在 GitHub 合并 PR 时执行；插件只在面板展示检查汇总，不预检检查状态（`src/git-actions.js:18-31`）。
 
-读取面板会回写 Task 记录：`GET /superagent-lite/tasks` 会在同步 PR 或识别合并时更新 `merged`、`awaiting-ci`、`delivery-blocked` 或 `awaiting-merge`；其中 worker 分支 HEAD 已包含在基础分支时也会标为 `merged`，不要求 PR 精确匹配。面板读取不修改项目文件、不推送、不合并（`src/git-actions.js:151-160`、`src/git-actions.js:239-327`、`src/board.js:16-26`）。记忆的 GET 不写任何记录。
+读取面板会回写 Task 记录：`GET /superagent-lite/tasks` 会在同步 PR 或识别合并时更新 `merged`、`awaiting-ci`、`delivery-blocked` 或 `awaiting-merge`。识别合并时要求 worker HEAD 不是基础 commit 且已包含在基础分支中，并且存储状态属于交付状态（`review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked`）；不要求 PR 精确匹配。面板读取不修改项目文件、不推送、不合并（`src/git-actions.js:151-160`、`src/git-actions.js:239-327`、`src/board.js:16-26`）。记忆的 GET 不写任何记录。
 
 ### 记忆行
 

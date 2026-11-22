@@ -130,9 +130,9 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ### 本地合并
 
-适用条件：Project 没有 GitHub `origin`，通过 `/merge-worker <task ID>` 执行。
+适用条件：Project 没有 GitHub `origin`，由面板的合并按钮或 `/merge-worker <task ID>` 触发。
 
-1. 命令从 Task 的 Router Session 运行；Task 必须属于该 Session（`src/merge.js:12-16`）。
+1. 入口在 Task 的 Router Session 运行：`/merge-worker` 必须在该 Session 执行；面板本地合并会取该 Task 的 Router Session（`src/merge.js:12-16`、`src/git-actions.js:519-525`）。Task 必须属于该 Session。
 2. Task 必须是 `awaiting-merge`、审查通过且已有 Worktree（`src/merge.js:23-25`）。
 3. Project 不能有 GitHub `origin`；有则报 `GitHub projects must merge through a pull request`（`src/merge.js:27`）。
 4. 项目 checkout 必须仍检出 `baseBranch`，没有进行中的 merge，且工作区干净（`src/merge.js:28-35`）。

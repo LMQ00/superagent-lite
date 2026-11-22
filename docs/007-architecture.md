@@ -154,7 +154,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | → `merging` | `src/merge.js`、`src/git-actions.js` |
 | → `merged`，本地合并 | `src/merge.js` |
 | → `merged`，精确 PR 已合并 | `src/git-actions.js`、`src/github.js` |
-| → `merged`，worker HEAD 已包含在基础分支 | `src/git-actions.js`，读取时 |
+| → `merged`，worker HEAD 已包含在基础分支 | `src/git-actions.js`，读取时；HEAD 不是基础 commit，且存储状态属于交付状态 |
 | → `publishing` | `src/git-actions.js` |
 | → `awaiting-ci` | `src/github.js`；`src/git-actions.js` 在读取时修正 |
 | → `delivery-blocked`，审查后 HEAD 检查失败 | `index.js` |
