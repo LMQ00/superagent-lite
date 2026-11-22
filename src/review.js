@@ -19,8 +19,8 @@ export async function worktreeHead(ctx, task, signal) {
 
 function reviewPrompt({ task, followUps, baseCommit, head, worktree }) {
   return `Review the committed change against the requirements.
-The diff is not included. Read it yourself: run \`git diff ${baseCommit}..${head}\` (or \`git show ${head}\`) and read the changed files you rely on before deciding. Run one plain git command at a time; shell operators and quoting are refused. A verdict returned without inspecting the change is rejected.
-Scope: only commits ${baseCommit}..${head} and files inside the worktree at ${worktree}. Do not read other branches, tags, remotes, reflogs, or history outside that range; out-of-scope reads and git commands are refused.
+The diff is not included. Read it yourself: run \`git diff ${baseCommit}..${head}\` (or \`git show ${head}\`) and read the changed files you rely on before deciding. Run one plain command at a time; shell operators and quoting are refused. Allowed commands are git diff, git show and git log scoped to ${baseCommit}..${head}, git status, and the read-only commands ls, cat, head, tail, wc, pwd, file and stat over paths inside the worktree. A command may run from the worktree root or any of its subdirectories. A verdict returned without inspecting the change is rejected.
+Scope: only commits ${baseCommit}..${head} and files inside the worktree at ${worktree}. Do not read other branches, tags, remotes, reflogs, or history outside that range; out-of-scope reads and commands are refused.
 Direction:
 - Judge whether the committed change satisfies the requirements. Uncommitted local changes and assumptions about the repository are not part of the change.
 - Follow-ups are context only: they can explain additional changes, but approval is judged against the original requirements.

@@ -15,6 +15,7 @@ const DENIED_FLAGS = [
 ]
 const DENIED_SHORT_FLAGS = new Set(['-a'])
 const GIT_SUBCOMMANDS = new Set(['diff', 'show', 'log', 'status'])
+const READ_ONLY_COMMANDS = new Set(['ls', 'cat', 'head', 'tail', 'wc', 'pwd', 'file', 'stat'])
 const FILE_ARGUMENT_TOOLS = new Set(['read', 'read_image', 'grep', 'glob'])
 
 function outsideRoot(root, candidate) {
@@ -83,14 +84,22 @@ export function createReviewScope({ worktree, baseCommit, headCommit, changedFil
   function inspectCommand(command) {
     const refused = reason => ({ ok: false, reason, evidence: false })
     if (typeof command !== 'string' || command.trim().length === 0) {
-      return refused('Review scope: the reviewer must run an explicit git inspection command.')
+      return refused('Review scope: the reviewer must run an explicit inspection command.')
     }
     if (SHELL_OPERATORS.test(command)) {
-      return refused('Review scope: only a single plain git inspection command is allowed (no shell operators or quoting).')
+      return refused('Review scope: only a single plain inspection command is allowed (no shell operators or quoting).')
     }
     const tokens = command.trim().split(/\s+/)
     if (tokens[0] !== 'git') {
-      return refused('Review scope: only git diff, git show, git log, and git status are allowed, run from the worker worktree.')
+      if (!READ_ONLY_COMMANDS.has(tokens[0])) {
+        return refused('Review scope: only read-only inspection commands and git diff, git show, git log, and git status are allowed, run from the worker worktree.')
+      }
+      for (const token of tokens.slice(1)) {
+        if (token.startsWith('-')) continue
+        const problem = pathProblem(token)
+        if (problem) return refused(problem)
+      }
+      return { ok: true, reason: undefined, evidence: false }
     }
     let index = 1
     if (tokens[index] === '--no-pager') index += 1
@@ -194,10 +203,10 @@ export function createReviewScope({ worktree, baseCommit, headCommit, changedFil
 
     checkWorkdir(workdir) {
       if (workdir === undefined) return undefined
-      if (typeof workdir !== 'string' || resolve(root, workdir) !== root) {
-        return `Review scope: run git from the worker worktree root (${root}); omit workdir.`
+      if (typeof workdir !== 'string') {
+        return `Review scope: workdir must be a path inside the worker worktree (${root}).`
       }
-      return undefined
+      return pathProblem(workdir)
     },
 
     record(name, input) {
