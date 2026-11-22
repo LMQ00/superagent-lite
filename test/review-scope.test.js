@@ -13,9 +13,14 @@ const worktree = join(root, 'worktree')
 await mkdir(join(worktree, '.git'), { recursive: true })
 await writeFile(join(worktree, 'changed.js'), 'export const value = 1\n')
 await writeFile(join(worktree, 'README.md'), 'notes\n')
+await mkdir(join(worktree, 'nested'), { recursive: true })
+await writeFile(join(worktree, 'nested', 'inner.js'), 'export const inner = 1\n')
 await writeFile(join(worktree, '.git', 'config'), '[core]\n')
 await writeFile(join(root, 'outside.txt'), 'outside\n')
-if (process.platform !== 'win32') await symlink(join(root, 'outside.txt'), join(worktree, 'link.txt'))
+if (process.platform !== 'win32') {
+  await symlink(join(root, 'outside.txt'), join(worktree, 'link.txt'))
+  await symlink(root, join(worktree, 'link-dir'))
+}
 
 after(() => rm(root, { recursive: true, force: true }))
 
@@ -69,6 +74,60 @@ test('a symlink cannot carry a read outside the worker worktree', { skip: proces
   assert.match(scope().checkPath('link.txt'), /resolves outside the worker worktree/)
 })
 
+test('read-only inspection commands are confined to the worker worktree', () => {
+  const reviewScope = scope()
+  for (const command of [
+    'ls',
+    'ls -la',
+    'ls changed.js nested',
+    'cat changed.js',
+    'head -n 5 changed.js',
+    'tail -n 5 changed.js',
+    'wc -l changed.js',
+    'pwd',
+    'file changed.js',
+    'stat changed.js',
+  ]) {
+    assert.equal(reviewScope.checkCommand(command), undefined, command)
+  }
+  const refusals = [
+    ['find .', /only read-only inspection commands/],
+    ['tree .', /only read-only inspection commands/],
+    ['sed -n 1p changed.js', /only read-only inspection commands/],
+    ['awk changed.js', /only read-only inspection commands/],
+    ['xargs cat', /only read-only inspection commands/],
+    ['tee out.txt', /only read-only inspection commands/],
+    ['cat ../outside.txt', /outside the worker worktree/],
+    ['cat .git/config', /\.git/],
+    ['ls /etc', /outside the worker worktree/],
+    ['cat changed.js | head', /shell operators/],
+    ['cat "changed.js"', /shell operators/],
+    ['cat changed.js > out.txt', /shell operators/],
+  ]
+  for (const [command, expected] of refusals) {
+    assert.match(reviewScope.checkCommand(command), expected, command)
+  }
+})
+
+test('a symlinked read-only argument cannot carry a read outside the worker worktree', { skip: process.platform === 'win32' }, () => {
+  assert.match(scope().checkCommand('cat link.txt'), /resolves outside the worker worktree/)
+})
+
+test('workdir may be a worktree subdirectory but not an escape', () => {
+  const reviewScope = scope()
+  assert.equal(reviewScope.checkWorkdir(undefined), undefined)
+  assert.equal(reviewScope.checkWorkdir(worktree), undefined)
+  assert.equal(reviewScope.checkWorkdir('nested'), undefined)
+  assert.equal(reviewScope.checkWorkdir(join(worktree, 'nested')), undefined)
+  assert.match(reviewScope.checkWorkdir(root), /outside the worker worktree/)
+  assert.match(reviewScope.checkWorkdir(join(worktree, '.git')), /\.git/)
+  assert.match(reviewScope.checkWorkdir(42), /must be a path inside/)
+})
+
+test('a symlinked workdir cannot escape the worker worktree', { skip: process.platform === 'win32' }, () => {
+  assert.match(scope().checkWorkdir('link-dir'), /resolves outside the worker worktree/)
+})
+
 test('git inspection stays inside base..head', () => {
   const reviewScope = scope()
   for (const command of [
@@ -91,7 +150,6 @@ test('git inspection stays inside base..head', () => {
     ['git -C ../repo diff', /not an allowed inspection command/],
     [`git diff ${base}..${head} | head`, /shell operators/],
     [`git diff --output=${join(root, 'out.patch')} ${base}..${head}`, /widen/],
-    ['cat changed.js', /only git diff/],
     [`git show ${head}~1:changed.js`, /shell operators/],
     [`git diff ${base}..${head} -- ../outside.txt`, /outside the worker worktree/],
     ['git diff', /must name the base and head/],
@@ -100,9 +158,6 @@ test('git inspection stays inside base..head', () => {
   for (const [command, expected] of refusals) {
     assert.match(reviewScope.checkCommand(command), expected, command)
   }
-  assert.equal(reviewScope.checkWorkdir(undefined), undefined)
-  assert.equal(reviewScope.checkWorkdir(worktree), undefined)
-  assert.match(reviewScope.checkWorkdir(root), /omit workdir/)
 })
 
 test('only a diff or changed-file read counts as evidence', () => {
@@ -145,10 +200,14 @@ test('the helper guard refuses out-of-scope reads and records admitted evidence'
     name: 'bash',
     arguments: { command: `git diff ${base}..${head}`, run_in_background: true },
   }), /background commands are not allowed/)
+  assert.equal(check({
+    name: 'bash',
+    arguments: { command: `git diff ${base}..${head}`, workdir: join(worktree, 'nested') },
+  }), undefined)
   assert.match(check({
     name: 'bash',
     arguments: { command: `git diff ${base}..${head}`, workdir: root },
-  }), /omit workdir/)
+  }), /outside the worker worktree/)
 
   emit(toolCall('read-outside', 'read', { file_path: '../outside.txt' }))
   emit(toolResult('read-outside'))

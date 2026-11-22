@@ -12,7 +12,7 @@ This document lists the text a maintainer can change, where it is assembled, and
 | Routing tool text | `dispatch_worker` and `continue_worker` descriptions and parameter text | `src/dispatch.js`, `src/continue.js` |
 | Worker task message | Header, requirements, mode, `Before` / `During` / `After` / `Reporting` sections | `src/worker-prompt.js` |
 | Resume message | Follow-up wrapper, `Follow-up` and `Resume` sections | `src/continue.js` |
-| Review prompt and scope | Review instruction and JSON payload; the `base..head`/Worktree read scope enforced by the helper guard | `src/review.js`, `src/review-scope.js` |
+| Review prompt and scope | Review instruction and JSON payload; the `base..head`/Worktree read scope, the read-only command allowlist and the workdir confinement enforced by the helper guard | `src/review.js`, `src/review-scope.js` |
 | Report and router messages | Tool descriptions and limits | `src/report-tool.js`, `src/message-router.js` |
 | Memory prompts | Tool descriptions, the memory conversation role prompt, four-category extraction limits, six-fact profile context | `src/memory.js`, `src/memory-extractor.js` |
 | Dispatch reminder | Reopened-turn text | `src/turn-guard.js` |
