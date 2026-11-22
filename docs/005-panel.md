@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | 全部 | 所有 Task | 只显示 scope 筛选后的总数 |
 | 失败 | `failed`、`merge-conflict`、`delivery-blocked`、`interrupted`、`cancelled` | 当前代码写入 `failed`、`delivery-blocked`；其余是面板已识别的文案（`client.js:255`） |
-| 进行中 | `starting`、`running`、`resuming`、`merging`、`publishing`、`awaiting-ci`、`merge-queued`，以及未归入其他分类的状态 | 默认落点（`client.js:249`、`client.js:267-273`） |
+| 进行中 | `starting`、`running`、`resuming`、`merging`、`publishing`、`awaiting-ci`、`merge-queued`，以及未归入其他分类的状态 | 没有专门分类的状态都归入这里（`client.js:249`、`client.js:267-273`） |
 | 已合并 | `merged` | 本地或 GitHub 合并完成；面板读取时确认 worker HEAD 已进入基础分支也归入这里 |
 | 待审查 | `review-required`、`awaiting-merge`、`ready`、`completed` | report 任务的 `completed` 归入「仅回答」（`client.js:256`） |
 | 仅回答 | `mode=report` 且 `completed` | 只报告任务已经交付结论 |

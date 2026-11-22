@@ -107,7 +107,7 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 4. 需要 GitHub 交付时，配置 `origin`，运行 `gh auth status --hostname github.com`。
 5. 需要合并或发送 PR 时，把 Router Session 设为 full access。
 6. 先问一个只读问题：Router 应直接回答，不启动 Worker。
-7. 再要求一个小的文件改动：面板应出现 Task，并最终到达 `awaiting-merge`，分支处于 `review-required` 后通过审查。
+7. 再要求一个小的文件改动：面板应出现 Task，并最终到达 `awaiting-merge`；如果审查未通过，Task 会先停在 `review-required`。
 8. 打开记忆区：有记录时列出，owner 点击编辑或删除后立即生效。
 
 ## 升级
