@@ -1,20 +1,20 @@
-# 007 Architecture
+# 007 架构
 
-This document maps the concepts to files and services, and names the rules that keep them apart. It builds on [001 Domain model](001-domain.md) through [006 Deployment](006-deployment.md). The module and test tables at the end are the index into the source tree.
+这份文档把 [001 领域模型](001-domain.md) 的概念映射到文件、服务和数据。先读「核心流程」和「依赖规则」，再把「模块」与「测试」两张表当索引用。它建立在 [000 原则](000-philosophy.md) 到 [006 部署](006-deployment.md) 之上。
 
-## Core flow
+## 核心流程
 
-The Host plugin `index.js` owns the worker lifecycle and the panel routes. The raw diagrams are [001 terms and main flow](diagrams/001-terms-and-flow.md), [002 preset flow](diagrams/002-preset-flow.md) and [003 memory system](diagrams/003-memory-system.md). The router plugin `router.js` registers the routing tools, the merge command and the router memory tool. Both entry points sit on DSH services; no source file imports a DSH package.
+Host 插件 `index.js` 管理 Worker 生命周期和面板路由；Router 插件 `router.js` 注册路由工具、合并命令和 Router 记忆工具。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:13-154`、`router.js:1-14`）。
 
 ```mermaid
 flowchart TB
-  U[Input] --> R[Router Session]
-  R -->|dispatch_worker or continue_worker| D[src/dispatch.js and src/continue.js]
-  D --> T[(Task record)]
+  U[用户输入] --> R[Router Session]
+  R -->|dispatch_worker / continue_worker| D[src/dispatch.js / src/continue.js]
+  D --> T[(Task 记录)]
   D --> W[Worker Session]
   W --> WT[Worktree]
   W -->|review_worker_commit| RV[src/review.js]
-  RV --> HR[Read-only reviewer]
+  RV --> HR[只读 Reviewer]
   W -->|message_router| R
   T --> G[src/git-actions.js]
   G --> M[src/merge.js]
@@ -22,270 +22,263 @@ flowchart TB
   M --> P[Project checkout]
   GH --> PR[Pull request]
   T --> B[src/board.js]
-  B --> C[client.js panel]
+  B --> C[client.js 面板]
   MP[src/memory-panel.js] --> C
   R --> TG[src/turn-guard.js]
-  W -->|history| RA[(Raw archive)]
-  W -->|final report or extract_memory| ME[Memory conversation]
+  W -->|每轮 turn/end| RA[(原始归档)]
+  W -->|extract_memory / 最终报告| ME[记忆对话]
   ME --> MS[src/memory.js]
-  W --> MS[src/memory.js]
-  MS --> MF[(Memory files)]
+  W --> MS
+  MS --> MF[(Memory 文件)]
 ```
 
-## Core modules
+## 核心模块
 
 ### `index.js`
 
-Owns the Host lifecycle. On `agent/created` it finds the Task for the new worker Session, marks `starting` or `resuming` as `running`, installs the tool guard, and registers `create_worktree`, `review_worker_commit`, memory, extraction, message and report tools under `when` conditions. The `message_router` callback starts the memory conversation with the final report when the worker did not already call `extract_memory` in that worker Session. On `subagent/end` it settles the Task as `review-required`, `awaiting-merge`, `failed` or `delivery-blocked`. It registers the three panel HTTP routes and the profile context refresh. It does not decide routing and does not edit project files.
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、记忆、提取、消息和报告工具（`index.js:42-93`）。它注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/memory` 三个路由，并在启动时刷新 profile（`index.js:16`、`index.js:18-31`）。
+
+`subagent/end` 落定 change 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:114-146`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:107-111`）。它不决定路由，也不编辑项目文件。
 
 ### `router.js`
 
-Registers `dispatch_worker`, `continue_worker`, `/merge-worker` and the router's `superagent_memory`. Its inject list covers `tools`, `subagents`, `workingDirectory`, `subprocess`, `worktrees`, `commands`, `sandboxPolicy`, `systemPrompt` and `agentPresets`, and it mounts the profile context. It owns no Task record.
+注册 `dispatch_worker`、`continue_worker`、`/merge-worker` 和 Router 的 `superagent_memory`，并注册 profile 运行时上下文（`router.js:8-14`）。它不持有 Task 记录。
 
 ### `src/task-store.js`
 
-The only writer of task JSON. It derives paths from `~/.dsh/superagent-lite`, creates `tasks/` and `tasks/sessions/`, writes records atomically at mode `0600`, serializes writes per root and key, and enforces the one-to-one Team and Project assignment. It also resolves a worker Session ID to its Task.
+Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创建 `tasks/` 和 `tasks/sessions/`；记录以 `0600` 原子写入，按根和键串行化；创建时强制 Team 与 Project 一对一；提供 Session ID 到 Task 的反查（`src/task-store.js:34-138`）。
 
 ### `src/dispatch.js`
 
-Validates the call, derives the 16-hex Task ID from the router agent and tool call, reads the project root, base commit, base branch and working-tree state, writes the `starting` record, links the worker Session and calls `ctx.subagents.startActivation`. A start failure settles the Task as `failed`.
-
-### `src/validation.js`
-
-Checks `delegate`, `reason`, `teamId`, `title`, `task` and `mode`. It returns the trimmed values used by `dispatch.js`.
+校验参数，从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `starting` 记录，建立 Session 映射，调用 `ctx.subagents.startActivation`。启动失败把 Task 标为 `failed`（`src/dispatch.js:46-112`）。
 
 ### `src/continue.js`
 
-Delivers a follow-up either as a short update to a running worker or as the full `buildWorkerPrompt` message plus a `Resume` section to an idle worker. It marks a settled Task `resuming`, clears the old review record, records the follow-up before sending, and rolls the record back on a failed delivery.
+把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发完整任务消息加 `Resume` 段。已结束的 Task 先改 `resuming` 并清空旧 Review；follow-up 先记录，发送失败回滚（`src/continue.js:1-107`）。
 
 ### `src/worker-prompt.js`
 
-Builds the task message for a change or report task. It is the single source of the `Project team`, `Base branch`, `Task`, `Requirements`, `Before`, `During`, `After` and `Reporting` sections.
+生成 change 和 report 两种任务消息。它统一 `Project team`、`Base branch`、`Task`、`Requirements`、模式段和 `Before` / `During` / `After` / `Reporting` 段（`src/worker-prompt.js:1-69`）。
 
 ### `src/turn-guard.js`
 
-Counts user inputs and successful routing decisions per turn. A completed router turn without a decision gets a reminder after idle, at most twice per input. It ignores other presets and aborted turns.
+按 Session 和回合统计用户输入与成功的派发决定。完成回合没有决定时，在 idle 后插入提醒；每个输入最多 2 次；只对 `superagent-lite` 预设生效（`src/turn-guard.js:1-133`）。
 
 ### `src/worktree-tool.js`
 
-Creates the Worktree through `ctx.worktrees.create` on branch `sl-<team-slug>-<taskId>` from the base commit, saves its metadata on the Task, and moves the worker's working directory into it. A second call re-enters the existing Worktree.
+通过 `ctx.worktrees.create` 从 base commit 创建 Worktree，保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，并把 Worker 工作目录切过去。第二次调用只重新进入（`src/worktree-tool.js:23-62`）。
 
 ### `src/review.js`
 
-Owns `worktreeHead`, which checks the repository root, branch, clean tree and HEAD. `review_worker_commit` checks the committed diff, starts the read-only reviewer, records the verdict and re-checks the head. The reviewer receives the stored requirements, follow-ups, head and patch.
+提供 `worktreeHead`：检查仓库根、分支、干净工作区和 HEAD（`src/review.js:8-18`）。`review_worker_commit` 检查净改动，创建审查范围，启动只读 Reviewer，校验裁决和证据，复核 HEAD 后写入 Review（`src/review.js:34-95`）。Reviewer 的提示词不包含 diff（`src/review.js:20-32`）。
+
+### `src/review-scope.js`
+
+定义 Reviewer 的「改动」范围：Worktree 加 `base..head`。它校验文件路径、符号链接、`.git`、绝对路径、git 子命令、版本参数、flag、只读命令和 workdir，并记录是否真的读过 diff 或改动文件（`src/review-scope.js:1-231`）。
 
 ### `src/helper-guard.js`
 
-Keeps the pending-helper counter and installs the read-only guard. It appends the read-only sandbox mode to the helper Session, admits the read-only tool set, and admits `bash` or `pwsh` only when the shell confines file writes and the call does not widen the sandbox.
+维护待认领 helper 队列，安装只读 guard。Reviewer 和记忆对话继承 Worker 工具集，因此 guard 把 shell 限制在只读模式。没有审查范围时放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`）和受限 shell；带审查范围时进一步收窄到 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`，再套 `review-scope`（`src/helper-guard.js:4-23`、`src/helper-guard.js:73-107`）。
 
 ### `src/memory.js`
 
-Builds `superagent_memory`, `extract_memory`, `createMemoryPanel`, the profile context and the turn archive. It maps the Session role to the allowed categories, records the source event for every tool and extraction write, refreshes the profile after a profile write, and sends only selected findings to the memory conversation and writes each returned category to its scope. Panel reads use a Host-only operator role; panel edits and deletes use the record's category and, for team memory, the echoed Team and Project, and they keep the record's original source.
+构建 `superagent_memory`、`extract_memory`、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话只收到选定结论，插件负责把四类结果写回（`src/memory.js:1-227`）。
 
 ### `src/memory-extractor.js`
 
-Defines the memory conversation role: the label, the 5,000-character findings limit, the 500-character per-fact limit, the four-category caps, the output schema and `memoryExtractorPrompt`. The prompt states what each category extracts, what to omit, that findings are data, and that empty arrays write nothing.
+只定义记忆对话角色：标签、5,000 字符 findings 上限、500 字符单条上限、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-39`）。
 
 ### `src/memory-panel.js`
 
-Serves `GET /superagent-lite/memory` and `POST /superagent-lite/memory`. It admits only the installation owner, validates the action, category, record ID and body fields, owns the 32 KB body limit, maps a missing record to `404` and a store refusal to `400` or `409`, and returns the updated record or the deleted ID.
+提供 `GET` / `POST /superagent-lite/memory`。只允许 owner，校验 action、category、记录 ID 和字段；body 上限 32 KB；把缺失记录映射为 `404`，存储拒绝映射为 `400` 或 `409`（`src/memory-panel.js:1-94`）。
 
 ### `src/memory-store.js`
 
-Stores memory records and raw turn archives. It owns category and scope checks, team partition hashing, atomic `0600` writes, serialized updates, symlink refusal and the immutable archive keyed by Session and sequence. Its `panel.teams()` view reads one saved scope from each team partition for the owner panel; the model-facing `memory` facade stays separate.
+保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-347`）。
 
 ### `src/merge.js`
 
-Owns `/merge-worker`. It validates the Task ID, ownership, full-access policy, non-GitHub origin, `awaiting-merge` state, approved review, target branch, clean target, absent in-progress merge and conflict-free `merge-tree` preflight, then runs `git merge --no-ff` and records `merging`, `merged` or `delivery-blocked`.
+实现 `/merge-worker`。检查 Task 归属、full access、非 GitHub origin、`awaiting-merge`、审查 HEAD、目标分支、干净工作区、无进行中 merge 和 `merge-tree` 预检，再执行 `git merge --no-ff`，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:1-67`）。
 
 ### `src/git-actions.js`
 
-Lists the Git view for each Task and performs the panel's `merge` or `publish` action. It caches origin and Pull request facts for 30 seconds, reconciles an exact PR state into the Task, checks the reviewed head and target, and refuses an action when the router Session is missing or not full access.
+构建每个 Task 的 Git 视图并执行面板的 `merge` / `publish`。缓存 origin 和 PR 事实 30 秒，把精确 PR 状态同步进 Task，检查 reviewed HEAD 和目标 checkout，按 Task 串行化动作（`src/git-actions.js:65-583`）。
 
 ### `src/github.js`
 
-Detects a strict GitHub origin and delivers a reviewed commit. It pushes the reviewed head, opens or adopts the Pull request for that head, and on merge runs `gh pr merge --merge --match-head-commit`, then fast-forwards the project checkout. It re-checks the exact head and base and is the only GitHub write path.
+识别严格 GitHub origin，发送 reviewed commit，打开或复用 PR，合并 PR 并复核精确 HEAD。它是唯一的 GitHub 写路径（`src/github.js:1-137`）。
 
 ### `src/process.js`
 
-Runs `git` and `gh` through `ctx.subprocess` with a filtered environment, prompt disabled and bounded output. Git calls disable hooks. It is the only module that spawns a process.
+通过 `ctx.subprocess` 运行 `git` 和 `gh`，过滤 `GIT_*` 和 `GH_DEBUG` 环境，禁用提示和 hooks，限制输出 65,536 字节（`src/process.js:1-36`）。
 
 ### `src/board.js`
 
-Serves `GET /superagent-lite/tasks` and `POST /superagent-lite/git`. It admits only the installation owner, projects the public task fields, overlays the Git view, computes `unconfirmed`, enforces the JSON body limit, maps a refused action to `409`, and exports the body reader the memory endpoint reuses.
+提供 `GET /superagent-lite/tasks` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加 Git 视图，计算 `unconfirmed`，限制 JSON body 4 KB，并把动作拒绝映射为 `409`；同时导出记忆端点复用的 body reader（`src/board.js:1-103`）。
 
 ### `src/report-tool.js`
 
-Ends a report-only Task. It checks the active worker, report mode, absence of a Worktree, the unchanged base commit and the unchanged checkout, sends the conclusion and evidence to the router, and stores `completed`.
+结束 report 任务：检查活跃 Worker、report 模式、没有 Worktree、HEAD 仍在 base commit、checkout 未变，把结论和证据发给 Router，并写入 `completed`（`src/report-tool.js:1-44`）。
 
 ### `src/message-router.js`
 
-Sends the worker's one final conclusion to the router. It requires the active worker for the Task and a message of 1–4,000 characters. After delivery it calls the optional `onReported` callback, which starts the memory conversation with that report for a change worker that did not already extract.
+把 Worker 的最终结论发给 Router，要求活跃 Worker 和 1–4,000 字符文本；送达后调用可选回调，触发最终报告记忆提取（`src/message-router.js:1-27`）。
 
 ### `client.js`
 
-The browser panel. It registers the `main` and `sidebar.panellist` slots and the `superagent-lite` locale dictionaries, loads the task list and the memory list, groups and filters tasks by the five status categories, filters by team and project, renders session and Pull request links, and posts the Git actions. The memory block filters by category and text and edits or deletes a record after the owner's click. Git delivery is a supporting list with no second state model. It imports no Node module and holds no state outside React.
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务和记忆，按 5 个分类分组、按 6 个筛选项过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 Git 动作；记忆按分类和文本过滤，编辑或删除需 owner 点击（`client.js:1-904`）。它不 import Node 模块，状态只在 React 内。
 
-## Dependency rules
+## 依赖规则
 
-- `index.js` and `router.js` are the only plugin entry points. No module under `src/` imports either entry point or `client.js`.
-- `client.js` runs only in the browser. It uses the module loader's `react` and the `slots` and `locale` services.
-- No source file imports an `@deepseek-ai/*` package. Host capabilities arrive through `ctx` services: `subagents`, `tools`, `worktrees`, `subprocess`, `agents`, `agentPresets`, `sandboxPolicy`, `workingDirectory`, `systemPrompt`, `webServer`, `connection`, `commands`.
-- `src/process.js` is the only process spawner. Every git and gh call goes through it.
-- `src/task-store.js` is the only task-record writer. Every other module calls `createTask`, `updateTask`, `readTask`, `listTasks`, `linkWorkerSession` or `taskForSession`.
-- `src/memory-store.js` is the only memory-record and archive writer. The model tools, the memory conversation and the panel all go through its facades.
-- `src/memory-panel.js` is the only panel memory endpoint. It reuses `readJsonBody` from `src/board.js` and never reads a path from the request.
-- `src/memory-extractor.js` holds only the helper-role prompt and limits; it owns no store or Session.
-- `src/helper-guard.js` is the only helper counter and the only read-only guard installer.
-- `src/github.js` and `src/merge.js` are the only delivery paths. No other module pushes, creates a Pull request or merges.
+- `index.js` 和 `router.js` 是唯一插件入口。`src/` 不 import 这两个入口或 `client.js`。
+- `client.js` 只在浏览器运行，通过模块加载器使用 `react`、`slots` 和 `locale`。
+- 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`、`commands`（`index.js:13`、`router.js:6`）。
+- `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
+- `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:138-143`）。
+- `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:342-347`）。
+- `src/memory-panel.js` 是唯一记忆面板端点；它复用 `src/board.js` 的 `readJsonBody`，不从请求读路径（`src/memory-panel.js:1-2`）。
+- `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-39`）。
+- `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
+- `src/github.js` 和 `src/merge.js` 是唯一交付写路径；其他模块不 push、不创建 PR、不合并（`src/github.js:77-137`、`src/merge.js:6-67`）。
 
-### Transition writers
+### 状态写者
 
-| Transition | Writer |
+| 转换 | 写者 |
 | --- | --- |
 | → `starting` | `src/dispatch.js` |
-| → `running` after the agent is created | `index.js` |
-| → `running` after the Worktree is saved | `src/worktree-tool.js` |
+| → `running`，agent 创建后 | `index.js` |
+| → `running`，Worktree 保存后 | `src/worktree-tool.js` |
 | → `resuming` | `src/continue.js` |
-| → `review-required` | `index.js` on `subagent/end` |
-| → `awaiting-merge` | `index.js` on `subagent/end` |
-| → `merging` | `src/merge.js` |
-| → `merged` after a local merge | `src/merge.js` |
-| → `merged` after reading an exact PR | `src/git-actions.js` |
-| → `merged` or `merge-queued` after GitHub delivery | `src/github.js` |
+| → `review-required` | `index.js` |
+| → `awaiting-merge` | `index.js`；`src/git-actions.js` 在读取时修正 |
+| → `merging` | `src/merge.js`、`src/git-actions.js` |
+| → `merged`，本地合并 | `src/merge.js` |
+| → `merged`，精确 PR 已合并 | `src/git-actions.js`、`src/github.js` |
 | → `publishing` | `src/git-actions.js` |
-| → `awaiting-ci` | `src/github.js` |
-| → `delivery-blocked` after the post-review head check | `index.js` |
-| → `delivery-blocked` after a publish failure | `src/git-actions.js` |
-| → `delivery-blocked` after an exact PR closes | `src/git-actions.js` |
-| → `delivery-blocked` after a merge command failure | `src/merge.js` |
+| → `awaiting-ci` | `src/github.js`；`src/git-actions.js` 在读取时修正 |
+| → `delivery-blocked`，审查后 HEAD 检查失败 | `index.js` |
+| → `delivery-blocked`，发送或合并失败 | `src/git-actions.js`、`src/merge.js` |
+| → `delivery-blocked`，精确 PR 关闭 | `src/git-actions.js` |
 | → `completed` | `src/report-tool.js` |
-| → `failed` after a dispatch start failure | `src/dispatch.js` |
-| → `failed` after a worker turn | `index.js` |
-| → `failed` after a follow-up delivery failure | `src/continue.js` |
-| `unconfirmed` | `src/board.js`, at read time only |
+| → `failed`，派发失败 | `src/dispatch.js` |
+| → `failed`，Worker 回合失败 | `index.js` |
+| → `failed`，follow-up 发送失败 | `src/continue.js` |
+| `unconfirmed` | `src/board.js`，只在读取时计算 |
 
-## Modules
+## 模块
 
-| Path | Responsibility |
+| 路径 | 职责 |
 | --- | --- |
-| `src/board.js` | Serves the owner-only task list and Git action HTTP endpoints and projects the panel view. |
-| `src/continue.js` | Delivers follow-ups to running or idle workers and handles resumption records. |
-| `src/dispatch.js` | Validates a dispatch, creates the Task record and starts the Worker Session. |
-| `src/git-actions.js` | Builds the Git branch view and performs the merge and publish actions. |
-| `src/github.js` | Detects a GitHub origin and delivers a reviewed commit through a Pull request. |
-| `src/helper-guard.js` | Counts expected helper subagents and confines them to read-only tools. |
-| `src/memory.js` | Registers the memory tools, profile context, memory conversation runner, panel facade and turn archive. |
-| `src/memory-extractor.js` | Defines the memory conversation role prompt, labels, four category caps and output schema. |
-| `src/memory-panel.js` | Serves the owner-only memory list, edit and delete HTTP endpoint. |
-| `src/memory-store.js` | Persists memory records and raw archives with scope and secret checks. |
-| `src/merge.js` | Implements the `/merge-worker` command and the local `--no-ff` merge. |
-| `src/message-router.js` | Sends one final worker conclusion to the router Session and triggers the final-report memory extraction. |
-| `src/process.js` | Spawns git and gh with a filtered environment and bounded output. |
-| `src/report-tool.js` | Ends a report-only Task with its conclusion and evidence. |
-| `src/review.js` | Checks the committed diff, runs the read-only reviewer and records the verdict. |
-| `src/task-store.js` | Reads and writes task records and worker Session links. |
-| `src/turn-guard.js` | Requires one routing decision per router input and sends reminders. |
-| `src/validation.js` | Validates dispatch arguments. |
-| `src/worker-prompt.js` | Builds the change and report task messages. |
-| `src/worktree-tool.js` | Creates or enters the Task's Worktree and stores its metadata. |
+| `src/board.js` | 提供 owner-only 任务列表与 Git 动作 HTTP 端点，并投影面板视图。 |
+| `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
+| `src/dispatch.js` | 校验派发、创建 Task 记录并启动 Worker Session。 |
+| `src/git-actions.js` | 构建 Git 分支视图，执行面板的合并和发送 PR 动作。 |
+| `src/github.js` | 识别 GitHub origin，通过 Pull request 交付 reviewed commit。 |
+| `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
+| `src/memory.js` | 注册记忆工具、profile 上下文、记忆对话、面板 facade 和轮次归档。 |
+| `src/memory-extractor.js` | 定义记忆对话的角色提示词、标签、四类上限和输出 schema。 |
+| `src/memory-panel.js` | 提供 owner-only 记忆列表、编辑和删除 HTTP 端点。 |
+| `src/memory-store.js` | 保存 Memory 记录和原始归档，执行分类、scope 和密钥检查。 |
+| `src/merge.js` | 实现 `/merge-worker` 命令和本地 `--no-ff` 合并。 |
+| `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
+| `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
+| `src/report-tool.js` | 以结论和证据结束 report 任务。 |
+| `src/review.js` | 检查已提交 diff，运行只读 Reviewer 并记录裁决。 |
+| `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
+| `src/task-store.js` | 读写 Task 记录和 Worker Session 映射。 |
+| `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
+| `src/validation.js` | 校验派发参数。 |
+| `src/worker-prompt.js` | 生成 change 和 report 任务消息。 |
+| `src/worktree-tool.js` | 创建或进入 Task 的 Worktree，并保存元数据。 |
 
-## Entry files
+## 测试
 
-| Path | Responsibility |
+| 测试 | 覆盖什么 |
 | --- | --- |
-| `index.js` | Host plugin: worker lifecycle, tool registration and panel routes. |
-| `router.js` | Router plugin: routing tools, merge command and router memory. |
-| `client.js` | Browser panel. |
-| `cordis.patch.yml` | Bundle composition: worktree service, presets and tool rows. |
-| `package.json` | Package exports, test script, DSH bundle and client declarations. |
-| `locale/en.json` | English plugin metadata. |
-| `locale/zh.json` | Chinese plugin metadata. |
-| `icon.svg` | Plugin icon. |
+| `test/board.test.js` | owner 准入、公开字段投影、Git 视图叠加和 `unconfirmed` 计算。 |
+| `test/client.test.js` | 槽位注册、中英渲染、5 类分组与 6 个筛选项、会话导航、Git 动作与错误、记忆搜索与编辑删除。 |
+| `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、记录顺序和发送失败回滚。 |
+| `test/git-actions.test.js` | 分支视图、合并与发送资格、PR 状态同步和 full access 检查。 |
+| `test/github.test.js` | 严格 origin 解析、发送 PR、合并 PR 和 reviewed SHA 锁定。 |
+| `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
+| `test/helper-guard.test.js` | helper 认领、只读工具白名单和 shell 限制。 |
+| `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
+| `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
+| `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review、合并、记忆和归档。 |
+| `test/memory-extractor.test.js` | 记忆角色提示词、四类提取、空结果、超限事实和面板编辑删除。 |
+| `test/memory-panel.test.js` | owner 准入、记忆投影、更新/删除路径、body 校验和状态码映射。 |
+| `test/memory-store.test.js` | 分类、team scope、private 引用、面板 team scope、归档不可变、符号链接和并发更新。 |
+| `test/memory-wiring.test.js` | 最终报告触发提取、显式提取抑制和提取失败不影响报告。 |
+| `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
+| `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
+| `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
+| `test/report-only.test.js` | report 任务的完成、无分支提交、伪造 Worktree 拒绝和报告提示词。 |
+| `test/review-scope.test.js` | Reviewer 文件读取、符号链接和只读命令的范围限制。 |
+| `test/review.test.js` | Reviewer 提示词带范围不带 diff、无证据裁决被拒、读改动文件算证据。 |
+| `test/routing-rule.test.js` | 两个路由工具把不同目标挡在 `continue_worker` 外，persona 说明新工作规则。 |
+| `test/task-store.test.js` | Task 记录私有写入、Session 反查和路径形 ID 拒绝。 |
+| `test/turn-guard.test.js` | 每个输入一个决定、提醒预算、idle 投递和中止处理。 |
+| `test/validation.test.js` | 派发参数规则和 mode 默认值。 |
+| `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒。 |
+| `test/worker-prompt.test.js` | change 与 report 任务消息、段顺序和范围限制。 |
 
-## Tests
+## 持久化
 
-| Test | Covers |
-| --- | --- |
-| `test/board.test.js` | Owner admission, public task projection, Git overlay, endpoint status codes. |
-| `test/client.test.js` | Slot registration, localized rendering, five-category grouping and filters, session navigation, Git delivery actions and errors, memory search, edit and delete. |
-| `test/continue.test.js` | Running, idle and settled follow-up paths, record order and delivery failures. |
-| `test/git-actions.test.js` | Branch view, merge and publish eligibility, PR reconciliation and router access. |
-| `test/github.test.js` | Strict origin parsing, required checks and reviewed-SHA pinning. |
-| `test/helper-composition.test.js` | Installed DSH services enforce the helper boundary and read-only sandbox. |
-| `test/helper-guard.test.js` | Helper claims, read-only tool allowlist and shell confinement. |
-| `test/helper-wiring.test.js` | `agent/created` installs the guard only for an expected helper. |
-| `test/host.test.js` | Installed DSH integration: schemas, worktree, review, merge, memory and archive. |
-| `test/memory-extractor.test.js` | Memory conversation role prompt, four-category extraction, empty and oversized facts, the final-report trigger, and real panel edits and deletes. |
-| `test/memory-panel.test.js` | Owner admission, memory projection, update and delete paths, body validation and status mapping. |
-| `test/memory-wiring.test.js` | Worker wiring: final-report extraction, explicit-extraction suppression and report survival on extraction failure. |
-| `test/memory-store.test.js` | Categories, team scopes, private references, panel team scopes, archive immutability, symlink refusal and concurrent updates. |
-| `test/prompt-config.test.js` | Bundled router prompt keeps replies single and concrete, and the merge-authorization policy matches across the prompt and docs. |
-| `test/report-only.test.js` | Report-only completion, no branch or commit, forged worktree refusal and report prompt. |
-| `test/routing-rule.test.js` | Routing tool descriptions keep a different goal out of `continue_worker`. |
-| `test/task-store.test.js` | Private task records, Session resolution and path-shaped ID rejection. |
-| `test/turn-guard.test.js` | One decision per input, reminder budget, idle delivery and abort handling. |
-| `test/validation.test.js` | Dispatch argument rules and mode default. |
-| `test/wiring.test.js` | `apply` wires `turn/end` and idle into the dispatch reminder. |
-| `test/worker-prompt.test.js` | Change and report task messages, section order and scope limits. |
+Task 与 Memory 记录在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 
-## Persistence
-
-Task and Memory records live under `~/.dsh/superagent-lite/`. Worktrees live under each project.
-
-| Record | Path | Writer |
+| 记录 | 路径 | 写者 |
 | --- | --- | --- |
 | Task | `tasks/<id>.json` | `src/task-store.js` |
-| Worker Session link | `tasks/sessions/<sha256(sessionId)>.json` | `src/dispatch.js` through `linkWorkerSession` |
-| Private memory | `memory/private/<uuid>.json` | `src/memory-store.js` |
-| Public memory | `memory/public/<uuid>.json` | `src/memory-store.js` |
-| Profile memory | `memory/profile/<uuid>.json` | `src/memory-store.js` |
-| Team memory | `memory/team/<hash>/<uuid>.json` | `src/memory-store.js` |
-| Raw turn archive | `memory/archive/<hash>.json`, numbered event references | `src/memory.js` through `archiveWorkerTurn` |
-| Worktree | `<project>/.agents/worktrees/` | The worktree service |
+| Worker Session 映射 | `tasks/sessions/<sha256(sessionId)>.json` | `src/dispatch.js` 通过 `linkWorkerSession` |
+| private 记忆 | `memory/private/<uuid>.json` | `src/memory-store.js` |
+| public 记忆 | `memory/public/<uuid>.json` | `src/memory-store.js` |
+| profile 记忆 | `memory/profile/<uuid>.json` | `src/memory-store.js` |
+| team 记忆 | `memory/team/<hash>/<uuid>.json` | `src/memory-store.js` |
+| 原始轮次归档 | `memory/archive/<hash>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
+| Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 
-The team partition hash covers the Team ID and the normalized project root. The archive hash covers the Session ID and the turn-end sequence. Directories are created at mode `0700` and records at `0600`.
+team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，记录以 `0600` 写入（`src/memory-store.js:168-176`、`src/task-store.js:34-57`、`src/memory-store.js:312-340`）。
 
-## External interfaces
+## 对外接口
 
-| Tool | Caller | Purpose |
+| 工具 | 调用方 | 用途 |
 | --- | --- | --- |
-| `dispatch_worker` | Router | Record the routing decision and optionally start a worker |
-| `continue_worker` | Router | Send a follow-up to the same Task |
-| `superagent_memory` | Router, worker | Read and write saved facts by category |
-| `/merge-worker` | User | Authorize one local merge by Task ID |
-| `create_worktree` | Change worker | Create or enter the Task's Worktree |
-| `review_worker_commit` | Change worker | Review the clean committed diff |
-| `report_task` | Report worker | End a report-only Task |
-| `message_router` | Worker | Send the final conclusion to the router and trigger the final-report memory extraction |
-| `extract_memory` | Worker | Distill selected findings into the four memory categories with the memory conversation role |
+| `dispatch_worker` | Router | 记录派发决定，必要时启动 Worker |
+| `continue_worker` | Router | 给同一 Task 发 follow-up |
+| `superagent_memory` | Router、Worker | 按分类读写记忆 |
+| `/merge-worker` | 用户 | 按 Task ID 授权一次本地合并 |
+| `create_worktree` | change worker | 创建或进入 Task 的 Worktree |
+| `review_worker_commit` | change worker | 审查干净的已提交 diff |
+| `report_task` | report worker | 结束 report 任务并交回结论 |
+| `message_router` | Worker | 把最终结论发给 Router，并触发最终报告记忆提取 |
+| `extract_memory` | Worker | 用记忆对话把选定结论提炼成四类记忆 |
 
-| Endpoint | Method | Purpose |
+| 端点 | 方法 | 用途 |
 | --- | --- | --- |
-| `/superagent-lite/tasks` | `GET` | Return the task list and Git view for the owner |
-| `/superagent-lite/git` | `GET`, `POST` | Read branch detail or run a `merge` or `publish` action for the owner |
-| `/superagent-lite/memory` | `GET`, `POST` | List memory records or run an `update` or `delete` action for the owner |
+| `/superagent-lite/tasks` | `GET` | 返回 owner 可见的 Task 列表和 Git 视图 |
+| `/superagent-lite/git` | `GET`、`POST` | 读取分支详情，或执行 `merge` / `publish` |
+| `/superagent-lite/memory` | `GET`、`POST` | 列出记忆，或执行 `update` / `delete` |
 
-| Surface | Value |
+| 接口 | 值 |
 | --- | --- |
-| Sidebar slot | `sidebar.panellist`, panel label `项目任务` / `Project tasks` |
-| Main slot | `main` |
-| Locale namespace | `superagent-lite` |
-| Package exports | `.`, `./router`, `./locale/*.json`, `./icon`, `./client` |
+| 侧栏槽位 | `sidebar.panellist`，面板标签「项目任务」 |
+| 主槽位 | `main` |
+| Locale 命名空间 | `superagent-lite` |
+| 包导出 | `.`、`./router`、`./locale/*.json`、`./icon`、`./client` |
 | DSH bundle patch | `./cordis.patch.yml` |
-| DSH client | Web platform, injected immediately, dependencies on layout, sidebar, workspace and locale |
+| DSH client | Web 平台、立即注入，依赖 layout、sidebar、workspace 和 locale |
 
-## Configuration updates
+## 配置更新
 
-| Change | When it applies |
+| 变更 | 生效时机 |
 | --- | --- |
-| `cordis.patch.yml` | At the next bundle load |
-| Tool text in `src/` | To the next assembled turn after the bundle loads |
-| `src/memory-extractor.js` role text | At the next memory extraction start |
-| `client.js` dictionaries | At the next client bundle load |
-| A profile memory write | Immediately refreshes the injected profile context |
-| A task or memory record | On the next panel load or tool call |
-| A panel memory edit or delete | Immediately in the panel and on disk; the next tool call reads the new record |
-| GitHub origin and Pull request facts | Cached for 30 seconds; a panel refresh reads them again after the cache expires |
+| `cordis.patch.yml` | 下一次 bundle 加载 |
+| `src/` 里的工具文字 | bundle 加载后的下一次拼装回合 |
+| `src/memory-extractor.js` 角色文字 | 下一次记忆提取启动 |
+| `client.js` 字典 | 下一次客户端 bundle 加载 |
+| profile 记忆写入 | 立即刷新注入的 profile 上下文 |
+| Task 或 Memory 记录 | 下一次面板加载或工具调用 |
+| 面板记忆编辑或删除 | 立即写入磁盘和面板；下一次工具调用读到新记录 |
+| GitHub origin 与 PR 事实 | 缓存 30 秒；面板刷新在缓存过期后重新读取 |
 
-The profile context is registered with order `170` and is read when the Host assembles the runtime context for a model call.
+profile 上下文以 order `170` 注册，在 Host 组装模型调用的运行时上下文时读取（`src/memory.js:20-22`）。

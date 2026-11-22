@@ -1,6 +1,6 @@
 # Diagram 001: terms and main flow
 
-Raw reference diagram supplied by the user. It fixes the terminology and the router-to-worker flow; [001 Domain model](../001-domain.md), [002 Rules](../002-rules.md), [003 Lifecycle](../003-lifecycle.md) and [005 Panel](../005-panel.md) follow it, and any difference is named in [001 Domain model: Diagram alignment](../001-domain.md#diagram-alignment).
+Raw reference diagram supplied by the user. It fixes the terminology and the router-to-worker flow; [001 Domain model](../001-domain.md), [002 Rules](../002-rules.md), [003 Lifecycle](../003-lifecycle.md) and [005 Panel](../005-panel.md) follow it, and any difference is named in [001 Domain model: Diagram alignment](../001-domain.md#图表对齐).
 
 ```mermaid
 flowchart TD

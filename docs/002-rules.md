@@ -1,144 +1,217 @@
-# 002 Rules and permissions
+# 002 规则与权限
 
-This document lists who may start work, what each actor may touch, and what a Git action requires. It builds on [001 Domain model](001-domain.md).
+这份文档决定谁能发起工作、每个角色能碰什么、审查与 Git 交付各需要什么条件。它建立在 [001 领域模型](001-domain.md) 之上。
 
-## Two paths
+## 两条路径
 
-New work and existing work start differently, and neither path takes over the other.
+新工作与已有工作走不同入口，互不接管。
 
-### New work
+### 新工作
 
-A user input gets one `dispatch_worker` call from the router. The call records the input's routing decision before the router answers.
+用户输入先得到一次 `dispatch_worker` 调用。这个调用在 Router 回答前记录本回合的派发决定。
 
-- `delegate=false` answers without a worker. It needs a reason of 1–2,000 characters and starts no Task.
-- `delegate=true` starts one Task and one Worker Session. The router passes the user's request and stated acceptance criteria without rewriting or paraphrasing it; it does not omit or compress information and adds no plan.
-- `mode=report` marks a read-only task. The mode defaults to `change` when omitted.
-- The target checkout must have a branch checked out and a clean working tree. The only allowed dirty line is `?? .agents/worktrees/.gitignore`.
-- The Task ID is the first 16 hex characters of the SHA-256 of the router agent ID and the tool call ID. A repeated call for the same pair returns the existing Task unless that Task is `starting` or `failed`; those two states refuse a retry and ask for the task board.
-- A Task from another Router Session cannot be reused; the call fails with `Task id is already owned by another Session`.
-- One Team owns one Project. The first Task fixes the pair; a later Task that would reassign either one fails with `The project and team must retain their existing one-to-one assignment`.
+- `delegate=false` 不派 worker，`reason` 必填，长度 1–2,000 字符（`src/validation.js:3-7`）。
+- `delegate=true` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:8-19`）。
+- `mode` 省略时为 `change`，也可以显式传 `report`（`src/validation.js:17-19`）。
+- Task ID 是 `[agent.id, callId]` 的 SHA-256 前 16 位十六进制（`src/dispatch.js:52`）。
+- 同一对 `agent.id` 与 `callId` 再次派发时：已有 Task 若不在 `starting` 或 `failed`，直接返回该 Task；处于这两个状态则报 `Dispatch <id> is already being established; inspect the task board before retrying`（`src/dispatch.js:53-60`）。
+- Task 属于另一个 Router Session 时拒绝：`Task id is already owned by another Session`（`src/dispatch.js:55`）。
+- 派发前读取项目根、基础 commit、基础分支和工作区状态；除 `?? .agents/worktrees/.gitignore` 外有未提交改动就拒绝（`src/dispatch.js:62-67`）。
+- 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:70-75`）。
 
-### Existing work
+### 已有工作
 
-`continue_worker` sends a follow-up to a Task that already exists and is not published.
+`continue_worker` 把追加要求送给已经存在且未发布的 Task。
 
-- The Task must belong to the calling Router Session, and the follow-up must add to or correct the same deliverable and goal. A different business goal is new work. A second prompt-wording change continues the task; changing how dispatch messages are shaped is a new task.
-- The task text is 1–20,000 characters and the ID is 16 lowercase hex characters.
-- When the worker agent is running, the follow-up is a short requirement update inside the current turn. It asks the worker to judge whether the follow-up belongs and to report an unapplied one.
-- When the worker is idle, the follow-up is the full task message plus a `Resume` section. A settled Task with a Worktree in `awaiting-merge`, `review-required` or `failed` is marked `resuming` and its old Review record is cleared first.
-- The follow-up is written to `task.followUps` before it is sent. A failed delivery removes that entry. A failed delivery to a settled Task marks it `failed`; a failed delivery to a running Task leaves it `running`.
-- A published Task is not continued. The next input after publication is new work.
+- 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:62-67`）。
+- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:51`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。
+- Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:68-81`）。
+- Worker 空闲时，发送完整任务消息加 `Resume` 段；Task 处于 `awaiting-merge`、`review-required` 或 `failed` 且已有 Worktree 时，先标为 `resuming` 并清空旧 Review（`src/continue.js:82-104`）。
+- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败到已结束的 Task 时标为 `failed`；发送失败到运行中的 Task 保持 `running`（`src/continue.js:29-46`、`src/continue.js:91-103`）。
+- 已发布的 Task 不继续；发布后的下一个输入是新工作。
 
-### No crossing
+### 不交叉
 
-- `dispatch_worker` never resumes an existing Task and never steers a running worker.
-- `continue_worker` never creates a Task or a Worktree.
-- Overlapping files are no reason to fold work together. The new goal gets its own worker, its own Worktree and its own branch; the merge path refuses conflicts.
+- `dispatch_worker` 不恢复已有 Task，也不给运行中的 Worker 追加要求。
+- `continue_worker` 不创建 Task 或 Worktree。
+- 文件重叠不是合并工作的理由；新目标有自己的 Worker、Worktree 和分支，合并路径会拒绝冲突（`src/validation.js:1-20`、`src/git-actions.js:199-208`）。
 
-## Authorization levels
+## 授权级别
 
-| Level | Granted by | What it allows | Default |
+| 级别 | 授予方式 | 允许什么 | 默认 |
 | --- | --- | --- | --- |
-| Observe | Being the Router Session | Read the input, call `dispatch_worker`, `continue_worker` and `superagent_memory` | Every input |
-| Delegate | `dispatch_worker` with `delegate=true` | Create one Task and start one Worker Session | No; needs a decision |
-| Edit | `create_worktree` during an active change task | Work from the Task's Worktree; project tools are blocked until the worker is there | No; the worker is blocked from other tools until it creates or enters the Worktree |
-| Review | `review_worker_commit` after a commit | Read the committed diff and start one read-only reviewer | No; needs a clean committed Worktree |
-| Report | `report_task` during a report-only task | End the Task with a conclusion | No; report tasks only |
-| Merge | A direct user instruction, the user's panel merge action or `/merge-worker <task ID>` | Merge the reviewed commit into its base branch after explicit user authorization | No; needs explicit user authorization and a reviewed local branch |
-| Publish | The user's panel action | Push the reviewed head and open or adopt the Pull request for it | No; needs a reviewed GitHub branch |
-| Memory edit | The owner's panel action | Edit or delete one saved memory record | No; needs the owner's explicit click |
-| Memory extraction | `extract_memory` or the final `message_router` report | Start one read-only memory conversation and save facts in the four categories | No; change workers only |
+| 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker`、`continue_worker` 和 `superagent_memory` 的 router 分类 | 每个输入 |
+| 委派 | `dispatch_worker` 且 `delegate=true` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
+| 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
+| 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
+| 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
+| 合并 | 用户直接指示、面板合并操作或 `/merge-worker <task ID>` | 在用户明确授权后把 reviewed HEAD 合入基础分支 | 否；需要明确授权、审查通过的 HEAD 和 full access |
+| 发送 PR | 用户在面板点击「发送 PR」 | 推送 reviewed HEAD 并打开或复用该 HEAD 的 Pull request | 否；需要 GitHub `origin`、审查通过的 HEAD 和 full access |
+| 编辑记忆 | owner 在面板编辑或删除 | 改一条记忆记录 | 否；需要 owner 明确点击 |
+| 提取记忆 | `extract_memory` 或最终 `message_router` 报告 | 启动一次记忆对话，把结论写回四类 | 否；仅 change worker |
 
-## Admission by mode
+## 准入
 
-| Mode | Selected by | Worktree | Edits project files | Commits | Requests Review | Ends with |
+| 模式 | 选择方式 | Worktree | 修改项目文件 | 提交 | 请求审查 | 结束方式 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `change` | `dispatch_worker` with mode omitted or `mode=change` | Required | Yes, inside the Worktree | Yes | Yes, until approved | `review_worker_commit`, then the worker report |
-| `report` | `dispatch_worker` with `mode=report` | None | No | No | No | `report_task` |
+| `change` | `dispatch_worker` 省略 mode 或传 `change` | 必须 | 可以，限定在 Worktree | 可以 | 可以，直到通过 | `review_worker_commit`，然后 Worker 报告 |
+| `report` | `dispatch_worker` 传 `mode=report` | 无 | 不修改 | 不提交 | 不审查 | `report_task` |
 
-## Router rules
+## Router 规则
 
-The Router Session runs the `superagent-lite` preset. The turn guard applies to that preset only.
+Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生效（`src/turn-guard.js:89-93`）。
 
-- Every user input needs one successful `dispatch_worker` or `continue_worker` result in its turn. A failed tool call does not count. A `delegate=false` result does count.
-- A completed turn without a decision gets the reminder once the agent is idle. The reminder is a user-role message with source kind `superagent-lite-reminder`, so it is not a new input. At most 2 reminders are sent for one input; a new user input resets the budget.
-- The reminder text tells the agent to call `dispatch_worker`, with `delegate=true` for project work or `delegate=false` plus a reason, or `continue_worker` for an unpublished task.
-- The router decides from the input. It does not inspect files, run commands or load skills for project work; a worker does that.
-- The router calls another tool only when the user asks to save or read memory, names a saved fact it needs to route, or asks for a skill.
-- Worker instructions enter only the dispatched worker Session. The router's turn holds the decision and the short reply.
-- Dispatch arguments are validated before any file is touched: `title` 1–120 characters, `task` 1–20,000 characters, `teamId` 1–64 characters matching `[a-zA-Z0-9][a-zA-Z0-9._-]*`, and `reason` 1–2,000 characters when `delegate=false`.
+- 每个用户输入需要当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。失败的工具结果不算；`delegate=false` 的成功结果算（`src/turn-guard.js:73-108`）。
+- 完成回合没有决定时，等 agent 空闲后插入提醒。提醒是 `source.kind = superagent-lite-reminder` 的用户角色消息，不是新输入（`src/turn-guard.js:7`、`src/turn-guard.js:33-51`）。
+- 每个输入最多提醒 2 次；新的用户输入重置预算（`src/turn-guard.js:3-7`、`src/turn-guard.js:56-70`）。
+- Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
+- 只有用户要求保存或读取记忆、路由需要某条已保存事实、或用户要求加载 skill 时，Router 才调用别的工具。
+- 派发参数在碰文件前完成校验：`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符，`reason` 1–2,000 字符（`src/dispatch.js:48`、`src/validation.js:1-20`）。
+- 合并只在用户明确授权后执行：直接指示、面板的合并操作或 `/merge-worker <task ID>` 命令。没有授权就不合并（`cordis.patch.yml:43`）。
 
-## Worker rules
+## Worker 规则
 
-- The worker must call `create_worktree` once before any other tool. Every other tool is blocked until the working directory is the assigned Worktree.
-- The Worktree name is `sl-<team-slug>-<taskId>`. The team slug is the Team name lowercased, with runs of non-alphanumeric characters replaced by `-`, trimmed and cut to 32 characters.
-- The worker is frozen when its subagent ends. It can then use no tool, including memory and message tools.
-- `review_worker_commit`, Memory, extraction and `message_router` are available only while the worker is active and inside its Worktree. `report_task` is available only for an active report-only task. A report-only worker instead sees inspection tools in the project checkout.
-- A report-only task may use `read`, `glob`, `grep`, `read_image`, `bash` or `todo_write` in the project checkout, and `report_task`. Every other tool is denied. `report_task` refuses a changed HEAD or any checkout change other than `?? .agents/worktrees/.gitignore`.
-- The `message_router` report is 1–4,000 characters; the worker sends one at the end of the work. The worker sends no routine progress. A `COMPLETED` report needs a reviewed implementation with relevant checks passed, and it is not sent while a job whose result the report needs runs.
-- A follow-up that does not belong to the Task is left unapplied and named in the final report. A running Task that stays complete reports `COMPLETED` with the unapplied follow-up; a resumed Task whose follow-up does not belong reports `BLOCKED`.
+- change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 外，工作目录不在分配的 Worktree 时所有工具被拦（`index.js:57-66`）。
+- `create_worktree` 向 worktree 服务请求名字 `sl-<team slug>-<taskId>` 的 Worktree；Team slug 是小写 Team 名，把连续非字母数字替换为 `-`，去掉首尾 `-`，截到 32 字符（`src/worktree-tool.js:39-40`）。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:42-49`）。
+- 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
+- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括记忆和消息工具（`index.js:114-116`、`index.js:58-59`）。
+- `review_worker_commit`、记忆、提取和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`report_task` 只对活跃的 report 任务可用（`index.js:67-90`）。
+- report worker 在项目 checkout 中只能使用 `read`、`glob`、`grep`、`read_image`、`bash`、`todo_write`，并以 `report_task` 结束；其他工具被拒绝（`index.js:57-66`）。
+- `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:21-31`）。
+- `message_router` 的报告 1–4,000 字符；Worker 在工作结束时发一次，不发过程进度。`COMPLETED` 只用于已审查且相关检查通过的实现，需要等待的任务不能报 `COMPLETED`（`src/message-router.js:6-25`）。
+- 不属于本 Task 的 follow-up 不执行，并在最终报告里说明。运行中的 Task 仍然完整时报告 `COMPLETED` 并带上未应用的 follow-up；恢复后的 Task 的 follow-up 不属于本 Task 时报告 `BLOCKED`（`src/worker-prompt.js:61-68`）。
 
-## Review rules
+## Review 规则
 
-- `review_worker_commit` requires an active Task in `running`, a Worktree, a clean working tree, at least one commit after the base commit, and a non-empty net diff between the base commit and HEAD.
-- The tool records the reviewed head only after the reviewer returns a usable `approved` boolean and a `findings` string. It re-reads HEAD after the review; a head that moved during review fails the call.
-- The reviewer is a separate subagent. It receives the stored requirements, recorded follow-up texts, the base and head commits and the Worktree path. It reads the `base..head` diff and the changed files itself; the diff is not sent to it. It judges the committed diff, treats follow-ups as context, and blocks only on concrete correctness, regression or missing-test problems.
-- The reviewer runs read-only and is confined to `base..head` and the Worktree; out-of-scope reads and commands are refused. It may use `structured_output`, `read`, `read_image`, `glob`, `grep`, and `bash`/`pwsh` limited to scoped git inspection plus the read-only commands `ls`, `cat`, `head`, `tail`, `wc`, `pwd`, `file` and `stat` over paths inside the Worktree.
-- Every non-flag argument of a read-only command passes the same path fence, and shell operators and quoting are refused. Commands with write or execution ability, including `find`, `tree`, `sed`, `awk`, `xargs` and `tee`, stay refused.
-- A shell command may run from the Worktree root or any of its subdirectories. A workdir that resolves outside the Worktree, whether by a relative path or a symbolic link, is refused.
-- A verdict returned without inspecting the change is rejected and records no `review`.
-- `bash` and `pwsh` are admitted only when the mounted shell confines file writes, the helper session resolves to the read-only sandbox mode, and the call requests no wider sandbox permissions. File writes, mutating tools and control tools are denied. Network and process effects are outside the sandbox vocabulary.
-- A review that blocks does not change the Task status by itself. The worker fixes the findings, commits again and requests another review. The Task settles as `review-required` if the worker ends without an approved review.
+- `review_worker_commit` 要求 Task 处于 `running`、已有 Worktree、工作区干净、HEAD 不是基础 commit、基础 commit 是 HEAD 的祖先，且 base..head 有净改动（`src/review.js:43-52`）。
+- Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
+- Reviewer 收到保存的需求、follow-up 文本、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:20-32`）。
+- 审查针对已提交的 diff；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:24-29`）。
+- Reviewer 返回可用的 `approved` 布尔值和 `findings` 字符串后，工具再检查 HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`（`src/review.js:84-92`）。
+- 审查没有通过不直接改 Task 状态；Worker 修完再提交、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`（`index.js:131-133`）。
 
-## Git action rules
+### 放行命令与围栏
 
-A merge runs only after the user explicitly authorizes it from a direct instruction, the Git panel merge action, or the `/merge-worker <task ID>` command. With that authorization, the router or worker may merge the reviewed commit; without it, neither merges and the worker stops after the reviewed commit without pushing or merging. Publish still requires the user's panel action.
+Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-guard.js` 和 `src/review-scope.js` 执行。
 
-| Action | Required Task state | Additional conditions |
+| 项目 | 放行 | 拒绝 |
 | --- | --- | --- |
-| `merge` | not `merged`, review approved for the current head | A running Router Session with `danger-full-access`; the worker branch still at the reviewed head. On GitHub it reuses or opens the Pull request for that head, merges it with `gh pr merge --merge --match-head-commit`, then fast-forwards the project checkout. Without a GitHub origin it merges locally through `/merge-worker`: the target checkout on its base branch, clean, without an in-progress merge, and `merge-tree` reports no conflict |
-| `publish` | `awaiting-merge` or `delivery-blocked`, review approved for the current head | A GitHub `origin` whose fetch and push URLs name the same repository; `gh` authenticated; a running Router Session with `danger-full-access`; the worker branch still at the reviewed head. An existing Pull request for the same head is adopted |
+| 工具 | `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:23`） | 其他所有工具 |
+| Git 子命令 | `diff`、`show`、`log`、`status`（`src/review-scope.js:17`） | 其他子命令 |
+| 版本参数 | `HEAD`、基础 commit、head commit，或至少 7 位的唯一前缀 | 其他 revision |
+| `git diff` | 必须同时命名 base 与 head，例如 `git diff <base>..<head>` | 缺少任一端的 diff |
+| `git log` | 必须使用 `base..head` | 缺少任一端；读 patch 时可用 `-p`、`-u`、`--patch`、`--raw`、`-U<n>` |
+| `git show` | 只读 base 或 head，可带 `:<path>` | 其他 commit、其他 revision、`.git` 内路径 |
+| `git status` | 只带 flag | 位置参数 |
+| 只读命令 | `ls`、`cat`、`head`、`tail`、`wc`、`pwd`、`file`、`stat` | 其他命令；写、执行和网络命令 |
+| 命令形态 | 一次一条普通命令，可从 Worktree 根或其子目录运行 | shell 操作符、引号、重定向、管道、后台运行 |
+| 路径 | Worktree 内路径 | 绝对路径越界、`..` 越界、解析符号链接后越界、`:` 开头、`.git` 内路径 |
+| workdir | 未指定，或 Worktree 内路径 | 类型不是字符串或越界 |
+| 沙箱 | Shell 挂载了只读限制且当前 Session 解析为 `read-only` | 请求放宽沙箱、沙箱不能限制文件写入 |
+| `sandbox_permissions` | 不传 | 任何值 |
+| `run_in_background` | 不传或 `false` | `true` |
 
-- The panel posts the action to `POST /superagent-lite/git` with a 16-hex task ID and `merge` or `publish`. The body limit is 4 KB and the action timeout is 15 minutes.
-- `/merge-worker` accepts one 16-hex task ID, must be run from the Task's Router Session, and requires the same full-access policy.
-- A local merge marks the Task `merging`, runs `git merge --no-ff`, and marks it `merged`. On GitHub, `merge` marks it `merging`, merges the Pull request, marks it `merged` and fast-forwards the project checkout. A merge that does not report success marks it `delivery-blocked`.
-- Merges for one Project root are serialized. Publishing and merging are not queued together.
-- The publish path pushes the reviewed head to `refs/heads/<worker branch>` and opens a Pull request against the base branch; an existing Pull request for the same head is adopted and the Task settles as `awaiting-ci`. Required checks and branch protection apply when the merge action merges the Pull request.
-- A Pull request whose head, head branch, base branch or cross-repository flag does not match the Task is not used. A merged exact Pull request sets `merged`; an exact closed Pull request in `publishing`, `awaiting-ci` or `merge-queued` sets `delivery-blocked`.
-- GitHub writes are not retried after an interrupted run.
+- Git flag 黑名单包括 `--all`、`--branches`、`--tags`、`--remotes`、`--glob`、`--exclude`、`--reflog`、`--walk-reflogs`、`--source`、`--decorate-refs`、`--cached`、`--staged`、`--no-index`、`--ext-diff`、`--textconv`、`--output`、`--relative`、`--src-prefix`、`--dst-prefix`、`--line-prefix`、子模块相关 flag 和短 flag `-a`（`src/review-scope.js:10-16`、`src/review-scope.js:30-34`）。
+- Reader 必须实际读过改动：一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用会留下证据（`src/review-scope.js:212-229`、`src/review.js:87-89`）。
+- 没有留下证据的裁决被拒绝：`The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`（`src/review.js:87-89`）。
 
-## Memory rules
+## Git 操作规则
 
-| Category | Router Session | Worker Session | Memory conversation | Panel owner | Rules |
+合并只在用户明确授权后执行：直接指示、面板的合并操作或 `/merge-worker <task ID>` 命令。没有授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit，不推送也不合并（`cordis.patch.yml:43`、`src/worker-prompt.js:57`）。
+
+### 共同前提
+
+| 条件 | 说明 |
+| --- | --- |
+| 审查 | `review.approved === true`，且 worker 分支当前 HEAD 等于 `review.head`（`src/git-actions.js:168-179`） |
+| 文件策略 | 动作执行时解析出的 Session 文件策略必须是 `danger-full-access`（`src/git-actions.js:106-110`、`src/git-actions.js:219`、`src/git-actions.js:235`） |
+| 任务模式 | report 任务没有 Git 操作（`src/git-actions.js:566`） |
+| Task 记录 | Task 必须属于当前 owner；面板端点只接受 16 位任务 ID 和 `merge` 或 `publish`（`src/board.js:91-98`） |
+
+### 本地合并
+
+适用条件：Project 没有 GitHub `origin`，通过 `/merge-worker <task ID>` 执行。
+
+1. 命令从 Task 的 Router Session 运行；Task 必须属于该 Session（`src/merge.js:12-16`）。
+2. Task 必须是 `awaiting-merge`、审查通过且已有 Worktree（`src/merge.js:23-25`）。
+3. Project 不能有 GitHub `origin`；有则报 `GitHub projects must merge through a pull request`（`src/merge.js:27`）。
+4. 项目 checkout 必须仍检出 `baseBranch`，没有进行中的 merge，且工作区干净（`src/merge.js:28-35`）。
+5. worker 分支 HEAD 必须等于 reviewed HEAD（`src/merge.js:36-37`）。
+6. 用 `git merge-tree --write-tree HEAD <head>` 做冲突预检；冲突时报 `Merge would conflict; the target was not changed`（`src/merge.js:38-43`）。
+7. Task 标为 `merging`，执行 `git merge --no-ff --no-edit --no-overwrite-ignore`，然后标为 `merged`（`src/merge.js:44-55`）。
+8. merge 命令失败时标为 `delivery-blocked`，并提示检查目标分支（`src/merge.js:49-53`）。
+
+同一 Project 根的本地合并串行执行（`src/merge.js:7`、`src/merge.js:20-23`、`src/merge.js:57-64`）。
+
+### GitHub 合并
+
+适用条件：Project 有严格的 GitHub `origin`，用户在面板点击合并。
+
+1. 校验 `origin`：fetch URL 与 push URL 必须解析为同一个 GitHub 仓库（`src/github.js:20-31`）。
+2. 校验 Task 的 reviewed HEAD、文件策略和项目 checkout：仍在 `baseBranch`、没有进行中的 merge、工作区干净（`src/git-actions.js:216-228`、`src/git-actions.js:181-197`）。
+3. 如果已有该 HEAD 的精确打开 PR，直接用它；没有则先走发送 PR 路径创建（`src/git-actions.js:464-494`）。
+4. 提交 PR 合并前检查 PR 的 HEAD、head 分支、base 分支和跨仓库标记完全匹配；冲突时拒绝（`src/github.js:115-130`）。
+5. 执行 `gh pr merge <number> --repo github.com/<repo> --merge --match-head-commit <review.head>`（`src/github.js:131-134`）。
+6. 合并后重新读取 PR，必须精确匹配且为 `MERGED`；然后 `git pull --ff-only origin <baseBranch>` 快进项目 checkout（`src/github.js:133-136`、`src/git-actions.js:504-509`）。
+7. 发送 PR 或合并 PR 的命令失败时标为 `delivery-blocked`；预检失败只返回错误，不改状态。GitHub 写入不自动重试（`src/git-actions.js:496-502`）。
+
+必需检查和分支保护由 GitHub 在合并 PR 时执行；插件不预先查询检查状态，只在面板展示检查汇总（`src/git-actions.js:18-31`）。
+
+### 发送 PR
+
+适用条件：Project 有 GitHub `origin`，用户在面板点击「发送 PR」。GitHub 合并动作在没有 PR 时会先创建 PR；这属于用户点击合并的同一次授权。
+
+- 要求 reviewed HEAD 未移动、Task 未 `merged`、文件策略为 full access（`src/git-actions.js:230-237`）。
+- 已有精确匹配且打开的 PR 时复用；已有精确匹配且已合并的 PR 时直接记为 `merged`；已关闭时拒绝（`src/github.js:83-95`）。
+- 否则把 reviewed HEAD 推送到 `origin` 的 push URL 和 `refs/heads/<worker branch>`，再创建 base 为 `task.baseBranch` 的 PR（`src/github.js:97-112`）。
+- PR 打开后 Task 标为 `awaiting-ci`（`src/github.js:93-109`）。
+- 一个 PR 被关闭，且 Task 仍在 `publishing`、`awaiting-ci`、`merge-queued`、`merging` 或 `awaiting-merge`，标为 `delivery-blocked`；精确匹配的 PR 变为 `MERGED` 时标为 `merged`（`src/git-actions.js:268-283`）。
+
+### 并发与幂等
+
+- 面板的 merge 和 publish 按 Task ID 串行；同一 Task 的重复动作不会并行执行（`src/git-actions.js:81-88`、`src/git-actions.js:560-580`）。
+- 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:97`、`src/board.js:86`）。
+- `/merge-worker` 接受一个 16 位任务 ID；用法错误返回 `Usage: /merge-worker <task ID>`（`src/merge.js:13-14`）。
+
+## 记忆规则
+
+| 类别 | Router Session | Worker Session | 记忆对话 | 面板 owner | 规则 |
 | --- | --- | --- | --- | --- | --- |
-| `private` | Read and write | No access | Up to 1 credential reference per run | Read, edit and delete | Credential reference names only, never a secret value; extremely rare and read on demand |
-| `public` | Read and write | Read and write | Up to 3 objective conclusions per run | Read, edit and delete | Objective knowledge only; no personal, team-specific or transient task state; read on demand |
-| `profile` | Read and write | Read only | Up to 1 profile or environment fact per run | Read, edit and delete | Injected as runtime context into every router and worker chat; keep it extremely small |
-| `team` | No access | Read and write | Up to 3 team facts per run | Read, edit and delete | Scoped by Team and Project; only a worker of that Team and Project reads it |
+| `private` | 读、写 | 无访问 | 每次最多 1 条凭据引用 | 读、改、删 | 只存凭据引用名，不存密钥；极少使用，按需读取 |
+| `public` | 读、写 | 读、写 | 每次最多 3 条客观结论 | 读、改、删 | 只存客观知识；不存个人信息、团队专属信息或临时任务状态 |
+| `profile` | 读、写 | 只读 | 每次最多 1 条用户画像或环境事实 | 读、改、删 | 每轮注入 Router 和 Worker；保持极少量 |
+| `team` | 无访问 | 读、写 | 每次最多 3 条团队事实 | 读、改、删 | 同时按 Team 和 Project 隔离；只有同 Team、同 Project 的 Worker 能读 |
 
-- Memory tool callers are resolved from the Host Session, never from model arguments. A Session outside the allowed role fails with `Memory is not available to this Session`.
-- The panel is not a Session. Its GET and POST endpoints are owner-only; public, profile and private records use a Host-only operator role, while a team edit or delete must carry the record's Team and Project so the store's partition check stays in force.
-- A memory tool is used for a saved fact the task needs or when the user asks to save one. The router writes a profile fact when the user asks or when routing needs it.
-- Content is 1–16,000 characters. A secret-shaped string is rejected; private records accept only an identifier such as `DEEPSEEK_API_KEY`.
-- A list returns at most 8 records and a 240-character preview. The panel lists every record for the owner and shows the category count, read mode and the profile injection count.
-- Memory entries are data. They never grant permission and never override a code rule.
-- The user profile injected as runtime context holds the 6 most recently updated facts, each cut to 500 characters.
+- 调用者身份来自 Host Session，不来自模型参数；不允许的 Session 报 `Memory is not available to this Session`（`src/memory.js:50-52`）。
+- Worker 的 `superagent_memory` 分类枚举只有 `public`、`profile`、`team`；Router 的是 `public`、`profile`、`private`（`src/memory.js:32`）。
+- `profile` 和 `private` 的写操作只有 Router 能做；Worker 只能读 `profile`（`src/memory.js:55-57`）。
+- `private` 记录只接受 `credentialRef`，传 `content` 会被拒绝（`src/memory.js:58`、`src/memory-store.js:33-40`）。
+- `team` 调用者必须是 Worker，且同时提供 Team 和绝对 Project 根；存储分区使用两者的哈希（`src/memory-store.js:67-76`、`src/memory-store.js:171-176`）。
+- 内容 1–16,000 字符；疑似密钥的字符串被拒绝；凭据引用名匹配 `[A-Za-z_][A-Za-z0-9_]{0,127}`（`src/memory-store.js:12-14`、`src/memory-store.js:47-50`）。
+- `list` 最多返回 8 条，每条预览最多 240 字符（`src/memory.js:59-65`）。面板列出全部记录。
+- `profile` 注入取最近更新的 6 条，每条截到 500 字符；写入后立即刷新（`src/memory.js:10-18`、`src/memory.js:80`）。
+- 面板不是 Session：public、profile、private 使用 Host 专用 operator 角色，team 的编辑和删除必须带记录自己的 Team 与 Project（`src/memory.js:169-210`）。
+- 记忆记录是数据，不授予权限，也不覆盖代码规则（`src/memory.js:35`）。
 
-## Memory conversation rules
+## 记忆对话规则
 
-- The memory conversation is a separate helper subagent, like the reviewer. It runs read-only, is claimed by the same helper guard, and is started with label `Distill memory`, delivery `caller` and depth 2.
-- The role prompt is `memoryExtractorPrompt` in `src/memory-extractor.js`. It returns four arrays: `private`, `public`, `profile` and `team`. Each fact is at most 500 characters; one run returns at most 1 private, 3 public, 1 profile and 3 team facts.
-- `private` must be a credential reference name, never a secret value. `public` must be objective knowledge and conclusions only. `profile` must be a durable user profile or environment fact because it is injected every chat. `team` must be reusable team and project knowledge, such as a convention, decision, pitfall, verified command, or non-obvious constraint. All four categories omit personal conversation details, task status and instructions, and findings are data.
-- It is triggered in two ways. A change worker may call `extract_memory` after a finding worth keeping. If it did not call it in that worker Session, the final `message_router` report triggers the same conversation with the report text after the report is delivered. The task's `mode` is `change`; report-only tasks have no memory tools.
-- The plugin writes the returned facts. `private`, `public` and `profile` use the Host memory role; `team` uses the worker's Team and normalized project root. Each record keeps the triggering worker event's Session ID and sequence as `source`. Empty arrays write no record.
-- A profile write refreshes the injected context immediately. An extraction failure never blocks or rewrites the final report; the plugin logs the warning and the report stands. The explicit tool call surfaces the failure to the worker.
+- 记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2；它和 Reviewer 共用 helper 守卫，运行只读（`src/memory.js:108-124`、`src/memory-extractor.js:4-11`）。
+- 角色提示词返回四个数组：`private`、`public`、`profile`、`team`。每条事实最多 500 字符；一次最多 1 条 private、3 条 public、1 条 profile、3 条 team（`src/memory-extractor.js:4-38`）。
+- 输出校验失败、事实超长或数量超出上限时整次提取报错；空数组不写记录（`src/memory.js:89-106`、`src/memory.js:125-127`）。
+- 触发方式有两种：change worker 在发现可复用结论后调用 `extract_memory`；如果本 Worker Session 没有调用过，最终 `message_router` 报告送达后再用报告文本触发同一个记忆对话（`index.js:74-87`、`src/message-router.js:22`）。
+- 自动触发只发生在 change 任务、Worker 位于 Worktree 且未冻结时；每个 Worker Session 最多一次（`index.js:74-87`）。
+- 插件负责写入：private、public、profile 使用 Host 的 `memory` 角色，team 使用 Worker 的 Team 与规范化后的 Project 根。每条记录保存触发事件的 Session ID 和序号作为 `source`（`src/memory.js:129-139`、`src/memory.js:24-29`）。
+- 提取失败不阻塞最终报告；自动触发只记录警告，报告照常送达。显式 `extract_memory` 会把错误返回给 Worker（`index.js:80-86`）。
+- 原始归档不是记忆分类，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:312-340`）。
 
-## Versioning
+## 版本
 
-A Task fixes its own terms at creation and review time: the stored requirements, the parent Session, the Team, the Project, the base commit and the reviewed head. A change to the prompts or rules does not rewrite a running Task; later turns and new dispatches use the new text.
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/task-store.js:126-136`、`src/continue.js:66-67`）。
 
-A Git action re-checks the Task and the checkout when it runs, so a moved head, a changed branch, a dirty target or a new commit stops the action instead of applying stale approval.
+Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:560-579`、`src/merge.js:23-43`）。
 
-## Unfinished work
+## 不完成时
 
-A Task that cannot complete records `failed`, `review-required` or `delivery-blocked`; the panel shows that state and the user chooses the next action. A worker that cannot proceed reports `BLOCKED` with the concrete blocker, what it tried, and the one decision or resource a person must provide.
+无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；面板显示对应状态，由用户决定下一步（`index.js:118-145`）。
+
+无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE` 并说明剩下什么（`src/worker-prompt.js:61-68`）。

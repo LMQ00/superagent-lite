@@ -1,35 +1,35 @@
-# 006 Deployment
+# 006 部署
 
-Use this document to install, configure, upgrade and troubleshoot the bundle. It builds on [001 Domain model](001-domain.md) through [005 Panel](005-panel.md).
+使用这份文档安装、配置、升级和排障 Superagent 轻量版 bundle。它建立在 [001 领域模型](001-domain.md) 到 [005 界面](005-panel.md) 之上。
 
-## What runs
+## 运行什么
 
-The bundle runs inside one DeepSeek Harness Web process. It adds two presets, one worktree service, the router tools, the worker tools, the task and memory stores, the memory conversation role and the panel. It starts no separate daemon and opens no port of its own.
+Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 与 Memory 存储、记忆对话角色和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:15-31`）。
 
-| Component | Role |
+| 组件 | 作用 |
 | --- | --- |
-| DSH Web host | Runs the plugin, the Sessions and the panel |
-| `@local/superagent-lite` bundle | Adds presets, tools, routes, the task store and the memory store |
-| Worktree service | Creates and retains one Worktree per Task |
-| Memory conversation | Distills findings into the four memory categories for a change worker |
-| GitHub CLI `gh` | Optional; required for publish and for merging a GitHub Pull request |
-| GitHub repository | Optional; needed for publish, not for a local merge |
+| DSH Web Host | 运行插件、Session 和面板 |
+| `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和 Memory 存储 |
+| Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
+| 记忆对话 | 为 change worker 把结论提炼成四类记忆 |
+| GitHub CLI `gh` | 可选；发送 PR 和合并 GitHub PR 时需要 |
+| GitHub 仓库 | 可选；发送 PR 需要，本地合并不需要 |
 
-## Prerequisites
+## 前置条件
 
-| Requirement | Value |
+| 要求 | 值 |
 | --- | --- |
-| DeepSeek Harness | `0.2.2-rc.3`, the value in `engines.dsh` |
-| Node.js | 24.9.0 or newer, the DSH engine requirement |
-| Git | A version where `git merge-tree --write-tree HEAD HEAD` succeeds |
-| GitHub CLI | Required for publish and GitHub merge; `gh auth status --hostname github.com` must succeed |
-| Project checkout | A Git repository with a branch checked out |
+| DeepSeek Harness | `0.2.2-rc.3`，即 `package.json` 的 `engines.dsh` |
+| Node.js | 24.9 或更新，跟随 DSH 引擎要求 |
+| Git | 支持 `git merge-tree --write-tree HEAD HEAD` 的版本 |
+| GitHub CLI | 发送 PR 和 GitHub 合并需要；`gh auth status --hostname github.com` 必须成功 |
+| 项目 checkout | 已检出的 Git 仓库，当前有分支 |
 
-Enable this bundle with a worktrees service that no other bundle mounts.
+Bundle 自带 worktree 服务，不要与另一个挂载 worktree 服务的 bundle 同时启用。
 
-## Install
+## 安装
 
-The repository has no runtime dependencies, so `npm install` is not part of the setup.
+仓库没有运行时依赖，不需要 `npm install`。
 
 ```bash
 git clone https://github.com/LMQ00/superagent-lite.git
@@ -38,131 +38,137 @@ npm test
 git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 ```
 
-`npm test` ends with `fail 0`; `merge-tree ok` confirms the Git capability. Then install the bundle:
+`npm test` 以 `fail 0` 结束；`merge-tree ok` 确认 Git 能力。然后安装 bundle：
 
-1. Open the DSH Web plugin manager.
-2. Choose **添加插件** / **Add plugin**.
-3. Enter the absolute path of this repository and install it.
-4. Enable the bundle when the manager lists it.
-5. Start a new Session and select **Superagent 轻量版** or **Superagent 轻量版 worker**.
+1. 打开 DSH Web 的插件管理器。
+2. 点「添加插件」。
+3. 输入本仓库的绝对路径并安装。
+4. 在插件管理器里启用这个 bundle。
+5. 新建 Session，在预设里选择「Superagent 轻量版」或「Superagent 轻量版 worker」。
 
-The install succeeds when both presets appear in the preset picker and the panel **项目任务** appears in the sidebar. The bundle inserts its own worktree service at `.agents/worktrees` with name prefix `sl-` and `retainOnArchive: true`.
+安装成功的判据：预设列表出现两个预设，侧栏出现「项目任务」。Bundle 会插入自己的 worktree 服务，目录 `.agents/worktrees`，名字前缀 `sl-`，`retainOnArchive: true`（`cordis.patch.yml:1-7`）。
 
-## Configuration
+## 配置
 
-The bundle has no settings page. Its configuration is `cordis.patch.yml` and the source files.
+Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 
-| Key | Required | Meaning |
+| 键 | 必填 | 含义 |
 | --- | --- | --- |
-| `worktree.directory` | Yes, default `.agents/worktrees` | Where Worktrees are created inside each project |
-| `worktree.namePrefix` | Yes, default `sl-` | Prefix for Worktree names |
-| `worktree.retainOnArchive` | Yes, default `true` | Keep worker branches and checkouts when their Session is archived |
-| `preset.id` for the router | Yes, `superagent-lite` | The router preset ID |
-| `preset.id` for the worker | Yes, `superagent-lite-worker` | The worker preset ID |
-| `engines.dsh` | Yes, `0.2.2-rc.3` | Host version the bundle targets |
+| `worktree.directory` | 是，默认 `.agents/worktrees` | Worktree 在项目内的创建目录 |
+| `worktree.namePrefix` | 是，默认 `sl-` | Worktree 名字前缀 |
+| `worktree.retainOnArchive` | 是，默认 `true` | Session 归档后保留 worker 分支和检出 |
+| Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
+| Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
+| `engines.dsh` | 是，`0.2.2-rc.3` | Bundle 面向的 Host 版本 |
 
-External setup is separate:
+外部设置单独完成：
 
-| Setting | Required for | How |
+| 设置 | 用于 | 做法 |
 | --- | --- | --- |
-| Session file policy | Merge and publish | Set the router Session to full access; the action checks `danger-full-access` |
-| GitHub `origin` | Publish | `git remote -v` must show `origin` with matching GitHub fetch and push URLs |
-| `gh` login | Publish and GitHub merge | `gh auth status --hostname github.com` |
-| Required CI checks | Publish | Configure at least one required check on the GitHub branch |
-| GitHub merge permission | Publish | The `gh` account needs permission to merge under the repository's branch protection |
+| Session 文件策略 | 合并、发送 PR | 把 Router Session 设为 full access；动作检查 `danger-full-access` |
+| GitHub `origin` | 发送 PR、GitHub 合并 | `git remote -v` 显示 `origin`，fetch 与 push URL 指向同一个 GitHub 仓库 |
+| `gh` 登录 | 发送 PR、GitHub 合并 | `gh auth status --hostname github.com` |
+| GitHub 分支保护与必需检查 | 合并 PR | 在 GitHub 仓库设置；插件不预检检查状态，合并时由 GitHub 执行 |
+| Host 补丁 | 任务消息卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；不打补丁也能运行 |
 
-## Start, stop and status
+## 启停与状态
 
-The plugin has no standalone process and no CLI, so it has no process exit code. Start and stop it with the bundle and the DSH Web process.
+插件没有独立进程和 CLI，因此没有进程退出码。启停随 bundle 和 DSH Web 进程。
 
-| Operation | How |
+| 操作 | 做法 |
 | --- | --- |
-| Start | Enable the bundle and start DSH Web |
-| Reload | Disable and enable the bundle, or restart DSH Web |
-| Stop | Disable the bundle, or stop DSH Web |
-| Task status | Open **项目任务**; the five category groups in [005 Panel](005-panel.md), with each row's stage from [003 Lifecycle](003-lifecycle.md) |
-| Git delivery | The panel's Git area lists branches and actions only; it has no separate state. A failed action shows the host error and the Task stays `delivery-blocked` or `awaiting-merge` |
-| Memory | The panel's memory block lists private, public, profile and team records, their counts and read modes, and the current profile injection; edits and deletes apply only from the owner's explicit click |
-| Record location | `~/.dsh/superagent-lite/`, split into `tasks/` and `memory/` |
+| 启动 | 启用 bundle，启动 DSH Web |
+| 重载 | 禁用再启用 bundle，或重启 DSH Web |
+| 停止 | 禁用 bundle，或停止 DSH Web |
+| 任务状态 | 打开「项目任务」；6 个状态筛选项见 [005 界面](005-panel.md)，每行显示 [003 生命周期](003-lifecycle.md) 的具体阶段 |
+| Git 交付 | 面板只列分支和动作；失败动作显示后端错误，Task 停在 `delivery-blocked` 或 `awaiting-merge` |
+| 记忆 | 面板列出 private、public、profile、team 的记录、计数、调用方式和当前 profile 注入；编辑和删除只在 owner 点击时生效 |
+| 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/` |
+| 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
-Plugin warnings that are not tied to a Task go to the DSH host log. Dispatch and delivery errors are also stored on the Task in its `failure` field; review and explicit memory errors surface as tool errors, and a failure of the automatic final-report memory extraction is logged without replacing that report.
+面板 HTTP 端点的状态码：
 
-The panel endpoints answer with HTTP status codes:
-
-| Code | Meaning |
+| 码 | 含义 |
 | --- | --- |
-| `200` | The list, the Git action or the memory action succeeded |
-| `400` | A task ID, memory action, category, record ID, body field or JSON body was malformed |
-| `401` | The request was not authenticated |
-| `403` | The authenticated peer is not the installation owner |
-| `404` | The memory record does not exist |
-| `405` | The method is not the one the endpoint accepts |
-| `409` | The Git action was refused or failed, or the memory store rejected the action |
-| `413` | The request body exceeded 4 KB for a Git action or 32 KB for a memory action |
-| `415` | The action body was not `application/json` |
+| `200` | 列表、Git 动作或记忆动作成功 |
+| `400` | 任务 ID、记忆动作、分类、记录 ID、字段或 JSON 请求体格式不对 |
+| `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
+| `404` | 记忆记录不存在，或 Git 详情找不到 Task |
+| `405` | 方法不被该端点接受 |
+| `409` | Git 动作被拒绝或失败，或记忆存储拒绝动作 |
+| `413` | Git 动作请求体超过 4 KB，或记忆动作超过 32 KB |
+| `415` | 动作请求体不是 `application/json` |
 
-## Set up
+## 设置
 
-1. Confirm `node --version` meets the DSH engine requirement and `git merge-tree --write-tree HEAD HEAD` succeeds.
-2. Install and enable the bundle, then start a new Session with **Superagent 轻量版**.
-3. Open the target repository as the working directory and confirm it has a branch checked out and a clean `git status`.
-4. For GitHub publish, set `origin`, run `gh auth status --hostname github.com`, and configure at least one required CI check.
-5. Set the router Session to full access if you intend to merge or publish.
-6. Ask a read-only question first: the router should answer without starting a worker.
-7. Ask for one small file change: the panel should show a Task that reaches `awaiting-merge` with a reviewed branch.
-8. Open the memory block: it should list saved records when any exist, and an edit or delete should apply on the owner's click.
+1. 确认 `node --version` 满足 DSH 引擎要求，且 `git merge-tree --write-tree HEAD HEAD` 成功。
+2. 安装并启用 bundle，新建「Superagent 轻量版」Session。
+3. 打开目标仓库为工作目录，确认已检出分支且 `git status` 干净。
+4. 需要 GitHub 交付时，配置 `origin`，运行 `gh auth status --hostname github.com`。
+5. 需要合并或发送 PR 时，把 Router Session 设为 full access。
+6. 先问一个只读问题：Router 应直接回答，不启动 Worker。
+7. 再要求一个小的文件改动：面板应出现 Task，并最终到达 `awaiting-merge`，分支处于 `review-required` 后通过审查。
+8. 打开记忆区：有记录时列出，owner 点击编辑或删除后立即生效。
 
-## Upgrade
+## 升级
 
-1. Back up `~/.dsh/superagent-lite/`.
-2. Let running workers end.
-3. Update the checkout with `git pull --ff-only`.
-4. Run `npm test` and confirm `fail 0`.
-5. Reload or restart DSH Web.
-6. Open **项目任务** and confirm the existing tasks and branches are listed.
+1. 备份 `~/.dsh/superagent-lite/`。
+2. 等运行中的 Worker 结束。
+3. 在仓库执行 `git pull --ff-only`。
+4. 运行 `npm test`，确认 `fail 0`。
+5. 重载或重启 DSH Web。
+6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-The update does not rewrite task or Memory records; they stay in `~/.dsh/superagent-lite/`. A worker that was running during the restart can show `未确认` / `Not confirmed`; its Task can be continued when the worker Session is available, otherwise it needs a new dispatch.
+升级不改写 Task 或 Memory 记录，它们留在 `~/.dsh/superagent-lite/`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:18-26`）。
 
-To roll back, stop the bundle, check out the previous commit of this repository, restore the backup if any record was damaged, and reload DSH Web.
+回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
-## Troubleshooting
+## 排障
 
-| Symptom | Cause and fix |
+| 现象 | 原因与修法 |
 | --- | --- |
-| `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | Commit or stash the project checkout. The only allowed dirty entry is `?? .agents/worktrees/.gitignore` |
-| `Create the assigned project worktree before using any other tool.` | The worker tried another tool before `create_worktree`; let it create or enter the Worktree first |
-| `This worker is frozen.` | The worker's subagent has ended. Use `continue_worker` on the Task or start a new dispatch |
-| `This worker has no matching project task` | The Session is not the worker for that Task; start a new dispatch instead of reusing the Session |
-| `Dispatch <id> is already being established; inspect the task board before retrying` | The Task is `starting` or `failed` for the same call. Check **项目任务**, then dispatch with a new input |
-| `The router Session is not running` | Keep the router Session open while merging or publishing |
-| `Git delivery is unavailable under this Session file policy` | Set the router Session to full access |
-| `GitHub projects must merge through a pull request` | This refusal comes from `/merge-worker`, which is the local path only. Use the panel's merge action for a GitHub project |
-| `This project has no GitHub origin` | Add a GitHub `origin`, or use the local merge path |
-| `Configure the GitHub repository as origin before automated delivery` | A GitHub remote exists but is not named `origin`; rename it |
-| `Origin is not a single matching GitHub fetch/push repository` | Point the fetch and push URLs of `origin` at the same GitHub repository |
-| `The review has not approved this branch` | Request `review_worker_commit` and fix the findings before delivery |
-| `The worker branch no longer matches its reviewed commit` | New commits landed after the review; review the new head |
-| `Merge would conflict; the target was not changed` | Rebase or merge the base branch into the worker branch, then review again. The plugin did not change the target |
-| `The target checkout has uncommitted changes` | Clean the target checkout before merging |
-| `The target checkout no longer has its original branch checked out` | Check out the Task's base branch again |
-| `The target already has an in-progress merge` | Finish or abort the existing merge before retrying |
-| `All required CI checks must pass; empty, skipped or failing checks do not qualify` | Configure at least one required check and make it pass; no checks is not a pass |
-| `This branch already has a pull request` | A Pull request already exists for the Task; handle it on GitHub instead of publishing again |
-| `Only settled, unpublished worktrees can be resumed` | The Task has no resumable Worktree or is not in a resumable state; dispatch new work |
-| `This task does not belong to the current router Session.` | Run `/merge-worker` from the router Session that dispatched the Task |
-| `Local merge is unavailable under this Session file policy.` | Set the router Session to full access |
-| `No reviewed local commit is ready for merge` | The Task is not `awaiting-merge` with an approved review; review it first |
-| `Usage: /merge-worker <task ID>` | Pass one 16-hex task ID |
-| `This branch is not waiting for merge` | Use the local merge only on a Task in `awaiting-merge` |
-| `Report-only tasks must leave the project checkout unchanged` | Revert the checkout change, then call `report_task` again |
-| `Only the active worker for this task can message its router` | `message_router` is a worker tool; the router cannot call it |
-| `Memory is not available to this Session` | The Session is frozen or outside its Worktree; memory tools need an active worker or the router |
-| `A memory update or delete action, category and record id are required` | The panel request is missing one of them; reload the panel and retry |
-| `Team memory requires teamId and projectRoot` | The team record lost its scope pair; reload the panel so the row carries its Team and Project |
-| `Memory record not found` | The record was deleted in another tab or the ID is stale; refresh the panel |
-| `Memory content must contain 1–16000 characters` | Keep the fact within the limit; an empty or over-long edit is refused |
-| `Memory extraction did not finish` | Rerun `extract_memory`; the memory conversation must return the four category arrays |
-| `Memory fact exceeded 500 characters` | Split or shorten the fact; one extracted fact stays at 500 characters or less |
-| `Memory extraction returned too many private facts` | The private output is capped at one credential reference per run |
-| `The reviewer did not return a usable verdict` | Run `review_worker_commit` again; the review subagent must return `approved` and `findings` |
-| `... output exceeded N bytes` | A `git` or `gh` command produced more output than the plugin's cap; narrow the command or the range |
+| `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash 项目 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore` |
+| `Create the assigned project worktree before using any other tool.` | Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
+| `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
+| `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
+| `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发 |
+| `The router Session is not running` | 本地合并需要 Router Session 保持运行 |
+| `Git delivery is unavailable under the current Session file policy` | 把 Router Session 设为 full access |
+| `GitHub projects must merge through a pull request` | `/merge-worker` 只走本地路径；GitHub 项目用面板合并 |
+| `This project has no GitHub origin` | 添加 GitHub `origin`，或改用本地合并路径 |
+| `Configure the GitHub repository as origin before automated delivery` | 有 GitHub remote 但不叫 `origin`；改名 |
+| `Origin is not a single matching GitHub fetch/push repository` | 把 `origin` 的 fetch 和 push URL 指向同一个 GitHub 仓库 |
+| `The review has not approved this branch` | 先调用 `review_worker_commit` 并修完问题 |
+| `The worker branch no longer matches its reviewed commit` | 审查后又有提交；重新审查新 HEAD |
+| `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding` | Reviewer 没有读改动；重新运行审查，让它读 `base..head` 或改动文件 |
+| `Merge would conflict; the target was not changed` | 把基础分支合并进 worker 分支并重新审查；插件没有改目标 |
+| `The target checkout has uncommitted changes` | 合并前清理目标 checkout |
+| `The target checkout no longer has its original branch checked out` | 重新检出 Task 的基础分支 |
+| `The target already has an in-progress merge` | 完成或中止已有 merge 再重试 |
+| `Only settled, unpublished worktrees can be resumed` | Task 没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；重新派发 |
+| `This task does not belong to the current router Session.` | 在派发该 Task 的 Router Session 里运行 `/merge-worker` |
+| `Local merge is unavailable under this Session file policy.` | 把 Router Session 设为 full access |
+| `No reviewed local commit is ready for merge` | Task 不在 `awaiting-merge` 或审查未通过；先完成审查 |
+| `Usage: /merge-worker <task ID>` | 传一个 16 位十六进制 Task ID |
+| `This branch is not waiting for merge` | 本地合并只用于 `awaiting-merge` 的 Task |
+| `Report-only tasks must leave the project checkout unchanged` | 还原 checkout 改动后再调用 `report_task` |
+| `Report-only task ended without report_task` | 回合结束前必须调用 `report_task`；重新派发报告任务 |
+| `Only the active worker for this task can message its router` | `message_router` 是 Worker 工具，Router 不能调用 |
+| `Memory is not available to this Session` | 记忆工具需要活跃 Worker 在 Worktree 内，或 Router Session |
+| `A memory update or delete action, category and record id are required` | 面板请求缺少字段；刷新面板后重试 |
+| `Team memory requires teamId and projectRoot` | team 记录缺少所属 Team 与 Project；刷新面板让行带上两者 |
+| `Memory record not found` | 记录已在别处删除或 ID 过期；刷新面板 |
+| `Memory content must contain 1–16000 characters` | 把内容控制在 1–16,000 字符 |
+| `Memory extraction did not finish` | 重新运行 `extract_memory`；记忆对话必须返回四个分类数组 |
+| `Memory fact exceeded 500 characters` | 拆分或缩短事实，单条不超过 500 字符 |
+| `Memory extraction returned too many private facts` | 每次私有输出最多 1 条凭据引用 |
+| `The reviewer did not return a usable verdict` | 重新运行 `review_worker_commit`；Reviewer 必须返回 `approved` 和 `findings` |
+| `The pull request was closed; reopen it or dispatch a new task` | 在 GitHub 重新打开 PR，或派发新任务 |
+| `A pull request already exists for this branch` | 已有打开的精确 PR；直接在 GitHub 或面板处理 |
+| `The pull request has merge conflicts; resolve them before merging` | 在 GitHub 解决冲突后再合并 |
+| `This branch is already merged` | 分支已合并；不需要再执行合并或发送 |
+| `Pull request <number> merged, but the project checkout could not be fast-forwarded: ...` | PR 已合并但 checkout 快进失败；在项目 checkout 手动 `git pull --ff-only` |
+| `The pull request could not be opened for the reviewed commit` | 检查 `gh` 登录、分支权限和 PR 状态后重试 |
+| `GitHub did not report the pull request as merged` | 在 GitHub 确认 PR 状态和 `gh` 权限 |
+| `Worktree created at ..., but task metadata could not be saved` | 检查 `~/.dsh/superagent-lite/tasks/` 的写入权限和磁盘空间 |
+| `... output exceeded N bytes` | `git` 或 `gh` 输出超过插件上限；缩小命令范围或输出 |
