@@ -8,7 +8,7 @@
 
 | 阶段 | 成立条件 | 面板文字 |
 | --- | --- | --- |
-| `merged` | 存储状态是 `merged`，或 reviewed HEAD 的精确 PR 是 `MERGED` | 已合并 |
+| `merged` | 存储状态是 `merged`，或 reviewed HEAD 的精确 PR 是 `MERGED`，或 worker 分支 HEAD 已包含在基础分支中 | 已合并 |
 | `unconfirmed` | 存储状态是 `starting`、`running` 或 `resuming`，但没有活着的 Worker agent | 未确认 |
 | `delivery-blocked` | 存储状态是 `delivery-blocked` | 交付受阻 |
 | `merging` | 存储状态是 `merging` | 正在合并 |
@@ -66,7 +66,7 @@ Reviewer 返回 `approved` 和 `findings`。工具确认 review 完成、返回�
 | 提取上限 | 1 条 private 凭据引用、3 条 public 结论、1 条 profile 事实、3 条 team 事实；每条最多 500 字符 |
 | 不提取 | 密钥、个人数据、对话细节、任务状态和指令 |
 | 写入 | private、public、profile 使用 Host `memory` 角色；team 使用 Task 的 Team 与规范化 Project 根；每条记录保存触发事件的 Session ID 和序号 |
-| 空结果 | 空数组不写记录；profile 写入后刷新注入上下文；提取失败只记录警告 |
+| 空结果 | 空数组不写记录；profile 写入后刷新注入上下文；自动触发失败只记录警告，显式 `extract_memory` 把错误返回 Worker |
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js:16-25`、`index.js:78-87`）。
 
@@ -104,7 +104,7 @@ change 任务的 Worker 回合按以下顺序落定（`index.js:114-146`）：
 | Review 通过且 HEAD 仍匹配 | `awaiting-merge` |
 | 结束后的 HEAD 检查抛错 | `delivery-blocked` |
 
-`awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。Task 只有在用户明确授权后经面板合并或 `/merge-worker` 合并，或精确 PR 已合并时，才到 `merged`（`src/merge.js:23-55`、`src/git-actions.js:464-517`）。
+`awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。Task 在用户明确授权后经面板合并或 `/merge-worker` 合并、精确 PR 已合并，或面板读取时发现 worker 分支 HEAD 已包含在基础分支中时，才到 `merged`（`src/merge.js:23-55`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`、`src/git-actions.js:464-517`）。
 
 report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:123-125`）。
 

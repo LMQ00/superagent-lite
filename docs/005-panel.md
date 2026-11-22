@@ -78,7 +78,7 @@ Git 交付没有第二套状态系统：没有打开/已合并/已关闭页签�
 
 | 条件 | 面板表现 |
 | --- | --- |
-| 已合并 | 两个按钮都不可用；原因 `This branch is already merged` |
+| 已合并 | 不显示操作按钮；服务端把合并和发送都置为不可用，原因 `This branch is already merged` |
 | 精确 PR 已关闭 | 两个按钮都不可用；原因 `The pull request was closed; reopen it or dispatch a new task` |
 | PR 冲突 | 合并不可用；原因 `The pull request has merge conflicts; resolve them before merging` |
 | 同一分支已有打开的精确 PR | 发送 PR 不可用；原因 `A pull request already exists for this branch` |
@@ -92,7 +92,7 @@ Git 交付没有第二套状态系统：没有打开/已合并/已关闭页签�
 - 合并 GitHub PR 后，插件用 `git pull --ff-only origin <基础分支>` 快进项目 checkout；快进失败时动作报错，PR 已经合并的事实保留（`src/git-actions.js:504-509`）。
 - 必需检查和分支保护在 GitHub 合并 PR 时执行；插件只在面板展示检查汇总，不预检检查状态（`src/git-actions.js:18-31`）。
 
-读取面板会回写 Task 记录：`GET /superagent-lite/tasks` 会在同步 PR 或识别合并时更新 `merged`、`awaiting-ci`、`delivery-blocked` 或 `awaiting-merge`，但不修改项目文件、不推送、不合并（`src/git-actions.js:239-327`、`src/board.js:16-26`）。记忆的 GET 不写任何记录。
+读取面板会回写 Task 记录：`GET /superagent-lite/tasks` 会在同步 PR 或识别合并时更新 `merged`、`awaiting-ci`、`delivery-blocked` 或 `awaiting-merge`；其中 worker 分支 HEAD 已包含在基础分支时也会标为 `merged`，不要求 PR 精确匹配。面板读取不修改项目文件、不推送、不合并（`src/git-actions.js:151-160`、`src/git-actions.js:239-327`、`src/board.js:16-26`）。记忆的 GET 不写任何记录。
 
 ### 记忆行
 
