@@ -1,118 +1,117 @@
-# 005 Panel
+# 005 界面
 
-Open **项目任务** in the DeepSeek Harness Web sidebar to supervise the router, its workers and their branches, and to read or edit saved memory. Tasks come first, and the memory block comes last. The memory block follows [003 memory system](diagrams/003-memory-system.md). The panel builds on [001 Domain model](001-domain.md) through [004 Configuration and prompts](004-config-prompts.md).
+在 DeepSeek Harness Web 的侧栏打开「项目任务」，可以监督 Router、Worker 和分支，也可以查看、编辑记忆。任务列表在前，记忆在最下。记忆区沿用 [003 记忆系统](diagrams/003-memory-system.md)。它建立在 [001 领域模型](001-domain.md) 到 [004 配置与提示词](004-config-prompts.md) 之上。
 
-## Four questions
+## 三个问题
 
-Opening the panel answers four questions, in this order:
+打开面板依次回答三个问题：
 
-1. Which tasks exist, and in which of the six statuses is each?
-2. Which task needs a person now — a review, a merge or a Pull request?
-3. Which reviewed branch can be merged or published, and what blocks the ones that cannot?
-4. Which memory records exist, and which can the owner edit or delete?
+1. 现在有哪些 Task，各属于六个面板状态中的哪一个？
+2. 哪个 Task 正在等人操作 —— 审查、合并或发送 PR，卡在哪里？
+3. 哪条 worker 分支可以合并或发送 PR，哪些记忆记录可以查看、编辑或删除？
 
-## One status per task
+## 一套状态
 
-The task list is the only place that classifies a task. Its six statuses are **未合并 / Unmerged**, **运行中 / In progress**, **未审查 / Not reviewed**, **已完成 / Completed**, **失败 / Failed** and **仅回答 / Answer only**. They are mutually exclusive, cover every task, and appear in that order as filters and groups.
+任务列表是唯一的状态分类来源。六个面板状态是**未合并**、**运行中**、**未审查**、**已完成**、**失败**、**仅回答**。它们互斥、覆盖全部 Task，并按这个顺序作为筛选项和分组标题出现。面板状态不是 Task 存储值，而是由 [003 生命周期](003-lifecycle.md) 从存储状态、worker 分支、审查记录和 Pull request 事实推导出来的（`src/status.js:6-34`）。
 
-| Status | Shown for | Row actions |
+| 状态 | 出现的条件 | 行内动作 |
 | --- | --- | --- |
-| 未合并 / Unmerged | The current worker head is reviewed and not merged | 合并 / Merge, 提交 PR / Send pull request |
-| 运行中 / In progress | The worker or a delivery action is in flight; an unrecovered record is marked 未确认 / Not confirmed | Session links only |
-| 未审查 / Not reviewed | The worker committed a head without an approved review | 审查 / Review |
-| 已完成 / Completed | The reviewed head is merged, or the worker finished without commits to deliver | 删除分支 / Delete branch when the merged worker branch still exists |
-| 失败 / Failed | The worker turn, a delivery action or the Task failed | Session links; the stored failure text is shown |
-| 仅回答 / Answer only | A report-only Task delivered its report | Session links |
+| 未合并 | 当前 worker HEAD 已审查通过且尚未合并 | 合并、提交 PR |
+| 运行中 | Worker 或交付动作正在进行；记录失联时带「未确认」标签 | 只显示会话链接 |
+| 未审查 | Worker 提交了 HEAD，但没有通过的审查 | 审查 |
+| 已完成 | 已审查的 HEAD 已合并，或 Worker 结束时没有可交付的提交 | 合并后的 worker 分支还在时显示「删除分支」 |
+| 失败 | Worker 回合、交付动作或 Task 失败 | 会话链接；显示保存的失败原因 |
+| 仅回答 | report 任务交回了报告 | 会话链接 |
 
-[003 Lifecycle](003-lifecycle.md) defines the derivation from the stored record, the worker branch, the review record and the Pull request. The panel heals a stale `review-required`, `delivery-blocked` or `failed` Task to `awaiting-merge` when its current head is reviewed, and adopts an approved review recorded for the same commit by another Task of the same Project.
+面板读取 Task 时会修正过期的 `review-required`、`delivery-blocked` 或 `failed`：当前 HEAD 已审查时改为 `awaiting-merge`；也会采纳同一 Project 的另一个 Task 为同一 commit 记录的通关审查。
 
-## Blocks
+## 区块
 
-The panel has no tabs and no separate Git section. Blocks appear in this order.
+面板没有页签，也没有单独的 Git 交付区。区块按以下顺序出现。
 
-| Block | Shows |
+| 区块 | 显示什么 |
 | --- | --- |
-| Header | The panel title, a one-line explanation of status ownership, and a refresh button |
-| Filters | Status chips for All plus the six statuses with counts, built from the loaded tasks; team and project selects narrow the same set |
-| Task groups | One heading per non-empty status with its count, in the order above |
-| Memory | A usage line for the four categories with counts and read mode, the injected profile count, category chips, and a search field; each record shows its category, id, update time, content or credential reference, and for team records its Team and Project; every record has edit and delete actions |
-| Alerts | Load failure, session-open failure, the error, notice or review verdict returned by an action, and the memory load or edit error |
-| Dialog | The merge, Pull request or branch-delete window, one at a time |
+| 头部 | 标题、一行状态归属说明、刷新按钮 |
+| 筛选 | 「全部」加六个状态筛选项和计数；团队、项目下拉框缩小同一批任务 |
+| 任务分组 | 每个非空状态一个标题和计数，顺序同上；组内是 Task 行 |
+| 记忆 | 四类用量与调用方式、当前 profile 注入、分类筛选、搜索框、记录行及编辑/删除 |
+| 提示 | 加载失败、打开会话失败、动作返回的错误/完成/审查结论、记忆加载或编辑错误 |
+| 弹窗 | 合并、提交 PR 或删除分支的窗口，一次只开一个 |
 
-Loading, an empty list and an empty filter result have their own status text. The refresh button aborts an in-flight load, clears old alerts and loads again.
+加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空旧提示并重新加载。面板不会自动刷新（`client.js:273-369`、`client.js:717-781`）。
 
-## Reading one record
+## 单条记录怎么读
 
-| Part | Behavior |
+| 部分 | 行为 |
 | --- | --- |
-| Status | One of the six statuses, with a status dot or spinner. `未确认` / `Not confirmed` is a warning tag on a running Task whose worker Session is gone, not a seventh status |
-| Title | The title, or the ID when no title exists |
-| Team and project | The Team name and the project root |
-| Update time | The stored `updatedAt`, or `createdAt` when that is absent, in local time |
-| Failure | The stored failure text on a failed Task |
-| ID | The 16-hex task ID |
-| Router session | Opens the router Session by ID |
-| Worker session | Opens the worker Session with its parent and child IDs |
-| Pull request | Opens `https://github.com/<owner>/<repo>/pull/<number>` in a new tab |
+| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，不是第七个状态（`client.js:444-450`） |
+| 标题 | 标题；没有标题时显示 Task ID |
+| 团队与项目 | Team 名和项目根 |
+| 更新时间 | 存储的 `updatedAt`，缺失时用 `createdAt`，按本地时间 |
+| 失败原因 | 失败 Task 上显示保存的失败文本 |
+| ID | 16 位 Task ID |
+| Router 会话 | 按 Session ID 打开 |
+| Worker 会话 | 用父、子 Session ID 打开（`client.js:457-472`、`client.js:551-553`） |
+| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:204-213`） |
 
-A session button that cannot open shows the open-failed alert. A task without a worker Session shows no worker button. When no session opener is available, the label is shown as text instead of a button.
+会话按钮打不开时显示打开失败提示。没有 Worker Session 的 Task 不显示 Worker 按钮；面板没有会话打开能力时，标签显示为文本。
 
-## Row actions
+## 行内动作
 
-Buttons are disabled when their precondition is missing and carry the reason in the `title` tooltip. While an action runs, the row shows `处理中…` / `Working…` and its buttons stay disabled. A success closes any dialog, reloads the list and shows the host's message; a failure shows the host's error text.
+按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。成功时关闭弹窗、重新加载列表并显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:530-547`、`client.js:548-592`）。
 
-### 合并 / Merge
+### 合并
 
-Opens a dialog that lists the local branches of the project checkout, excluding the worker branch, and preselects the Task's base branch. Confirming sends the chosen target. The merge is a local `git merge --no-ff` of the reviewed head and needs no `gh` account. The checkout returns to its original branch afterwards.
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:502-529`、`src/merge.js:30-103`）。
 
-The button needs an approved review for the current head, no merge yet, and a clean project checkout on a branch. A conflicting target, a dirty checkout or a moved head is refused with its reason.
+按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏或 HEAD 移动都会带原因拒绝（`src/git-actions.js:320-328`）。
 
-### 提交 PR / Send pull request
+### 提交 PR
 
-Opens a dialog that first checks the GitHub account. Without a logged-in `gh` it shows `需要 gh 账号` / `A GitHub account is required` and the `gh` error, and cannot submit. With an account it lists the remotes of the checkout and the GitHub repository each one names; the user chooses the repository. Confirming pushes the reviewed head to that remote and opens or adopts the Pull request.
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:502-547`、`src/git-actions.js:439-480`）。
 
-The button is disabled when the current head is not reviewed, the project has no GitHub remote, or the Task is already merged or its Pull request is closed. A Pull request that already exists for the exact head is shown on the row and adopted instead of duplicated.
+当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
-### 审查 / Review
+### 审查
 
-Starts one independent review of the committed head from the corresponding worker Session and records its verdict. The reviewer fills the `submit_review` content; `通过` approves, any other content is recorded as findings. The button needs an unreviewed head, commits after the base commit, and a live worker Session; without that Session it is disabled with the reason.
+从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:488-501`、`src/git-actions.js:398-419`）。
 
-### 删除分支 / Delete branch
+### 删除分支
 
-Appears on a completed Task whose worker branch still exists. It opens a confirmation dialog, removes the worker Worktree when it is registered and clean, then deletes the branch. The button exists only on a `merged` record, including a merged Pull request whose commit is not an ancestor of the local base branch. After deletion the Task stays completed and the button disappears.
+只在已完成的 Task 且 worker 分支仍存在时出现。打开确认弹窗；若 Worktree 已登记且干净，先移除 Worktree，再删除分支。已合并的 PR 即使其 commit 不是本地 base 分支的祖先也算已合并。删除后 Task 仍是已完成，按钮消失（`src/merge.js:107-136`）。
 
-### Memory row
+### 记忆行
 
-The memory block appears after the task list and loads from `GET /superagent-lite/memory`. It is independent of the task team and project filters.
+记忆区在任务列表之后，从 `GET /superagent-lite/memory` 独立加载，不受任务团队/项目筛选影响（`client.js:299-325`）。
 
-| Part | Behavior |
+| 部分 | 行为 |
 | --- | --- |
-| Usage line | **私有**: on demand, keep minimal; **公共知识库**: on demand, conclusions only; **用户画像与环境**: injected into every router and worker chat; **团队知识库**: readable by same-team workers only. Each shows its record count |
-| Profile injection | `GET /superagent-lite/memory` returns the profile injection metadata: the injected record IDs, the limit 6 and the 500-character cut. The panel shows `每轮注入 N/6` plus the newest-facts and 500-character note |
-| Category chips | All plus **私有 / Private**, **公共 / Public**, **用户画像与环境 / Profile**, **团队 / Team**, each with its count; one chip narrows the list |
-| Search | Filters the visible records by content, credential reference, id, Team, Project or category label |
-| Injection tag | A profile record currently in the injected set carries **当前注入 / Injected now** |
-| Content | The saved fact. A private record shows `凭据引用 / Credential reference: <name>` instead of content |
-| Team and project | Shown only for team records; the same pair scopes the edit and delete request |
-| ID and time | The record UUID and its `updatedAt` |
-| Edit | Replaces the row with a textarea and **保存 / Save** and **取消 / Cancel**. Public, profile and team records edit the content; private records edit the credential reference name. The save posts `update` with the category, id, content or credential reference, and the team pair for team memory |
-| Delete | The first click shows **确认删除 / Confirm delete** and **取消 / Cancel**; confirming posts `delete`. A failed request leaves the row in place and shows the host error |
-| Limits | Content is 1–16,000 characters; a private credential reference is 1–128 characters and follows the reference-name shape |
+| 用量行 | **私有**：按需调用，保持极少；**公共**：按需调用，只记结论；**用户画像与环境**：每轮注入 Router 和 Worker；**团队**：仅同团队 Worker 可读。每类显示记录数（`client.js:749-752`） |
+| profile 注入 | 接口返回当前注入的记录 ID、上限 6 和每条 500 字符；面板显示 `每轮注入 N/6 条最新记录，每条最多 500 字符`（`client.js:753-754`） |
+| 分类筛选 | 全部加私有、公共、用户画像与环境、团队，各带计数（`client.js:761-771`） |
+| 搜索 | 按内容、凭据引用、ID、Team、Project 或分类标签过滤（`client.js:348-354`） |
+| 注入标记 | 当前在注入集合里的 profile 记录显示「当前注入」 |
+| 内容 | 保存的事实；private 显示「凭据引用: <name>」而不是内容 |
+| 团队与项目 | 只在 team 记录上显示；编辑和删除请求也带这对值 |
+| ID 与时间 | 记录 UUID 和 `updatedAt` |
+| 编辑 | 行内换成 textarea 和保存/取消；public、profile、team 改内容，private 改凭据引用名；team 请求带 Team 与 Project（`client.js:375-443`） |
+| 删除 | 第一次点击显示「确认删除」和「取消」；确认后 POST `delete`。失败时保留行并显示后端错误 |
+| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:654-702`、`src/memory-store.js:12-13`） |
 
-The block shows its own loading, empty and no-match text. A successful edit or delete shows a short notice and updates the row without reloading the task list. The panel never edits memory on load; only the owner's edit or delete click writes.
+记忆区有自己的加载、空列表和无匹配文字。成功的编辑或删除显示短提示并更新当前行，不重新加载任务列表。面板只在 owner 点击编辑或删除时写记忆。
 
-## Settings
+## 设置分组
 
-The panel has no settings group. The bundle composition and prompt text live in `cordis.patch.yml` and the source files named in [004 Configuration and prompts](004-config-prompts.md).
+面板没有设置分组。bundle 组成和提示词文字在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里。
 
-## Principles
+## 设计原则
 
-1. **One status system.** The six task statuses own classification; no second Git tab or state list repeats them. Git actions belong to the row and its dialog.
-2. **Answer the four questions or leave it out.** Every block maps to one of them; a number or row that changes no decision is removed.
-3. **Supervision, not silent delivery.** Loading uses one GET per refresh and may heal a stale task status or adopt a matching review record. It never touches project files; merge, publish and branch-delete writes happen only in the actions the user explicitly confirms, and memory edits only on the owner's click.
-4. **One action per row, with its reason.** A disabled button states what is missing; the user does not have to open a document to learn why.
-5. **Honest state.** A missing worker Session shows `未确认`; a merged branch shows 已完成; a reviewed branch shows 未合并; a missing review shows 未审查.
-6. **Link, do not duplicate.** Conversations live in their Sessions and reviews live in GitHub, so the panel links to them instead of copying their content.
-7. **Safe destinations.** Only same-origin panel requests and GitHub Pull request URLs are followed; other schemes are not rendered.
-8. **Explicit refresh.** The panel loads on open and on refresh, with no polling and no hidden background fetch.
-9. **Owner only.** A request that is not from the installation owner gets no task data.
+1. **一套状态系统。** 六个任务状态负责分类；没有第二个 Git 页签或状态列表重复它们。Git 动作属于任务行及其弹窗（`src/status.js:6`）。
+2. **只回答三个问题。** 每个区块对应一个问题；不改变决定的数量或行去掉。
+3. **监督而不是静默交付。** 每次刷新只发一个 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR 和删除分支只在用户明确确认的动作里写，记忆编辑只在 owner 点击时写（`src/board.js:16-31`、`src/git-actions.js:283-375`）。
+4. **一行一个动作并给出原因。** 按钮禁用时说明缺什么，用户不必翻文档才知道为什么。
+5. **诚实状态。** Worker Session 不在时显示「未确认」；已合并显示「已完成」；已审查未合并显示「未合并」；缺审查显示「未审查」。
+6. **链接而不复制。** 会话在对应 Session 里，审查在 GitHub 上，面板只给链接。
+7. **安全目标。** 只跟随同源面板请求和 GitHub PR URL，其他协议不渲染（`client.js:204-213`）。
+8. **显式刷新。** 面板在打开和点击刷新时加载，不轮询、不后台拉取。
+9. **仅 owner。** 不是安装 owner 的请求拿不到任务数据（`src/board.js:7-11`、`src/memory-panel.js:43-46`）。

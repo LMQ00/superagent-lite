@@ -8,4 +8,4 @@ Raw reference diagrams supplied by the user, kept in order. The numbered documen
 | 002 | [Preset flow](002-preset-flow.md) | The DSH preset: router decides question or task, worker runs in a new conversation |
 | 003 | [Memory system](003-memory-system.md) | Full worker history as the raw reference; memory extraction into private, public, profile and team categories |
 
-The implementation differences from these diagrams are listed in [001 Domain model: Diagram alignment](../001-domain.md#diagram-alignment).
+The implementation differences from these diagrams are listed in [001 Domain model: Diagram alignment](../001-domain.md#图表对齐).

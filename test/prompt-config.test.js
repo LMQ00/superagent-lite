@@ -29,8 +29,8 @@ test('merge authorization policy is consistent across the router prompt, worker 
     assert.doesNotMatch(text, /Never merge|merges nothing|router 与 worker 都不推送、不合并/, name)
   }
   assert.match(texts.config, /Merge only after the user explicitly authorizes it/)
-  assert.match(texts.rules, /A merge runs only after the user explicitly authorizes it/)
-  assert.match(texts.prompts, /The router merges only after the user explicitly authorizes it/)
+  assert.match(texts.rules, /合并只在用户明确授权后执行/)
+  assert.match(texts.prompts, /router 只在用户明确授权后合并/)
   assert.match(texts.worker, /Merge only after the user explicitly authorizes it/)
   assert.match(texts.readme, /未授权时 router 和 worker 都不会合并/)
 })

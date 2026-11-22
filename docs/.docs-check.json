@@ -1,8 +1,9 @@
 {
   "docsDir": "docs",
   "entryFiles": ["README.md"],
+  "contiguous": true,
   "indexes": [
-    { "doc": "docs/007-architecture.md", "heading": "Modules", "roots": ["src"] },
-    { "doc": "docs/007-architecture.md", "heading": "Tests", "roots": ["test"], "match": "\\.test\\.js$" }
+    { "doc": "docs/007-architecture.md", "heading": "模块", "roots": ["src"] },
+    { "doc": "docs/007-architecture.md", "heading": "测试", "roots": ["test"], "match": "\\.test\\.js$" }
   ]
 }
