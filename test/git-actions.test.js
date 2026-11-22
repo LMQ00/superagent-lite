@@ -171,6 +171,15 @@ test('a dirty project checkout disables merge and explains why', async () => {
   assert.equal(clean.git.canMerge, true)
 })
 
+test('a detached project checkout disables merge with a clear reason', async () => {
+  const facts = await setupRepo()
+  await git(['checkout', '--detach'], facts.repo)
+  const record = recordFor(facts)
+  const view = (await managerFor(memoryStore([record])).list([record], signal)).get(taskId)
+  assert.equal(view.git.canMerge, false)
+  assert.equal(view.git.mergeReason, 'The project checkout is not on a branch')
+})
+
 test('a branch whose head moved after approval is unreviewed and not mergeable', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { review: { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true } })

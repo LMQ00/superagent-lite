@@ -63,7 +63,7 @@ Buttons are disabled when their precondition is missing and carry the reason in 
 
 Opens a dialog that lists the local branches of the project checkout, excluding the worker branch, and preselects the Task's base branch. Confirming sends the chosen target. The merge is a local `git merge --no-ff` of the reviewed head and needs no `gh` account. The checkout returns to its original branch afterwards.
 
-The button needs an approved review for the current head, no merge yet and a clean project checkout. A conflicting target, a dirty checkout or a moved head is refused with its reason.
+The button needs an approved review for the current head, no merge yet, and a clean project checkout on a branch. A conflicting target, a dirty checkout or a moved head is refused with its reason.
 
 ### 提交 PR / Send pull request
 

@@ -317,13 +317,15 @@ export function createGitManager(ctx, dependencies = {}) {
     }
     const worker = ctx.agents?.get?.(task.workerSessionId)
     const githubRemotes = project.remotes.filter(remote => remote.repository)
-    const canMerge = reviewed && !merged && !closed && hasCommits && project.checkout?.clean === true
+    const canMerge = reviewed && !merged && !closed && hasCommits &&
+      project.checkout?.clean === true && typeof project.checkout?.branch === 'string'
     const mergeReason = merged ? 'This branch is already merged'
       : closed ? 'The pull request was closed; reopen it or dispatch a new task'
         : !hasCommits ? 'This worker branch has no commits'
           : !reviewed ? 'The reviewed commit is not the current worker head'
             : !project.checkout ? 'The project checkout could not be read'
-              : !project.checkout.clean ? 'The project checkout has uncommitted changes' : undefined
+              : typeof project.checkout.branch !== 'string' ? 'The project checkout is not on a branch'
+                : !project.checkout.clean ? 'The project checkout has uncommitted changes' : undefined
     const canPublish = reviewed && !merged && !closed && hasCommits && githubRemotes.length > 0
     const publishReason = merged ? 'This branch is already merged'
       : closed ? 'The pull request was closed; reopen it or dispatch a new task'
