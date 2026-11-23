@@ -16,11 +16,13 @@ window.__ModuleLoader__.load({
         team: 'Team', project: 'Project', allTeams: 'All teams', allProjects: 'All projects',
         router: 'Router session', worker: 'Worker session', pr: 'Pull request', updated: 'Updated',
         unconfirmed: 'Not confirmed',
-        merge: 'Merge', publish: 'Send pull request', review: 'Review', deleteBranch: 'Delete branch',
+        merge: 'Merge', publish: 'Send pull request', review: 'Review', deleteBranch: 'Delete branch', deleteTask: 'Delete task',
         mergeTitle: 'Merge into a branch', mergeTarget: 'Merge target', publishTitle: 'Send a pull request',
         publishRemote: 'Repository', ghRequired: 'A GitHub account is required:',
         noBranch: 'No merge target is available.', noRemote: 'No repository is available.',
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
+        deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
+        deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
         confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
@@ -50,11 +52,13 @@ window.__ModuleLoader__.load({
         team: '团队', project: '项目', allTeams: '全部团队', allProjects: '全部项目',
         router: 'Router 会话', worker: 'Worker 会话', pr: '拉取请求', updated: '更新时间',
         unconfirmed: '未确认',
-        merge: '合并', publish: '提交 PR', review: '审查', deleteBranch: '删除分支',
+        merge: '合并', publish: '提交 PR', review: '审查', deleteBranch: '删除分支', deleteTask: '删除任务',
         mergeTitle: '合并到分支', mergeTarget: '目标分支', publishTitle: '提交 PR',
         publishRemote: '提交仓库', ghRequired: '需要 gh 账号：',
         noBranch: '没有可选的合并目标分支。', noRemote: '没有可选的仓库。',
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
+        deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
+        deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
         confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
@@ -485,6 +489,19 @@ window.__ModuleLoader__.load({
         if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
         return value
       }
+      const removeTask = async taskId => {
+        const response = await fetch(`/superagent-lite/tasks?taskId=${encodeURIComponent(taskId)}`, {
+          method: 'DELETE', credentials: 'same-origin', cache: 'no-store',
+        })
+        let value
+        try {
+          value = await response.json()
+        } catch {
+          value = undefined
+        }
+        if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
+        return value
+      }
       const reviewTask = async task => {
         setPending(`${task.id}:review`)
         setError('')
@@ -504,6 +521,10 @@ window.__ModuleLoader__.load({
         setDialogData({ phase: 'loading' })
         setDialogChoice('')
         setDialogError('')
+        if (kind === 'delete-task') {
+          setDialogData({ phase: 'ready' })
+          return
+        }
         try {
           const response = await fetch(`/superagent-lite/git?taskId=${encodeURIComponent(task.id)}`, {
             method: 'GET', credentials: 'same-origin', cache: 'no-store',
@@ -530,12 +551,16 @@ window.__ModuleLoader__.load({
       const confirmDialog = async () => {
         if (!dialog) return
         const { kind, task } = dialog
-        const action = kind === 'merge' ? 'merge' : kind === 'publish' ? 'publish' : 'delete-branch'
+        const action = kind === 'merge' ? 'merge'
+          : kind === 'publish' ? 'publish'
+            : kind === 'delete-task' ? 'delete-task' : 'delete-branch'
         const extra = kind === 'merge' ? { target: dialogChoice } : kind === 'publish' ? { remote: dialogChoice } : {}
         setPending(`${task.id}:${action}`)
         setDialogError('')
         try {
-          const value = await post(task.id, action, extra)
+          const value = action === 'delete-task'
+            ? await removeTask(task.id)
+            : await post(task.id, action, extra)
           setDialog(null)
           refresh()
           setNotice(typeof value?.message === 'string' && value.message ? value.message : t('actionDone'))
@@ -553,6 +578,7 @@ window.__ModuleLoader__.load({
         } : task.workerSessionId
         const git = task.git
         const busy = pending.startsWith(`${task.id}:`)
+        const deletable = task.status !== 'running' || task.unconfirmed === true
         return h('li', { key: task.id, className: 'sl-task' },
           h('div', { className: 'sl-task__stage' }, statusMark(task.status)),
           h('div', { className: 'sl-task__body' },
@@ -587,19 +613,28 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
                 onClick: () => void openDialog('delete', task),
               }, icon('trash'), t('deleteBranch')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: busy || !deletable, title: deletable ? undefined : t('deleteTaskUnavailable'),
+                onClick: () => void openDialog('delete-task', task),
+              }, icon('trash'), t('deleteTask')),
               pr && externalLink(pr, `${t('pr')} #${pullRequestNumber(pr) ?? ''}`.trim()),
               busy && h('span', { className: 'sl-hint' }, t('working')))))
       }
       const dialogView = () => {
         if (!dialog) return null
         const { kind, task } = dialog
-        const title = kind === 'merge' ? t('mergeTitle') : kind === 'publish' ? t('publishTitle') : t('deleteTitle')
-        const confirm = kind === 'merge' ? t('confirmMerge') : kind === 'publish' ? t('confirmPublish') : t('confirmDelete')
+        const title = kind === 'merge' ? t('mergeTitle')
+          : kind === 'publish' ? t('publishTitle')
+            : kind === 'delete-task' ? t('deleteTaskTitle') : t('deleteTitle')
+        const confirm = kind === 'merge' ? t('confirmMerge')
+          : kind === 'publish' ? t('confirmPublish') : t('confirmDelete')
         const busy = pending.startsWith(`${task.id}:`)
         let body
         if (dialogData.phase === 'loading') body = h('p', { role: 'status' }, t('dialogLoading'))
         else if (dialogData.phase === 'error') body = h('p', { role: 'alert', className: 'sl-error' }, dialogData.error)
         else if (kind === 'delete') body = h('p', null, `${t('deleteHint')} `, h('code', null, task.git?.branch ?? ''))
+        else if (kind === 'delete-task') body = h('p', null, `${t('deleteTaskHint')} `, h('code', null, task.id))
         else if (kind === 'publish' && !dialogData.gh?.ok) {
           body = h('p', { role: 'alert', className: 'sl-error' },
             `${t('ghRequired')} ${dialogData.gh?.error ?? ''}`.trim())

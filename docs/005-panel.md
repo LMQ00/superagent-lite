@@ -12,7 +12,7 @@
 
 ## 一套状态
 
-任务列表是唯一的状态分类来源。六个面板状态是**未合并**、**运行中**、**未审查**、**已完成**、**失败**、**仅回答**。它们互斥、覆盖全部 Task，并按这个顺序作为筛选项和分组标题出现。面板状态不是 Task 存储值，而是由 [003 生命周期](003-lifecycle.md) 从存储状态、worker 分支、审查记录和 Pull request 事实推导出来的（`src/status.js:6-34`）。
+任务列表是唯一的状态分类来源。六个面板状态是**未合并**、**运行中**、**未审查**、**已完成**、**失败**、**仅回答**。它们互斥、覆盖全部 Task，并按这个顺序作为筛选项和分组标题出现。面板状态不是 Task 存储值，而是由 [003 生命周期](003-lifecycle.md) 从存储状态、worker 分支、审查记录和 Pull request 事实推导出来的（`src/status.js:6-34`）。每行的「删除任务」移除任务记录和 worker 会话映射；运行中的 Task 禁用该按钮，失联的「未确认」Task 可以删除。worker 分支和工作树不会被删除。
 
 | 状态 | 出现的条件 | 行内动作 |
 | --- | --- | --- |
@@ -36,67 +36,73 @@
 | 任务分组 | 每个非空状态一个标题和计数，顺序同上；组内是 Task 行 |
 | 记忆 | 四类用量与调用方式、当前 profile 注入、分类筛选、搜索框、记录行及编辑/删除 |
 | 提示 | 加载失败、打开会话失败、动作返回的错误/完成/审查结论、记忆加载或编辑错误 |
-| 弹窗 | 合并、提交 PR 或删除分支的窗口，一次只开一个 |
+| 弹窗 | 合并、提交 PR、删除分支或删除任务的窗口，一次只开一个 |
 
-加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空旧提示并重新加载。面板不会自动刷新（`client.js:273-369`、`client.js:717-781`）。
+加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空旧提示并重新加载。面板不会自动刷新（`client.js:277-327`、`client.js:740-815`）。
 
 ## 单条记录怎么读
 
 | 部分 | 行为 |
 | --- | --- |
-| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，不是第七个状态（`client.js:444-450`） |
+| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，不是第七个状态（`client.js:449-455`） |
 | 标题 | 标题；没有标题时显示 Task ID |
 | 团队与项目 | Team 名和项目根 |
 | 更新时间 | 存储的 `updatedAt`，缺失时用 `createdAt`，按本地时间 |
 | 失败原因 | 失败 Task 上显示保存的失败文本 |
 | ID | 16 位 Task ID |
 | Router 会话 | 按 Session ID 打开 |
-| Worker 会话 | 用父、子 Session ID 打开（`client.js:457-472`、`client.js:551-553`） |
-| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:204-213`） |
+| Worker 会话 | 用父、子 Session ID 打开（`client.js:461-476`、`client.js:576-578`） |
+| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:208-215`） |
 
 会话按钮打不开时显示打开失败提示。没有 Worker Session 的 Task 不显示 Worker 按钮；面板没有会话打开能力时，标签显示为文本。
 
 ## 行内动作
 
-按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。成功时关闭弹窗、重新加载列表并显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:530-547`、`client.js:548-592`）。
+按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。成功时关闭弹窗、重新加载列表并显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:551-568`、`client.js:573-622`）。
 
 ### 合并
 
-打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:502-529`、`src/merge.js:30-103`）。
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:519-547`、`src/merge.js:30-103`）。
 
 按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏或 HEAD 移动都会带原因拒绝（`src/git-actions.js:320-328`）。
 
 ### 提交 PR
 
-打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:502-547`、`src/git-actions.js:439-480`）。
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:519-547`、`src/git-actions.js:439-480`）。
 
 当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
 ### 审查
 
-从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:488-501`、`src/git-actions.js:398-419`）。
+从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:502-517`、`src/git-actions.js:398-419`）。
 
 ### 删除分支
 
 只在已完成的 Task 且 worker 分支仍存在时出现。打开确认弹窗；若 Worktree 已登记且干净，先移除 Worktree，再删除分支。已合并的 PR 即使其 commit 不是本地 base 分支的祖先也算已合并。删除后 Task 仍是已完成，按钮消失（`src/merge.js:107-136`）。
 
+### 删除任务
+
+每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支、Worktree 或记忆归档（`client.js:573-622`、`client.js:492-501`、`src/board.js:14-45`、`src/task-store.js:103-121`）。
+
+合并或发布正在执行（存储状态为 `merging` 或 `publishing`）时，服务端拒绝删除；空 ID 或未知 ID 分别返回 400 和 404。
+
 ### 记忆行
 
-记忆区在任务列表之后，从 `GET /superagent-lite/memory` 独立加载，不受任务团队/项目筛选影响（`client.js:299-325`）。
+记忆区在任务列表之后，从 `GET /superagent-lite/memory` 独立加载，不受任务团队/项目筛选影响（`client.js:301-327`）。
 
 | 部分 | 行为 |
 | --- | --- |
-| 用量行 | **私有**：按需调用，保持极少；**公共**：按需调用，只记结论；**用户画像与环境**：每轮注入 Router 和 Worker；**团队**：仅同团队 Worker 可读。每类显示记录数（`client.js:749-752`） |
-| profile 注入 | 接口返回当前注入的记录 ID、上限 6 和每条 500 字符；面板显示 `每轮注入 N/6 条最新记录，每条最多 500 字符`（`client.js:753-754`） |
-| 分类筛选 | 全部加私有、公共、用户画像与环境、团队，各带计数（`client.js:761-771`） |
-| 搜索 | 按内容、凭据引用、ID、Team、Project 或分类标签过滤（`client.js:348-354`） |
+| 用量行 | **私有**：按需调用，保持极少；**公共**：按需调用，只记结论；**用户画像与环境**：每轮注入 Router 和 Worker；**团队**：仅同团队 Worker 可读。每类显示记录数（`client.js:784-786`） |
+| profile 注入 | 接口返回当前注入的记录 ID、上限 6 和每条 500 字符；面板显示 `每轮注入 N/6 条最新记录，每条最多 500 字符`（`client.js:788-789`） |
+| 分类筛选 | 全部加私有、公共、用户画像与环境、团队，各带计数（`client.js:796-806`） |
+| 搜索 | 按内容、凭据引用、ID、Team、Project 或分类标签过滤（`client.js:352-358`） |
 | 注入标记 | 当前在注入集合里的 profile 记录显示「当前注入」 |
 | 内容 | 保存的事实；private 显示「凭据引用: <name>」而不是内容 |
 | 团队与项目 | 只在 team 记录上显示；编辑和删除请求也带这对值 |
 | ID 与时间 | 记录 UUID 和 `updatedAt` |
-| 编辑 | 行内换成 textarea 和保存/取消；public、profile、team 改内容，private 改凭据引用名；team 请求带 Team 与 Project（`client.js:375-443`） |
+| 编辑 | 行内换成 textarea 和保存/取消；public、profile、team 改内容，private 改凭据引用名；team 请求带 Team 与 Project（`client.js:379-445`） |
 | 删除 | 第一次点击显示「确认删除」和「取消」；确认后 POST `delete`。失败时保留行并显示后端错误 |
-| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:654-702`、`src/memory-store.js:12-13`） |
+| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:670-737`、`src/memory-store.js:12-13`） |
 
 记忆区有自己的加载、空列表和无匹配文字。成功的编辑或删除显示短提示并更新当前行，不重新加载任务列表。面板只在 owner 点击编辑或删除时写记忆。
 
@@ -108,10 +114,10 @@
 
 1. **一套状态系统。** 六个任务状态负责分类；没有第二个 Git 页签或状态列表重复它们。Git 动作属于任务行及其弹窗（`src/status.js:6`）。
 2. **只回答三个问题。** 每个区块对应一个问题；不改变决定的数量或行去掉。
-3. **监督而不是静默交付。** 每次刷新只发一个 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR 和删除分支只在用户明确确认的动作里写，记忆编辑只在 owner 点击时写（`src/board.js:16-31`、`src/git-actions.js:283-375`）。
+3. **监督而不是静默交付。** 每次刷新只发一个 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR、删除分支和删除任务只在用户明确确认的动作里写，记忆编辑只在 owner 点击时写（`src/board.js:7-45`、`src/git-actions.js:283-375`）。
 4. **一行一个动作并给出原因。** 按钮禁用时说明缺什么，用户不必翻文档才知道为什么。
 5. **诚实状态。** Worker Session 不在时显示「未确认」；已合并显示「已完成」；已审查未合并显示「未合并」；缺审查显示「未审查」。
 6. **链接而不复制。** 会话在对应 Session 里，审查在 GitHub 上，面板只给链接。
-7. **安全目标。** 只跟随同源面板请求和 GitHub PR URL，其他协议不渲染（`client.js:204-213`）。
+7. **安全目标。** 只跟随同源面板请求和 GitHub PR URL，其他协议不渲染（`client.js:208-215`）。
 8. **显式刷新。** 面板在打开和点击刷新时加载，不轮询、不后台拉取。
 9. **仅 owner。** 不是安装 owner 的请求拿不到任务数据（`src/board.js:7-11`、`src/memory-panel.js:43-46`）。

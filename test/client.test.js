@@ -395,6 +395,55 @@ test('deletes the worker branch from a completed merged row after confirmation',
   board.dispose()
 })
 
+test('deletes a task from the panel after confirmation and disables deletion for a running worker', async () => {
+  let tasks = [
+    task({ id: 'a', title: 'Task A', status: 'answer', mode: 'report', workerSessionId: 'worker-a' }),
+    task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
+    task({ id: 'c', title: 'Task C', status: 'running', workerSessionId: 'worker-c', unconfirmed: true }),
+  ]
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        assert.equal(path, '/superagent-lite/tasks?taskId=a')
+        tasks = tasks.filter(item => item.id !== 'a')
+        return { ok: true, json: async () => ({ deleted: 'a' }) }
+      }
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      return { ok: true, json: async () => ({ records: [] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
+  const deleteIn = row => nodes(row).find(node => node.type === 'button' && text(node) === '删除任务')
+  const runningDelete = deleteIn(rowFor('Task B'))
+  assert.equal(runningDelete.props.disabled, true)
+  assert.match(runningDelete.props.title, /worker 仍在运行/)
+  assert.equal(deleteIn(rowFor('Task C')).props.disabled, false)
+  deleteIn(rowFor('Task A')).props.onClick()
+  tree = board.render()
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
+  assert.match(text(tree), /任务记录将从面板移除/)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task A/)
+  assert.match(text(tree), /Task B/)
+  assert.match(text(tree), /操作已完成/)
+  const deletion = requests.find(request => request.options.method === 'DELETE')
+  assert.equal(deletion.path, '/superagent-lite/tasks?taskId=a')
+  assert.equal(deletion.options.credentials, 'same-origin')
+  board.dispose()
+})
+
 test('shows the failure text and the action error returned by the host', async () => {
   let posted = false
   const board = setup({

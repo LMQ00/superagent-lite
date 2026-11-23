@@ -81,7 +81,7 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
-| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
+| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；每行提供删除任务（运行中禁用）。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 记忆 | 面板列出 private、public、profile、team 的记录、计数、调用方式和当前 profile 注入；编辑和删除只在 owner 点击时生效 |
 | 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/` |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
@@ -90,12 +90,12 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、Git 动作或记忆动作成功 |
+| `200` | 列表、Git 动作、任务删除或记忆动作成功 |
 | `400` | 任务 ID、记忆动作、分类、记录 ID、字段或 JSON 请求体格式不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
-| `404` | 记忆记录不存在，或 Git 详情找不到 Task |
+| `404` | 记忆记录不存在，Git 详情或任务删除找不到 Task |
 | `405` | 方法不被该端点接受 |
-| `409` | Git 动作被拒绝或失败，或记忆存储拒绝动作 |
+| `409` | Git 动作被拒绝或失败，任务删除被拒绝，或记忆存储拒绝动作 |
 | `413` | Git 动作请求体超过 4 KB，或记忆动作超过 32 KB |
 | `415` | 动作请求体不是 `application/json` |
 
@@ -144,6 +144,8 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | `Merge would conflict; the target was not changed` | 把基础分支合并进 worker 分支并重新审查；插件没有改目标 |
 | `The project checkout has uncommitted changes` | 合并前提交或 stash 项目 checkout 的改动 |
 | `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | 删除分支前清理 worker Worktree |
+| `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
+| `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `Only settled, unpublished worktrees can be resumed` | Task 没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；重新派发 |
 | `This task does not belong to the current router Session.` | 在派发该 Task 的 Router Session 里运行 `/merge-worker` |
 | `Local merge is unavailable under this Session file policy.` | 把 Router Session 设为 full access |

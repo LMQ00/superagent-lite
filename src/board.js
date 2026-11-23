@@ -1,17 +1,48 @@
-import { listTasks } from './task-store.js'
+import { listTasks, removeTask } from './task-store.js'
 import { panelStatus } from './status.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
+const ACTIVE_DELIVERY = new Set(['merging', 'publishing'])
 
-export function createBoardHandler(connection, agents, tasks = listTasks, git) {
+export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask) {
   return async (req, res) => {
     const admission = connection.admit(req)
     if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
       res.writeHead(admission.rejection ?? 403, { 'cache-control': 'no-store' }).end()
       return
     }
+    if (req.method === 'DELETE') {
+      const taskId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('taskId')
+      if (!/^[a-f0-9]{16}$/.test(taskId ?? '')) {
+        res.writeHead(400, JSON_HEADERS).end(JSON.stringify({ error: 'A task ID is required' }))
+        return
+      }
+      const task = (await tasks()).find(record => record.id === taskId)
+      if (!task) {
+        res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
+        return
+      }
+      if (agents.get?.(task.workerSessionId) && ['starting', 'running', 'resuming'].includes(task.status)) {
+        res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: 'The worker is still running' }))
+        return
+      }
+      if (ACTIVE_DELIVERY.has(task.status)) {
+        res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: 'A merge or publication is in progress' }))
+        return
+      }
+      try {
+        if (!await remove(taskId)) {
+          res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
+          return
+        }
+        res.writeHead(200, JSON_HEADERS).end(JSON.stringify({ deleted: taskId }))
+      } catch (error) {
+        res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+      }
+      return
+    }
     if (req.method !== 'GET') {
-      res.writeHead(405, { allow: 'GET' }).end()
+      res.writeHead(405, { allow: 'GET, DELETE' }).end()
       return
     }
     const records = await tasks()

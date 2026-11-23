@@ -47,6 +47,8 @@
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
 | 合并 | 用户直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` | 在用户明确授权后把 reviewed HEAD 本地合入所选分支（`/merge-worker` 用 base branch），不需要 `gh` | 否；需要明确授权、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要 `gh` 账号、GitHub remote、审查通过的 HEAD 和 full access |
+| 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
+| 删除任务 | 安装 owner 在面板点击「删除任务」 | 移除 Task 记录和 worker 会话映射，保留 worker 分支、Worktree 和记忆归档 | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
 | 编辑记忆 | owner 在面板编辑或删除 | 改一条记忆记录 | 否；需要 owner 明确点击 |
 | 提取记忆 | `extract_memory` 或最终 `message_router` 报告 | 启动一次记忆对话，把结论写回四类 | 否；仅 change worker |
 
@@ -129,7 +131,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 | 审查 | `review.approved === true`，且 worker 分支当前 HEAD 等于 `review.head`（`src/git-actions.js:148-159`） |
 | 文件策略 | 动作执行时解析出的 Session 文件策略必须是 `danger-full-access`（`src/git-actions.js:106-110`） |
 | 任务模式 | report 任务没有 Git 操作（`src/git-actions.js:540`） |
-| Task 记录 | 面板端点只接受 16 位任务 ID 和 `merge`、`publish`、`review`、`delete-branch`（`src/board.js:58-116`） |
+| Task 记录 | 面板 Git 动作端点只接受 16 位任务 ID 和 `merge`、`publish`、`review`、`delete-branch`；任务删除走 `/superagent-lite/tasks` 的 `DELETE`（`src/board.js:91-148`、`src/board.js:14-45`） |
 
 ### 本地合并
 
@@ -157,16 +159,18 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 必需检查和分支保护由 GitHub 执行；插件不预先查询检查状态，只同步 PR 状态并展示检查汇总（`src/git-actions.js:18-32`、`src/git-actions.js:161-211`）。
 
-### 审查与删除分支
+### 审查、删除分支与删除任务
 
 - 面板的 `review` 动作对未合并、HEAD 未审查且有提交的 Task 运行一次独立审查；Worker Session 必须还活着。通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:398-419`）。
 - 面板的 `delete-branch` 只用于 `merged` 的 Task。Worktree 已登记且干净时先 `git worktree remove`，再 `git branch -D`；随后记录 `branchDeletedAt` 并清空 `worktree`（`src/merge.js:107-136`）。
+- 面板的「删除任务」向 `/superagent-lite/tasks` 发送 `DELETE`，只接受 owner 和 16 位任务 ID。Worker Session 还活着的运行中 Task、正在合并或发布的 Task 被拒绝；其余 Task 删除记录和 worker 会话映射，分支、Worktree 和记忆归档保留（`src/board.js:14-45`、`src/task-store.js:103-121`）。
 - 读取面板时会采纳同一 Project 的另一个 Task 为同一 commit 记录的通过审查，把 reviewed HEAD 写回本 Task（`src/git-actions.js:266-281`）。
 
 ### 并发与幂等
 
 - 面板的 merge、publish、review 和 delete-branch 按 Task ID 串行；同一 Task 的重复动作不会并行执行（`src/git-actions.js:81-88`、`src/git-actions.js:534-547`）。
-- 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:92`、`src/board.js:111`）。
+- 删除 Task 与同一 Task 的状态写入在 `src/task-store.js` 中按记录串行，先读后删；第二次删除返回未找到（`src/task-store.js:103-121`）。
+- 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:123`、`src/board.js:142`）。
 - `/merge-worker` 接受一个 16 位任务 ID；用法错误返回 `Usage: /merge-worker <task ID>`（`src/merge.js:143-146`）。
 
 ## 记忆规则

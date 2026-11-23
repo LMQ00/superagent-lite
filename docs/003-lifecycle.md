@@ -106,7 +106,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 - 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:110-124`）。
 - 插件没有队列和任务上限。每次派发立即启动 Worker；同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:115-119`）。
-- 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:97`）。
+- 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
 - 同一 Project 根的合并和分支删除跨 Task 串行，面板和 `/merge-worker` 共用同一个队列；不同 Project 互不等待（`src/merge.js:14-26`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。
 
@@ -130,6 +130,8 @@ change 任务的 Worker 回合按以下顺序落定（`index.js:114-146`）：
 
 report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:123-125`）。
 
+安装 owner 也可以从面板删除 Task 记录。删除移除记录和 worker 会话映射，不结束 Worker Session，也不回收 worker 分支、Worktree 或记忆归档；Worker Session 还活着的运行中 Task、`merging` 或 `publishing` 中的 Task 不能删除（`src/board.js:14-45`、`src/task-store.js:103-121`）。
+
 不需要 Worker 的输入不是 Task：`dispatch_worker` 返回 `delegate=false` 和理由，回合直接回答（`src/dispatch.js:48-49`）。
 
 ## 失败与恢复
@@ -146,7 +148,7 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 ### Host 重启或插件重载
 
-Task 和 Memory 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:16-31`）。
+Task 和 Memory 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:48-60`）。
 
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入（`src/dispatch.js:53-60`）。
 
