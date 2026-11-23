@@ -57,7 +57,9 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/continue.js`
 
-把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发完整任务消息加 `Resume` 段。已结束的 Task 先改 `resuming` 并清空旧 Review；follow-up 先记录，发送失败回滚（`src/continue.js:1-107`）。
+把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming` 并清空旧 Review；follow-up 先记录，发送失败回滚（`src/continue.js:1-153`）。
+
+压缩检测读取 Worker Session 的推导消息，找 `compact-checkpoint` 来源；活着的 Worker 直接读 Session，未加载的 Worker 通过 `ctx.sessionQuery.inspectSession` 读取持久化会话，不重新挂载。两个入口都不可用时保守地不回放原需求。
 
 ### `src/worker-prompt.js`
 
@@ -211,7 +213,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
 | `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、记忆搜索与编辑删除和错误。 |
-| `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、记录顺序和发送失败回滚。 |
+| `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |

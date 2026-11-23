@@ -140,11 +140,11 @@ report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调�
 
 回合没有以 `completed` 结束，或 change 任务没有 Worktree，Task 落为 `failed`，记录 `stopReason` 和 `finishedAt`；Worker 冻结（`index.js:122-129`）。
 
-已有 Worktree 的 `failed` Task 可以用 `continue_worker` 恢复。从未拿到 Worktree 的 Task，包括 report 任务，不能恢复，只能重新派发（`src/continue.js:82-90`）。
+已有 Worktree 的 `failed` Task 可以用 `continue_worker` 恢复。从未拿到 Worktree 的 Task，包括 report 任务，不能恢复，只能重新派发（`src/continue.js:127-134`）。
 
 ### 审查未通过
 
-Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker 修完问题、再次提交并再次调用审查工具。`continue_worker` 会把 Task 改为 `resuming`，清空旧 Review，再发送完整任务消息和 follow-up（`src/continue.js:82-95`）。
+Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker 修完问题、再次提交并再次调用审查工具。`continue_worker` 会把 Task 改为 `resuming`，清空旧 Review，再发送精简续派发消息：任务标识、不可变规则和唯一权威的 follow-up；只有检测到上下文被压缩时才回放原需求（`src/continue.js:126-148`、`src/continue.js:12-68`）。
 
 ### Host 重启或插件重载
 
@@ -164,7 +164,7 @@ GitHub 写入不自动重试。PR 尚未创建时的发送失败可以从 `deliv
 
 ### follow-up 发送失败
 
-发送失败会删除刚记录的要求。目标是已结束的 Task 时标为 `failed`；目标是运行中的 Task 时保持 `running`（`src/continue.js:29-46`、`src/continue.js:91-103`）。
+发送失败会删除刚记录的要求。目标是已结束的 Task 时标为 `failed`；目标是运行中的 Task 时保持 `running`（`src/continue.js:74-90`、`src/continue.js:142-147`）。
 
 ### 未完成的工作
 
