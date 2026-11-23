@@ -3,7 +3,7 @@
 一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在独立 Worktree 中执行、提交并接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
 - router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 合并已交付分支：没有正在运行的 merge worker 时派发新的，有则把请求追加给同一个 worker；同一未发布任务的补充用 `continue_worker`。
-- worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
+- worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个独立子代理审查该提交；reviewer 不能使用写改文件的工具，也不能运行改变分支或历史的 git 命令。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 
@@ -34,6 +34,16 @@ npm test
 - 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
 - 合并与发送 PR 需要动作执行时 Session 具有完整文件访问权限；本地合并还需要 router 会话仍在运行。
 
+## 记忆
+
+记忆分全局和项目两层，按项目根隔离，不跨项目混用。Router 只注入全局记忆；Worker 和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
+
+- 全局记忆保存用户画像和一个所有项目共用的 skill；项目记忆保存职责、定位、一个适用于当前项目与职责的 skill，以及项目知识库。职责和定位是小段固定注入的内容；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
+- 全局 skill 写在 `~/.agents/skills/superagent-shared-memory/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
+- 知识库只通过工具访问：Worker 和 Reviewer 用 `knowledge_query` 查询；只有 memory 角色能用 `knowledge_write` 新增、纠正或删除。知识库保存在 `~/.dsh/superagent-lite/memory/knowledge/`。
+- 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。它直接读取 Worker 的完整原始会话，返回需要更新的记忆字段；插件只写回发生变化的字段和 skill，没有可复用的结论就不写。记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。
+- Worker 每一轮的原始会话按回合归档在 `~/.dsh/superagent-lite/task/archive/`，保留 Session 序号和轮内编号，作为原始参照物；归档只由 Host 写入，模型工具没有读取入口。
+
 ## 面板
 
 侧栏打开「项目任务」。面板分「项目任务」「设置」两个标签页，任务列表在固定面板的滚动区里滚动，页面本身不会被撑长。任务列表是唯一的状态分类来源：顶部有刷新按钮，有任务时出现「全部」加未合并、运行中、未审查、已完成、失败、仅回答六个状态筛选和团队、项目筛选，下面按这六类分组。
@@ -54,7 +64,7 @@ npm test
 - worker 模型：填写服务商、模型和可选的推理强度；三项都留空时跟随 DSH 默认模型。保存后用于新启动的 worker，已有 worker 保持原选择。
 - 并发 worker 上限：1–16，默认 3。超出上限的新任务停在「排队中」，有空闲名额后按创建顺序启动；review 是 worker 的子代理，不占额外名额。
 
-原始架构图按编号保存在 [docs/diagrams](docs/diagrams/)：001 术语与主流程、002 预设流程。
+原始架构图按编号保存在 [docs/diagrams](docs/diagrams/)：001 术语与主流程、002 预设流程、003 记忆系统。
 ## 当前限制
 
 - 绑定 DSH `0.2.2-rc.3`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。
@@ -63,7 +73,8 @@ npm test
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，review 不占并发名额。每个任务一个 Worktree，并行工作的 worker 各自使用独立检出。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
-- 审查不接收整份 patch：reviewer 在 `base..head` 和 Worktree 范围内自行读 diff，范围外的读取会被拒绝。
+- 审查不接收整份 patch：reviewer 自己读 `base..head` 和改动文件，可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
+- 记忆是数据，不是指令；它不能添加需求或授予权限。记忆没有面板编辑入口，只由 memory 角色维护；归档可能包含敏感对话，插件不提供模型侧读取入口。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
 
 ## 文档
@@ -80,7 +91,7 @@ npm test
 - [007 架构](docs/007-architecture.md)
 - [008 手册](docs/008-cookbook.md)
 - [009 一键落地](docs/009-land-all.md)
-- [架构原图](docs/diagrams/README.md)（001 术语与主流程、002 预设流程）
+- [架构原图](docs/diagrams/README.md)（001 术语与主流程、002 预设流程、003 记忆系统）
 
 ## 开发
 

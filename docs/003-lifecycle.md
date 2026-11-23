@@ -58,7 +58,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | 深度 | `ctx.subagents.resolveMaxDepth()` |
 | 首条消息 | `buildWorkerPrompt` 生成的任务消息 |
 
-Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:110-124`）。同一事件安装工具守卫并注册 Worker 工具（`index.js:51-98`）。
+Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:110-124`）。同一事件安装工具守卫、注册 Worker 工具和 `knowledge_query`，并把项目 + 全局记忆注册为必需的运行时上下文（`index.js:51-145`、`src/memory.js`）。
 
 Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
@@ -68,11 +68,40 @@ Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息
 
 `review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
 
-Reviewer 收到保存的需求、follow-up 文本、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:20-32`）。helper 守卫在子代理创建前登记审查范围，创建后安装只读工具边界（`src/review.js:59`、`src/helper-guard.js:25-41`）。
+Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:56-71`）。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:87`、`src/helper-guard.js:105-117`）。审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:120`、`src/review.js:44-54`）。
 
 Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:109-122`）。
 
 面板的 `review` 动作从活着的 Worker Session 对 `unreviewed` 的 HEAD 运行同一审查；通过后 Task 修正为 `awaiting-merge`，有意见则落到 `review-required`（`src/git-actions.js:398-419`）。
+
+### Memory 角色
+
+memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。它直接读取 Worker 的完整会话记录，不使用 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`）。
+
+| 属性 | 值 |
+| --- | --- |
+| 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
+| 输入 | Worker 的完整对话记录（含各轮 follow-up）：`[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长保留首尾 |
+| 输出 | 全局 `userProfile`、`sharedSkillDescription`/`sharedSkillContent`；项目 `responsibilities`、`positioning`、`projectSkillDescription`/`projectSkillContent`；每个字段最多 4,000 字符，skill description 最多 500 字符 |
+| 知识库 | 用 `knowledge_query` 查询；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
+| 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |
+| 写入 | 只覆盖非空且与当前值不同的字段；skill 需要 description 和 content 都非空；全局写 `memory/global.json`，项目写 `memory/projects/<hash>.json`，skill 写对应的 `SKILL.md` |
+| 空结果 | 没有非空更新时不写；触发失败只记录警告，不阻塞最终报告 |
+
+自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js`、`index.js`）。
+
+### 原始归档
+
+Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写到 `~/.dsh/superagent-lite/task/archive/<session+seq hash>.json`（`src/memory.js`、`src/memory-store.js`）。
+
+| 字段 | 内容 |
+| --- | --- |
+| `turn` | Worker 回合号 |
+| `startSeq`、`endSeq` | 该回合起止事件序号 |
+| `references` | 每个事件从 1 开始的轮内编号、Session 序号和事件类型 |
+| `events` | 完整事件快照 |
+
+归档只由 Host 写入，模型工具没有读取入口；同一来源再次写入会覆盖该来源的记录。
 
 ## 并发
 
@@ -81,7 +110,7 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 - 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:166-206`）。
 - `mode=merge` 例外：同一 Router Session 和 Project 只有一个活着的 merge worker，新的 merge 请求追加给它，并发的 merge 派发按 Router 和 Project 排队；没有活 Worker Session 的残留运行中 Task 不参与追加（`src/dispatch.js`）。
 - 同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
-- 嵌套深度由 Host 的子代理上限约束；Reviewer 以深度 2 启动（`src/review.js:64`）。
+- 嵌套深度由 Host 的子代理上限约束；Reviewer 和 memory 角色都以深度 2 启动（`src/review.js`、`src/memory.js`）。
 - 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
 - 面板的合并和分支删除按 Project 根串行，共享 checkout 不会被两个面板动作同时切换；merge worker 的目标分支合并发生在自己的 worktree 内，不占共享 checkout（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。

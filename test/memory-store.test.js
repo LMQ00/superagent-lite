@@ -1,0 +1,125 @@
+import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import test, { after } from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
+await mkdir(tmp, { recursive: true })
+const root = await mkdtemp(join(tmp, 'memory-store-'))
+const agentsHome = join(root, 'agents')
+const store = (await import('../src/memory-store.js')).createMemoryStore(join(root, 'data'), { agentsHome })
+
+after(async () => {
+  await rm(root, { recursive: true, force: true })
+})
+
+test('global and project memory start empty and round-trip their fields', async () => {
+  const project = join(root, 'project-a')
+  assert.deepEqual(await store.readGlobal(), { userProfile: '' })
+  assert.deepEqual(await store.readProject(project), {
+    projectRoot: project, responsibilities: '', positioning: '',
+  })
+  await store.writeGlobal({ userProfile: 'Prefers concise reports.' })
+  await store.writeProject(project, {
+    responsibilities: 'Keep notes accurate.', positioning: 'A note-taking project.',
+  })
+  const saved = await store.readMemory(project)
+  assert.equal(saved.global.userProfile, 'Prefers concise reports.')
+  assert.equal(saved.project.responsibilities, 'Keep notes accurate.')
+  assert.equal(saved.project.positioning, 'A note-taking project.')
+  assert.equal((await store.readProject(join(root, 'project-b'))).responsibilities, '')
+})
+
+test('memory updates reject unknown fields, relative roots and invalid documents', async () => {
+  const project = join(root, 'project-validation')
+  await assert.rejects(store.writeGlobal({ sharedSkill: 'x' }), /Unknown global memory field/)
+  await assert.rejects(store.writeProject('relative', { responsibilities: 'x' }), /absolute project root/)
+  await assert.rejects(store.writeProject(project, { responsibilities: 1 }), /must be a string/)
+  await assert.rejects(store.writeProject(project, { responsibilities: 'x'.repeat(4_001) }), /at most 4000/)
+  await mkdir(join(root, 'data', 'memory'), { recursive: true })
+  await writeFile(join(root, 'data', 'memory', 'global.json'), '{bad json')
+  await assert.rejects(store.readGlobal(), /Invalid memory storage JSON/)
+  await writeFile(join(root, 'data', 'memory', 'global.json'), JSON.stringify({ version: 99, userProfile: 'x' }))
+  await assert.rejects(store.readGlobal(), /Invalid or unsupported global memory/)
+})
+
+test('knowledge entries deduplicate, search, correct and delete', async () => {
+  const project = join(root, 'project-knowledge')
+  assert.deepEqual(await store.readKnowledge(project), [])
+  const first = await store.addKnowledge(project, '  The   test command is npm test. ')
+  assert.equal(first.duplicate, false)
+  assert.equal(first.entry.text, 'The test command is npm test.')
+  const again = await store.addKnowledge(project, 'The test command is npm test.')
+  assert.equal(again.duplicate, true)
+  assert.equal(again.entry.id, first.entry.id)
+  const second = await store.addKnowledge(project, 'Merge conflicts are resolved in the worktree.')
+  assert.equal((await store.searchKnowledge(project, 'NPM')).length, 1)
+  assert.equal((await store.searchKnowledge(project, '')).length, 2)
+  assert.deepEqual(await store.readKnowledge(join(root, 'project-knowledge-other')), [])
+  await assert.rejects(store.addKnowledge(project, '   '), /cannot be empty/)
+  await assert.rejects(store.searchKnowledge(project, '', 0), /limit must be an integer/)
+  await assert.rejects(store.searchKnowledge(project, 'x'.repeat(501)), /at most 500/)
+  await assert.rejects(store.updateKnowledge(project, 'missing', 'x'), /was not found/)
+  await assert.rejects(store.updateKnowledge(project, second.entry.id, first.entry.text), /identical/)
+  const corrected = await store.updateKnowledge(project, second.entry.id, 'Resolve merge conflicts inside the worktree.')
+  assert.equal(corrected.text, 'Resolve merge conflicts inside the worktree.')
+  assert.equal((await store.searchKnowledge(project, 'resolve')).length, 1)
+  await store.deleteKnowledge(project, first.entry.id)
+  assert.equal((await store.readKnowledge(project)).length, 1)
+  await assert.rejects(store.deleteKnowledge(project, first.entry.id), /was not found/)
+})
+
+test('global and project skills use their own files and only the description is read for the catalog', async () => {
+  const project = join(root, 'project-skill')
+  assert.equal(await store.readSkill('global', project), undefined)
+  assert.equal(await store.readSkill('project', project), undefined)
+  await store.writeSkill('global', project, {
+    description: 'Reusable inspection guidance across projects.',
+    content: 'Inspect the repository before changing it.',
+  })
+  await store.writeSkill('project', project, {
+    description: 'How to work on this project.',
+    content: 'Run npm test before reporting.',
+  })
+  assert.deepEqual(await store.readSkill('global', project), {
+    description: 'Reusable inspection guidance across projects.',
+    content: 'Inspect the repository before changing it.',
+  })
+  assert.deepEqual(await store.readSkill('project', project), {
+    description: 'How to work on this project.',
+    content: 'Run npm test before reporting.',
+  })
+  const globalFile = join(agentsHome, 'skills', 'superagent-shared-memory', 'SKILL.md')
+  const projectFile = join(project, '.dsh', 'skills', 'superagent-project-memory', 'SKILL.md')
+  assert.match(await readFile(globalFile, 'utf8'), /^---\nname: superagent-shared-memory\ndescription: "Reusable inspection guidance across projects\."\n---/)
+  assert.match(await readFile(projectFile, 'utf8'), /Run npm test before reporting\./)
+  assert.deepEqual(await store.readSkills(project), {
+    global: { description: 'Reusable inspection guidance across projects.', content: 'Inspect the repository before changing it.' },
+    project: { description: 'How to work on this project.', content: 'Run npm test before reporting.' },
+  })
+  await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
+})
+
+test('a project skill is kept out of the project checkout status through .git/info/exclude', async () => {
+  const project = join(root, 'project-skill-exclude')
+  await mkdir(join(project, '.git'), { recursive: true })
+  await store.writeSkill('project', project, { description: 'Excluded project skill.', content: 'Body.' })
+  await store.writeSkill('project', project, { description: 'Excluded project skill.', content: 'Body.' })
+  const exclude = await readFile(join(project, '.git', 'info', 'exclude'), 'utf8')
+  assert.equal(exclude, '.dsh/skills/superagent-project-memory/\n')
+})
+
+test('worker turns archive under task/archive with their source key', async () => {
+  const source = { sessionId: 'session-archive', seq: 7 }
+  assert.equal(await store.archive.read(source), undefined)
+  await store.archive.write(source, { turn: 2, events: [{ seq: 7, type: 'turn/end' }] })
+  assert.deepEqual(await store.archive.read(source), { turn: 2, events: [{ seq: 7, type: 'turn/end' }] })
+  const hash = (await import('node:crypto')).createHash('sha256')
+    .update('session-archive\0' + 7).digest('hex')
+  const record = JSON.parse(await readFile(join(root, 'data', 'task', 'archive', `${hash}.json`), 'utf8'))
+  assert.equal(record.version, 1)
+  assert.equal(record.value.turn, 2)
+  await assert.rejects(store.archive.write({ sessionId: '', seq: 1 }, {}), /Session id/)
+  await assert.rejects(store.archive.write({ sessionId: 'x', seq: -1 }, {}), /non-negative/)
+})

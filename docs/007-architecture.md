@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期和面板路由；Router 插件 `router.js` 注册路由工具。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-159`、`router.js:1-9`）。
+Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-159`、`router.js:1-9`）。
 
 ```mermaid
 flowchart TB
@@ -14,7 +14,7 @@ flowchart TB
   D --> W[Worker Session]
   W --> WT[Worktree]
   W -->|review_worker_commit| RV[src/review.js]
-  RV --> HR[只读 Reviewer]
+  RV --> HR[独立 Reviewer]
   HR -->|submit_review| RV
   W -->|message_router| R
   T --> G[src/git-actions.js]
@@ -28,19 +28,35 @@ flowchart TB
   B --> C[client.js 面板]
   C -->|merge、publish、review、delete-branch、delete-task| B
   R --> TG[src/turn-guard.js]
+  W -->|最终报告| ME[src/memory.js]
+  W -->|每轮 turn/end| AR[(原始归档)]
+  ME -.->|读取原始会话| W
+  ME --> MS[src/memory-store.js]
+  MS --> MF[(全局 + 项目记忆、skill、知识库)]
+  MS -.->|项目 + 全局注入| W
+  MS -.->|全局注入| R
+  MS -.->|审查时注入| RV
 ```
 
 ## 核心模块
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:38-98`）。它为已认领的 Reviewer 注册 `submit_review`，并注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/worker-settings` 三个路由（`index.js:16-44`）。启动队列在 Task 结束和 Worker 释放名额时调用 `pumpWorkers`。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query`（`index.js`）。它为已认领的 Reviewer 注册 `submit_review` 和 `knowledge_query`，为 memory 角色注册 `knowledge_query` 与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/worker-settings` 三个路由。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。启动队列在 Task 结束和 Worker 释放名额时调用 `pumpWorkers`。
 
-`subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:119-151`）。`session/event` 只把事件交给派发守卫（`index.js:115-117`）。它不决定路由，也不编辑项目文件。
+`subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`。`session/event` 把事件交给派发守卫，并在 Worker 的 `turn/end` 触发原始归档。它不决定路由，也不编辑项目文件。
 
 ### `router.js`
 
-装载时注册 `dispatch_worker` 和 `continue_worker`（`router.js:7-9`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:13-131`）。它不持有 Task 记录。
+装载时先刷新并注册全局记忆上下文，再注册 `dispatch_worker` 和 `continue_worker`。Router 只读取全局记忆；Router 预设的 skill 根也只保留全局 skill 根。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:13-131`）。它不持有 Task 记录。
+
+### `src/memory.js`
+
+定义记忆字段、注入文本、memory 角色提示词、提取流程、知识查询/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 角色读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript；知识库通过 `knowledge_query` / `knowledge_write` 访问，只有 memory 角色能写（`src/memory.js`）。
+
+### `src/memory-store.js`
+
+保存全局记忆、项目记忆、项目知识库、全局/项目 skill 文件和原始归档；项目 skill 目录同时写入 `.git/info/exclude`，避免弄脏项目 checkout。Worker 和 Reviewer 创建时会在各自 scope 注册一个 project-skill provider，从项目 checkout 读取项目 skill，供 catalog 使用。全局记忆是一个 JSON 文档；项目记忆、知识库按规范化项目根哈希分文件；字段校验上限 4,000 字符，skill description 最多 500 字符，知识条目最多 200 条；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；skill 写成 DSH 兼容的 `SKILL.md`；归档位于 `task/archive/`（`src/memory-store.js`）。
 
 ### `src/task-store.js`
 
@@ -74,15 +90,15 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/review.js`
 
-提供 `worktreeHead`：检查仓库根、分支、干净工作区和 HEAD（`src/review.js:42-52`）。`runReview` 检查净改动，创建审查范围，启动只读 Reviewer，从 Reviewer 的 `submit_review` 取回裁决（内容「通过」是通过，其他内容记为意见），校验证据并复核 HEAD 后写入 Review（`src/review.js:12-34`、`src/review.js:69-123`）。`review_worker_commit` 和面板的审查动作共用 `runReview`；Reviewer 的提示词不包含 diff（`src/review.js:54-67`）。
+提供 `worktreeHead`：检查仓库根、分支、干净工作区和 HEAD（`src/review.js:44-54`）。`runReview` 检查净改动，读取项目 + 全局记忆，创建改动范围，启动独立 Reviewer（只禁写改工具与改变分支或历史的 git 命令），从 Reviewer 的 `submit_review` 取回裁决（内容「通过」是通过，其他内容记为意见），校验证据并复核 HEAD 后写入 Review（`src/review.js:12-34`、`src/review.js:73-127`）。`review_worker_commit` 和面板的审查动作共用 `runReview`；Reviewer 的提示词不包含 diff（`src/review.js:56-71`）。
 
 ### `src/review-scope.js`
 
-定义 Reviewer 的「改动」范围：Worktree 加 `base..head`。它校验文件路径、符号链接、`.git`、绝对路径、git 子命令、版本参数、flag、只读命令和 workdir，并记录是否真的读过 diff 或改动文件（`src/review-scope.js:1-231`）。
+定义 Reviewer 的「改动」：Worktree 加 `base..head`。Reviewer 可以读取任意文件和运行任意命令；它只拒绝会改变 git 分支或历史的子命令，并记录 Reviewer 是否真的读过 diff 或改动文件（`src/review-scope.js:1-283`）。
 
 ### `src/helper-guard.js`
 
-维护待认领 helper 队列，安装只读 guard。Reviewer 继承 Worker 工具集，因此 guard 把 shell 限制在只读模式。没有审查范围时放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`）和受限 shell；带审查范围时进一步收窄到 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`，再套 `review-scope`（`src/helper-guard.js:4-23`、`src/helper-guard.js:73-107`）。
+维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-23`、`src/helper-guard.js:76-117`）。
 
 ### `src/delivery.js`
 
@@ -118,7 +134,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/message-router.js`
 
-把 Worker 的最终结论发给 Router，要求活跃 Worker 和 1–4,000 字符文本（`src/message-router.js:1-25`）。
+把 Worker 的最终结论发给 Router，要求活跃 Worker 和 1–4,000 字符文本；送达后触发 change 任务的 memory 提取（`src/message-router.js`）。
 
 ### `client.js`
 
@@ -128,10 +144,11 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 - `index.js` 和 `router.js` 是唯一插件入口。`src/` 不 import 这两个入口或 `client.js`。
 - `client.js` 只在浏览器运行，通过模块加载器使用 `react`、`slots` 和 `locale`。
-- 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`webServer`、`connection`（`index.js:16`、`router.js:4`）。
+- 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
-- `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
+- `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js`）。
+- `src/memory-store.js` 是唯一记忆、知识、skill 文件和归档存储模块；`src/memory.js` 是唯一记忆提示词、提取流程和知识工具模块。
 - `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-142`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
 - `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
 
@@ -174,16 +191,18 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session；`mode=merge` 把新请求追加给运行中的 merge worker，没有才新派发。 |
 | `src/git-actions.js` | 构建面板视图，执行合并、发送 PR、审查和删除分支动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
-| `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
+| `src/helper-guard.js` | 计数待认领 helper；记忆对话保持只读，Reviewer 只禁写改工具与改变分支的 git 命令。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
 | `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型。 |
 | `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
+| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、提取流程、知识查询/写入工具和轮次归档。 |
+| `src/memory-store.js` | 保存全局/项目记忆、项目知识库、全局/项目 skill 文件和原始归档，并执行字段校验与原子写入。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务。 |
-| `src/review.js` | 检查已提交 diff，运行只读 Reviewer，接收 `submit_review` 并记录裁决。 |
-| `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
+| `src/review.js` | 检查已提交 diff，运行独立 Reviewer，接收 `submit_review` 并记录裁决。 |
+| `src/review-scope.js` | 记录 Reviewer 是否读过改动，并拒绝会改变 git 分支或历史的命令。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
 | `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
@@ -202,8 +221,11 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
-| `test/helper-guard.test.js` | helper 认领、只读工具白名单和 shell 限制。 |
+| `test/helper-guard.test.js` | helper 认领、记忆只读工具与 shell 限制、Reviewer 只禁写改工具。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
+| `test/memory.test.js` | memory 角色提示词、全局 + 项目提取、skill 写入、纠正覆盖、空结果、transcript 上限、知识工具、注入文本、归档和 schema。 |
+| `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、知识库去重/纠正/删除、skill 文件、归档和损坏文件拒绝。 |
+| `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档和提取失败不影响报告。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
@@ -216,8 +238,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
 | `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
 | `test/report-only.test.js` | report 任务的完成、无分支提交、伪造 Worktree 拒绝、报告提示词，以及 `mode=answer` 无 Task/Worker/命令副作用。 |
-| `test/review-scope.test.js` | Reviewer 文件读取、符号链接和只读命令的范围限制。 |
-| `test/review.test.js` | Reviewer 提示词带范围不带 diff、无证据裁决被拒、读改动文件算证据。 |
+| `test/review-scope.test.js` | Reviewer 可自由读取，改变分支的 git 命令被拒，diff/改动文件算证据。 |
+| `test/review.test.js` | Reviewer 提示词不带 diff、无证据裁决被拒、读改动文件算证据。 |
 | `test/routing-rule.test.js` | 两个路由工具把不同目标挡在 `continue_worker` 外，persona 与工具描述说明三种 mode。 |
 | `test/status.test.js` | 六个面板状态、优先级和审查索引。 |
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射和路径形 ID 拒绝。 |
@@ -236,6 +258,12 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | Task | `tasks/<id>.json` | `src/task-store.js` |
 | Worker Session 映射 | `tasks/sessions/<sha256(sessionId)>.json` | `src/dispatch.js` 通过 `linkWorkerSession` |
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
+| 全局记忆 | `memory/global.json` | `src/memory.js` 经 `src/memory-store.js` |
+| 项目记忆 | `memory/projects/<sha256(projectRoot)>.json` | `src/memory.js` 经 `src/memory-store.js` |
+| 项目知识库 | `memory/knowledge/<sha256(projectRoot)>.json` | `knowledge_write` 经 `src/memory-store.js` |
+| 全局 skill | `~/.agents/skills/superagent-shared-memory/SKILL.md` | `src/memory.js` 经 `src/memory-store.js` |
+| 项目 skill | `<project>/.dsh/skills/superagent-project-memory/SKILL.md` | `src/memory.js` 经 `src/memory-store.js` |
+| 原始归档 | `task/archive/<sha256(sessionId+seq)>.json` | `index.js` 的 `session/event` 经 `src/memory.js` |
 
 目录以 `0700` 创建，文件以 `0600` 写入（`src/task-store.js:34-57`）。
 
@@ -249,7 +277,9 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
-| `message_router` | Worker | 把最终结论发给 Router |
+| `message_router` | Worker | 把最终结论发给 Router；送达后触发 change 任务的 memory 提取 |
+| `knowledge_query` | Worker、Reviewer、memory 角色 | 查询项目知识库；只读 |
+| `knowledge_write` | memory 角色 | 新增、纠正或删除项目知识；只有 memory 角色可见 |
 
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |

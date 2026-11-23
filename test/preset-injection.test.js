@@ -24,3 +24,12 @@ test('the router preset mounts agent instructions and the worker preset keeps it
   assert.deepEqual(worker, [65536])
   assert.deepEqual(agentInstructionBudgets(presetBlock('preset-superagent-lite')), worker)
 })
+
+test('the router preset keeps skill discovery to global roots while the worker keeps project roots', () => {
+  const router = presetBlock('preset-superagent-lite')
+  assert.match(router, /- id: skill-filesystem\n +name: '@deepseek-ai\/dsh-skill-filesystem'\n +config:\n +includeDefaultRoots: false\n +customSkillDirs:/)
+  assert.match(router, /DSH_AGENTS_HOME/)
+  const worker = presetBlock('preset-superagent-lite-worker')
+  assert.match(worker, /- id: skill-filesystem\n +name: '@deepseek-ai\/dsh-skill-filesystem'/)
+  assert.doesNotMatch(worker, /includeDefaultRoots: false/)
+})
