@@ -23,11 +23,11 @@
 
 `continue_worker` 把追加要求送给已经存在且未发布的 Task。
 
-- 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:62-67`）。
-- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:51`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。
-- Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:68-81`）。
-- Worker 空闲时，发送完整任务消息加 `Resume` 段；Task 处于 `awaiting-merge`、`review-required` 或 `failed` 且已有 Worktree 时，先标为 `resuming` 并清空旧 Review（`src/continue.js:82-104`）。
-- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败到已结束的 Task 时标为 `failed`；发送失败到运行中的 Task 保持 `running`（`src/continue.js:29-46`、`src/continue.js:91-103`）。
+- 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:107-110`）。
+- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:96`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。
+- Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:113-125`）。
+- Worker 空闲时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required` 或 `failed` 且已有 Worktree 时，先标为 `resuming` 并清空旧 Review（`src/continue.js:12-68`、`src/continue.js:126-148`）。
+- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败到已结束的 Task 时标为 `failed`；发送失败到运行中的 Task 保持 `running`（`src/continue.js:74-90`、`src/continue.js:135-147`）。
 - 已发布的 Task 不继续；发布后的下一个输入是新工作。
 
 ### 不交叉
@@ -206,7 +206,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## 版本
 
-Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-83`、`src/review.js:20-32`、`src/continue.js:66-67`）。
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-83`、`src/review.js:20-32`、`src/continue.js:107-109`）。
 
 Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:560-579`、`src/merge.js:23-43`）。
 

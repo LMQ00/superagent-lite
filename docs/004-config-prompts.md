@@ -9,9 +9,9 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界 | `cordis.patch.yml:21-43`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明 | `src/dispatch.js:10-23`、`src/continue.js:51-61` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明 | `src/dispatch.js:10-23`、`src/continue.js:96-104` |
 | Worker 任务消息 | 头部、需求、模式、`Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-69` |
-| 恢复消息 | follow-up 包装、`Follow-up` 与 `Resume` 段 | `src/continue.js:9-23` |
+| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`；仅检测到上下文压缩时回放需求 | `src/continue.js:12-68` |
 | 审查提示词、裁决工具与范围 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及 `base..head` / Worktree 范围、只读命令白名单和 workdir 围栏 | `src/review.js:12-34`、`src/review.js:54-67`、`src/review-scope.js:1-231` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词 | 工具描述、记忆对话角色提示词、四类上限、profile 注入 | `src/memory.js:31-49`、`src/memory-extractor.js:25-38` |
