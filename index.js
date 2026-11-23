@@ -109,6 +109,7 @@ export async function apply(ctx) {
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
+    if (!state.frozen) await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
     workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); memory(); review(); checkout(); guard() } })
   })

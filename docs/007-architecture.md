@@ -40,13 +40,13 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、记忆、提取、消息和报告工具（`index.js:42-93`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/memory` 三个路由，并在启动时刷新 profile（`index.js:16`、`index.js:18-31`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、记忆、提取、消息和报告工具（`index.js:42-113`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/memory` 三个路由，并在启动时以及每个 Worker 创建前刷新 profile（`index.js:18`、`index.js:112`、`index.js:18-31`）。
 
-`subagent/end` 落定 change 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:114-146`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:107-111`）。它不决定路由，也不编辑项目文件。
+`subagent/end` 落定 change 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:138-170`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:131-135`）。它不决定路由，也不编辑项目文件。
 
 ### `router.js`
 
-注册 `dispatch_worker`、`continue_worker`、`/merge-worker` 和 Router 的 `superagent_memory`，并注册 profile 运行时上下文（`router.js:8-14`）。它不持有 Task 记录。
+装载时先刷新 profile，再注册 `dispatch_worker`、`continue_worker`、`/merge-worker` 和 Router 的 `superagent_memory`，并注册 profile 运行时上下文（`router.js:8-14`）。它不持有 Task 记录。
 
 ### `src/task-store.js`
 
@@ -92,7 +92,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory.js`
 
-构建 `superagent_memory`、记忆对话输入、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话读取 Worker 的会话记录，插件负责把四类结果写回（`src/memory.js:1-244`）。
+构建 `superagent_memory`、记忆对话输入、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript，插件负责把四类结果写回（`src/memory.js:1-248`）。
 
 ### `src/memory-extractor.js`
 
@@ -278,7 +278,7 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
-| `message_router` | Worker | 把最终结论发给 Router，并触发记忆对话读取 Worker 对话 |
+| `message_router` | Worker | 把最终结论发给 Router，并触发记忆对话读取 Worker 对话；其参数不进入记忆 transcript |
 
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |
@@ -305,10 +305,10 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | `src/` 里的工具文字 | bundle 加载后的下一次拼装回合 |
 | `src/memory-extractor.js` 角色文字 | 下一次记忆提取启动 |
 | `client.js` 字典 | 下一次客户端 bundle 加载 |
-| profile 记忆写入 | 立即刷新注入的 profile 上下文 |
+| profile 记忆写入 | 立即刷新注入的 profile 上下文；Router 装载和 Worker 创建前也会刷新 |
 | Task 或 Memory 记录 | 下一次面板加载或工具调用；面板会修正已审查的 HEAD 并采纳同一 commit 的审查 |
 | 记忆写入 | 立即写入磁盘；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖匹配记录 |
 | 面板记忆编辑或删除 | 立即写入磁盘和面板；下一次工具调用读到新记录 |
 | GitHub remote 与 PR 事实 | PR 事实缓存 30 秒；面板刷新在缓存过期后重新读取 |
 
-profile 上下文以 order `170` 注册，在 Host 组装模型调用的运行时上下文时读取（`src/memory.js:20-22`）。
+profile 上下文以 order `170` 注册并标记为 `required`，在 Host 组装模型调用的运行时上下文时读取；关闭可选运行时上下文时仍然注入（`src/memory.js:20-22`）。

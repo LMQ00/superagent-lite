@@ -1,11 +1,12 @@
 import { createDispatchTool } from './src/dispatch.js'
 import { createContinueTool } from './src/continue.js'
 import { mergeCommand } from './src/merge.js'
-import { createMemoryTool, registerProfileContext, routerMemoryCaller } from './src/memory.js'
+import { createMemoryTool, refreshProfile, registerProfileContext, routerMemoryCaller } from './src/memory.js'
 
 export const inject = ['tools', 'subagents', 'workingDirectory', 'subprocess', 'worktrees', 'commands', 'sandboxPolicy', 'systemPrompt', 'agentPresets']
 
-export function apply(ctx) {
+export async function apply(ctx) {
+  await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
   ctx.tools.register(createDispatchTool(ctx))
   ctx.tools.register(createContinueTool(ctx))
   ctx.commands.register(mergeCommand(ctx))

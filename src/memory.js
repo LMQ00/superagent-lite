@@ -18,7 +18,7 @@ export async function refreshProfile() {
 }
 
 export function registerProfileContext(ctx) {
-  return ctx.systemPrompt.context({ name: 'superagent-lite-profile', order: 170, text: () => profile })
+  return ctx.systemPrompt.context({ name: 'superagent-lite-profile', order: 170, text: () => profile, required: true })
 }
 
 export function originFor(exec) {
@@ -106,6 +106,7 @@ function memoryFacts(structured) {
 }
 
 const OMITTED = '\n[... earlier conversation omitted ...]\n'
+const REPORT_TOOL_NAMES = new Set(['message_router', 'report_task'])
 
 function textOf(message) {
   return message.content
@@ -130,9 +131,14 @@ export function workerConversation(session) {
       const text = textOf(message)
       if (text) entries.push(`[assistant] ${clip(text, memoryExtractorRole.maxMessage)}`)
       for (const block of message.content) {
-        if (block.type === 'tool-call') {
-          entries.push(`[tool call] ${block.name} ${clip(block.arguments, memoryExtractorRole.maxArgument)}`)
+        if (block.type !== 'tool-call') continue
+        // The final report summarizes the worker's own work. Keep the call but
+        // drop its text so memory has to derive facts from the workflow itself.
+        if (REPORT_TOOL_NAMES.has(block.name)) {
+          entries.push(`[tool call] ${block.name}`)
+          continue
         }
+        entries.push(`[tool call] ${block.name} ${clip(block.arguments, memoryExtractorRole.maxArgument)}`)
       }
       continue
     }
