@@ -84,6 +84,8 @@ test('a merge worker merges only a recorded target into its assigned worktree br
   const result = await tool.execute({ branch: target }, { agent, signal: new AbortController().signal })
   assert.match(result, new RegExp(`Merged ${target}`))
   assert.equal(git(facts.worktree, ['show', 'HEAD:target.txt']).stdout, 'target\n')
+  const message = git(facts.worktree, ['log', '-1', '--format=%B']).stdout
+  assert.match(message, /target work/)
   await assert.rejects(
     tool.execute({ branch: 'main' }, { agent, signal: new AbortController().signal }),
     /recorded in this task/,

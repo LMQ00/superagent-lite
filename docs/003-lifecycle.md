@@ -128,7 +128,7 @@ change 和 merge 任务的 Worker 回合按以下顺序落定（`index.js:147-18
 
 `awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。merge worker 自己把 reviewed merge commit 合入 base branch 后，目标分支的提交就成为 base branch 的祖先；面板读取这些原任务时按「已包含在基础分支」收尾。Task 到 `merged` 的路径有三种：
 
-- 用户明确授权后由新派发的 merge worker 把 reviewed merge commit 合入 base branch（`src/merge-tool.js:13-64`、`src/landing.js:370-388`）；也可以由面板行内合并执行本地 `git merge --no-ff`（`src/merge.js:30-100`、`src/git-actions.js:409-425`）。
+- 用户明确授权后由新派发的 merge worker 把 reviewed merge commit 合入 base branch（`src/merge-tool.js:13-64`、`src/landing.js:370-388`）；也可以由面板行内合并执行本地 `git merge --no-ff --log`，合并提交带上分支的功能性 commit 信息（`src/merge.js:30-109`、`src/git-actions.js:409-425`）。
 - 精确匹配的 PR 在 GitHub 上被合并，面板读取时同步为 `merged`（`src/git-actions.js:190-194`、`src/git-actions.js:309-317`）。
 - 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`）。没有自有提交的分支不算合并。
 
@@ -164,7 +164,7 @@ GitHub 写入不自动重试。PR 尚未创建时的发送失败可以从 `deliv
 
 ### 本地合并失败
 
-预检失败时 Task 仍是 `awaiting-merge`，用户可以修正目标 checkout 后重试。`git merge` 已经执行但失败时，Task 标为 `delivery-blocked`，并提示检查目标；之后不再是 `awaiting-merge`，面板合并会拒绝，直到用户处理目标并开始新的工作（`src/merge.js:49-99`）。
+预检失败时 Task 仍是 `awaiting-merge`，用户可以修正目标 checkout 后重试。`git merge` 已经执行但失败时，Task 标为 `delivery-blocked`，并提示检查目标；之后不再是 `awaiting-merge`，面板合并会拒绝，直到用户处理目标并开始新的工作（`src/merge.js:49-108`）。
 
 ### follow-up 发送失败
 
