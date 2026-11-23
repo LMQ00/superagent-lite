@@ -25,7 +25,7 @@ flowchart TB
   GH --> PR[Pull request]
   T --> B[src/board.js]
   B --> C[client.js 面板]
-  C -->|merge、publish、review、delete-branch| B
+  C -->|merge、publish、review、delete-branch、delete-task| B
   MP[src/memory-panel.js] --> C
   R --> TG[src/turn-guard.js]
   W -->|每轮 turn/end| RA[(原始归档)]
@@ -117,7 +117,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/board.js`
 
-提供 `GET /superagent-lite/tasks`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；同时导出记忆端点复用的 body reader（`src/board.js:1-117`）。
+提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；同时导出记忆端点复用的 body reader（`src/board.js:1-148`）。
 
 ### `src/report-tool.js`
 
@@ -129,7 +129,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务和记忆，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review 和 delete-branch 动作。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除弹窗确认分支移除。记忆按分类和文本过滤，编辑或删除需 owner 点击（`client.js:1-810`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务和记忆，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。记忆按分类和文本过滤，编辑或删除需 owner 点击（`client.js:1-845`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
@@ -137,7 +137,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 - `client.js` 只在浏览器运行，通过模块加载器使用 `react`、`slots` 和 `locale`。
 - 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`、`commands`（`index.js:13`、`router.js:6`）。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
-- `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:138-143`）。
+- `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
 - `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:342-347`）。
 - `src/memory-panel.js` 是唯一记忆面板端点；它复用 `src/board.js` 的 `readJsonBody`，不从请求读路径（`src/memory-panel.js:1-2`）。
 - `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-39`）。
@@ -177,7 +177,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/board.js` | 提供 owner-only 任务列表与 Git 动作 HTTP 端点，并投影面板视图。 |
+| `src/board.js` | 提供 owner-only 任务列表、任务删除与 Git 动作 HTTP 端点，并投影面板视图。 |
 | `src/status.js` | 推导六个面板状态，并按 Project 与 commit 索引通过的审查。 |
 | `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
 | `src/dispatch.js` | 校验派发、创建 Task 记录并启动 Worker Session。 |
@@ -194,7 +194,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `src/report-tool.js` | 以结论和证据结束 report 任务。 |
 | `src/review.js` | 检查已提交 diff，运行只读 Reviewer，接收 `submit_review` 并记录裁决。 |
 | `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
-| `src/task-store.js` | 读写 Task 记录和 Worker Session 映射。 |
+| `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
 | `src/worker-prompt.js` | 生成 change 和 report 任务消息。 |
@@ -204,8 +204,8 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 | 测试 | 覆盖什么 |
 | --- | --- |
-| `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支弹窗、记忆搜索与编辑删除和错误。 |
+| `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、记忆搜索与编辑删除和错误。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -226,7 +226,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `test/review.test.js` | Reviewer 提示词带范围不带 diff、无证据裁决被拒、读改动文件算证据。 |
 | `test/routing-rule.test.js` | 两个路由工具把不同目标挡在 `continue_worker` 外，persona 说明新工作规则。 |
 | `test/status.test.js` | 六个面板状态、优先级和审查索引。 |
-| `test/task-store.test.js` | Task 记录私有写入、Session 反查和路径形 ID 拒绝。 |
+| `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射和路径形 ID 拒绝。 |
 | `test/turn-guard.test.js` | 每个输入一个决定、提醒预算、idle 投递和中止处理。 |
 | `test/validation.test.js` | 派发参数规则和 mode 默认值。 |
 | `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒。 |
@@ -267,6 +267,7 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |
 | `/superagent-lite/tasks` | `GET` | 返回 owner 可见的 Task 列表和推导出的面板状态 |
+| `/superagent-lite/tasks` | `DELETE` | 删除一个已结束 Task 的记录和 worker 会话映射 |
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
 | `/superagent-lite/memory` | `GET`、`POST` | 列出记忆，或执行 `update` / `delete` |

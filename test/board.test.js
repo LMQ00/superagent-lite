@@ -34,6 +34,8 @@ test('board refuses unauthenticated and non-owner readers without reading disk',
     const result = await request(handler)
     assert.equal(result.status, admission.rejection ?? 403)
     assert.equal(result.headers['cache-control'], 'no-store')
+    assert.equal((await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${'a'.repeat(16)}`)).status,
+      admission.rejection ?? 403)
   }
 })
 
@@ -41,6 +43,7 @@ test('board lists only its public view fields to the owner and flags unrecovered
   const rows = [{ id: 'a', task: 'private details', mode: 'report', teamId: 'a', status: 'running', workerSessionId: 'w1' }, { id: 'b', status: 'running', workerSessionId: 'w2' }]
   const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, { get: id => id === 'w1' }, () => rows)
   assert.equal((await request(handler, 'POST')).status, 405)
+  assert.equal((await request(handler, 'POST')).headers.allow, 'GET, DELETE')
   const result = await request(handler)
   assert.equal(result.status, 200)
   const tasks = JSON.parse(result.body).tasks
@@ -94,6 +97,64 @@ test('board keeps listing tasks when the Git branch view is unavailable', async 
   const tasks = JSON.parse((await request(handler)).body).tasks
   assert.deepEqual(tasks.map(row => row.status), ['unmerged', 'answer', 'unmerged'])
   assert.equal(tasks[0].git, undefined)
+})
+
+test('board deletes a settled task for the owner and removes its session link', async () => {
+  const taskId = 'a'.repeat(16)
+  const removed = []
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [{ id: taskId, status: 'completed', workerSessionId: 'worker' }],
+    undefined,
+    async id => { removed.push(id); return true },
+  )
+  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(result.status, 200)
+  assert.equal(result.headers['cache-control'], 'no-store')
+  assert.deepEqual(JSON.parse(result.body), { deleted: taskId })
+  assert.deepEqual(removed, [taskId])
+})
+
+test('board refuses task deletion while the worker or delivery is running', async () => {
+  const taskId = 'a'.repeat(16)
+  const rows = [
+    { id: taskId, status: 'running', workerSessionId: 'worker' },
+    { id: 'b'.repeat(16), status: 'merging', workerSessionId: 'other' },
+  ]
+  const removed = []
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: id => id === 'worker' ? { id } : undefined },
+    () => rows,
+    undefined,
+    async id => { removed.push(id); return true },
+  )
+  const running = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(running.status, 409)
+  assert.match(JSON.parse(running.body).error, /still running/)
+  const merging = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${'b'.repeat(16)}`)
+  assert.equal(merging.status, 409)
+  assert.match(JSON.parse(merging.body).error, /merge or publication/)
+  assert.deepEqual(removed, [])
+})
+
+test('board validates task deletion requests and reports missing records', async () => {
+  const taskId = 'a'.repeat(16)
+  let called = false
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [],
+    undefined,
+    async () => { called = true; return true },
+  )
+  assert.equal((await request(handler, 'DELETE', '/superagent-lite/tasks')).status, 400)
+  assert.equal((await request(handler, 'DELETE', '/superagent-lite/tasks?taskId=not-a-task')).status, 400)
+  const missing = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(missing.status, 404)
+  assert.deepEqual(JSON.parse(missing.body), { error: 'Task not found' })
+  assert.equal(called, false)
 })
 
 test('Git action handler refuses non-owners, wrong methods and non-JSON bodies', async () => {
