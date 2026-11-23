@@ -11,7 +11,7 @@ import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
 import { pumpWorkers } from './src/launch-queue.js'
-import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
+import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import {
   archiveWorkerTurn, createKnowledgeQueryTool, createKnowledgeWriteTool, registerMemoryContext,
   registerProjectSkillProvider, runMemoryExtraction,
@@ -54,8 +54,12 @@ export async function apply(ctx) {
     if (agent.session.header.origin !== 'subagent') return
     const helper = claimHelper(agent.session.header.parentSession)
     if (helper) {
-      registerReadOnlyGuard(agent, helper)
-      if (helper.scope) agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
+      if (helper.scope) {
+        registerReviewGuard(agent, helper.scope)
+        agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
+      } else {
+        registerReadOnlyGuard(agent)
+      }
       if (agent.ctx.tools.register) {
         const projectRoot = helper.projectRoot
           ?? (await taskForSession(undefined, agent.session.header.parentSession))?.projectRoot

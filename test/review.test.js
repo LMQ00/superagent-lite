@@ -21,7 +21,7 @@ after(async () => {
 
 const { createTask, readTask } = await import('../src/task-store.js')
 const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
-const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
+const { claimHelper, registerReviewGuard } = await import('../src/helper-guard.js')
 
 function git(cwd, args) {
   const result = spawnSync('git', ['-c', 'user.name=dsh', '-c', 'user.email=dsh@local', ...args], { cwd, encoding: 'utf8' })
@@ -72,7 +72,7 @@ function harness({ baseCommit, head, evidence = 'diff', verdict = '通过' }) {
             on(name, fn) { if (name === 'session/event') listeners.push(fn) },
           },
         }
-        registerReadOnlyGuard(reviewer, claim.scope)
+        registerReviewGuard(reviewer, claim.scope)
         const submit = createReviewResultTool(reviewer)
         const emit = event => { for (const listener of listeners) listener(reviewer.session, event) }
         const call = (callId, name, input) => ({
@@ -128,8 +128,9 @@ test('the reviewer prompt carries scope and the worktree instead of the diff', a
   assert.ok(text.includes(repo), 'worktree path is in the prompt')
   assert.ok(text.includes(baseCommit), 'base commit is in the prompt')
   assert.ok(text.includes(head), 'head commit is in the prompt')
-  assert.match(text, /Read it yourself/)
-  assert.match(text, /only commits/)
+  assert.match(text, /Inspect it yourself/)
+  assert.match(text, /write\/edit tools are unavailable/)
+  assert.match(text, /changing branches or history/)
   assert.match(text, /cite the file and line/)
   assert.match(text, /submit_review/)
   assert.match(text, /通过/)

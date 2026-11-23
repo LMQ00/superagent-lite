@@ -18,10 +18,9 @@ const READ_ONLY_TOOLS = new Set([
 
 const SHELL_TOOLS = ['bash', 'pwsh']
 
-// A reviewer gets no patch in its prompt; it must read base..head and the
-// worktree itself. Everything else the inherited read-only composition offers
-// is outside that scope. `submit_review` is how it records the verdict.
-const REVIEW_TOOLS = new Set(['submit_review', 'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh', 'knowledge_query'])
+// A reviewer inherits the worker composition. Its only tool limits are the file
+// write/edit tools; everything else it needs to inspect the change stays open.
+const WRITE_TOOLS = new Set(['write', 'edit', 'apply_patch', 'str_replace_editor'])
 
 export function expectHelper(parentSessionId, reviewScope, kind = reviewScope ? 'review' : 'memory', context = {}) {
   const queue = pending.get(parentSessionId) ?? []
@@ -71,35 +70,21 @@ export function takeHelperEvidence(sessionId) {
   return entry?.scope.hasEvidence() ?? false
 }
 
-export function registerReadOnlyGuard(agent, helper) {
-  // index.js claims the expected helper and installs this guard. A reviewer
-  // carries a review scope; the memory role has none and owns the only
-  // knowledge write tool.
-  const reviewScope = helper?.kind === undefined && helper?.scope === undefined
-    ? helper
-    : helper?.scope
-  const helperKind = helper?.kind ?? (reviewScope ? 'review' : 'memory')
-  // The helper inherits the worker composition, so its shell could write; a
-  // session-level override confines every shell call to read-only file effects.
+// The memory helper has no review scope: it keeps the inherited composition
+// read-only so distilling memory cannot change the repository. It owns the only
+// knowledge write tool.
+export function registerReadOnlyGuard(agent) {
   agent.session.append('sandbox/mode', { mode: 'read-only', source: 'delegation' })
   // sandboxMode marks a mounted executor that can confine; the effective mode
   // is resolved per call so a later sandbox switch fails closed.
   const shellConfined = session => agent.ctx.get('shell')?.sandboxMode !== undefined &&
     agent.ctx.get('sandboxPolicy')?.resolve({ session })?.mode === 'read-only'
   agent.ctx.tools.guard(({ name, arguments: input, agent: caller }) => {
-    if (name === 'knowledge_write') {
-      return helperKind === 'memory' ? undefined : 'Only the memory role may write project knowledge.'
-    }
-    if (reviewScope && !REVIEW_TOOLS.has(name)) {
-      return `Review scope: the reviewer may only inspect the worker worktree and ${reviewScope.baseCommit}..${reviewScope.headCommit}; "${name}" is not available.`
-    }
+    if (name === 'knowledge_write') return undefined
     if (name === 'submit_review') {
-      return reviewScope ? undefined : 'Read-only helpers cannot use "submit_review"; only a reviewer records a verdict.'
+      return 'Read-only helpers cannot use "submit_review"; only a reviewer records a verdict.'
     }
-    if (READ_ONLY_TOOLS.has(name)) {
-      if (name === 'knowledge_query') return undefined
-      return reviewScope ? reviewScope.checkFileTool(name, input) : undefined
-    }
+    if (READ_ONLY_TOOLS.has(name)) return undefined
     if (SHELL_TOOLS.includes(name)) {
       if (input?.sandbox_permissions !== undefined) {
         return `Read-only helpers cannot widen the sandbox for "${name}".`
@@ -107,15 +92,26 @@ export function registerReadOnlyGuard(agent, helper) {
       if (!shellConfined(caller?.session ?? agent.session)) {
         return `Read-only helpers cannot run "${name}" because this composition does not confine shell file writes.`
       }
-      if (!reviewScope) return undefined
-      if (input?.run_in_background === true) {
-        return `Review scope: run "${name}" synchronously so its output is in the review; background commands are not allowed.`
-      }
-      const workdirProblem = reviewScope.checkWorkdir(input?.workdir)
-      if (workdirProblem) return workdirProblem
-      return reviewScope.checkCommand(input?.command)
+      return undefined
     }
     return `Read-only helpers cannot use "${name}"; inspect the evidence with read, glob, and grep instead.`
   })
-  if (reviewScope) observeReviewEvidence(agent, reviewScope)
+}
+
+// A reviewer may inspect the repository and run commands as it sees fit. The
+// only limits are file write/edit tools and git commands that move branches or
+// history; the change evidence recorded here gates the verdict. Project
+// knowledge stays read-only for reviewers.
+export function registerReviewGuard(agent, reviewScope) {
+  agent.ctx.tools.guard(({ name, arguments: input }) => {
+    if (WRITE_TOOLS.has(name)) {
+      return `Reviewers may not use the "${name}" tool.`
+    }
+    if (name === 'knowledge_write') {
+      return 'Only the memory role may write project knowledge.'
+    }
+    if (!SHELL_TOOLS.includes(name)) return undefined
+    return reviewScope.checkCommand(input?.command)
+  })
+  observeReviewEvidence(agent, reviewScope)
 }

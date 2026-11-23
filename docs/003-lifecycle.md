@@ -68,7 +68,7 @@ Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息
 
 `review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
 
-Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:20-32`）。helper 守卫在子代理创建前登记审查范围，创建后安装只读工具边界（`src/review.js:59`、`src/helper-guard.js:25-41`）。
+Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:56-71`）。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:87`、`src/helper-guard.js:105-117`）。审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:120`、`src/review.js:44-54`）。
 
 Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:109-122`）。
 

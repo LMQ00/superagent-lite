@@ -12,7 +12,7 @@
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权 | `src/dispatch.js:40-51`、`src/continue.js:120-131` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式、`land` 条件规则、`Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-119` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
-| 审查提示词、裁决工具与范围 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及 `base..head` / Worktree 范围、只读命令白名单和 workdir 围栏 | `src/review.js:12-34`、`src/review.js:54-67`、`src/review-scope.js:1-231` |
+| 审查提示词、裁决工具与限制 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-71`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-22` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、知识库读写工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:70-300` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
@@ -97,7 +97,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:65-83`、`src/helper-guard.js:73-107`、`src/git-actions.js:168-237`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:65-83`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
@@ -122,4 +122,4 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 项目知识库 | `~/.dsh/superagent-lite/memory/knowledge/<hash>.json` | `knowledge_query` 每次查询时读取；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` | 每个 Worker 回合 `turn/end` 时写入；模型工具没有读取入口 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:20-32`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:56-71`）。

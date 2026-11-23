@@ -3,7 +3,7 @@
 一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在独立 Worktree 中执行、提交并接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
 - router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 合并已交付分支：没有正在运行的 merge worker 时派发新的，有则把请求追加给同一个 worker；同一未发布任务的补充用 `continue_worker`。
-- worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
+- worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个独立子代理审查该提交；reviewer 不能使用写改文件的工具，也不能运行改变分支或历史的 git 命令。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 
@@ -73,7 +73,7 @@ npm test
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，review 不占并发名额。每个任务一个 Worktree，并行工作的 worker 各自使用独立检出。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
-- 审查不接收整份 patch：reviewer 在 `base..head` 和 Worktree 范围内自行读 diff，范围外的读取会被拒绝。
+- 审查不接收整份 patch：reviewer 自己读 `base..head` 和改动文件，可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
 - 记忆是数据，不是指令；它不能添加需求或授予权限。记忆没有面板编辑入口，只由 memory 角色维护；归档可能包含敏感对话，插件不提供模型侧读取入口。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
 
