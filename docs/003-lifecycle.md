@@ -75,7 +75,7 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### 记忆对话
 
-记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js:112-124`）。它收到选定结论，返回四个数组；插件逐条写入对应分类（`src/memory.js:126-140`）。
+记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js:112-123`）。它收到选定结论，返回四个数组；插件逐条写入对应分类（`src/memory.js:126-141`）。
 
 | 属性 | 值 |
 | --- | --- |
@@ -83,14 +83,14 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 | 输入 | 选定且不含密钥的结论，1–5,000 字符；自动触发使用报告文本 |
 | 提取上限 | 1 条 private 凭据引用、3 条 public 结论、1 条 profile 事实、3 条 team 事实；每条最多 500 字符 |
 | 不提取 | 密钥、个人数据、对话细节、任务状态和指令 |
-| 写入 | private、public、profile 使用 Host `memory` 角色；team 使用 Task 的 Team 与规范化 Project 根；每条记录保存触发事件的 Session ID 和序号 |
+| 写入 | private、public、profile 使用 Host `memory` 角色；team 使用 Task 的 Team 与规范化 Project 根；每条记录保存触发事件的 Session ID 和序号；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖匹配记录 |
 | 空结果 | 空数组不写记录；profile 写入后刷新注入上下文；自动触发失败只记录警告，显式 `extract_memory` 把错误返回 Worker |
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js:16-25`、`index.js:78-87`）。
 
 ### 原始归档
 
-Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条不可变记录（`src/memory.js:212-225`）。
+Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条不可变记录（`src/memory.js:213-226`）。
 
 | 字段 | 内容 |
 | --- | --- |
@@ -99,7 +99,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 | `references` | 按事件顺序编号的 `reference`（从 1 开始）、Session `seq` 和事件类型 |
 | `events` | 完整事件快照 |
 
-归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源重复写入相同数据是幂等的，不同数据会报错（`src/memory-store.js:312-340`）。归档只由 Host 写入，模型工具没有读取入口。
+归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源重复写入相同数据是幂等的，不同数据会报错（`src/memory-store.js:436-464`）。归档只由 Host 写入，模型工具没有读取入口。
 
 ## 并发
 

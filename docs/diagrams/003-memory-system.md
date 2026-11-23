@@ -31,6 +31,7 @@ flowchart LR
 | Memory conversation | `src/memory-extractor.js`, role label `Distill memory` |
 | Four categories | `memoryExtractorPrompt` and `memoryFacts` in `src/memory.js`; records in `private`, `public`, `profile`, `team` |
 | On-demand reads | `superagent_memory` with `action=list/read`, one call at a time |
+| Write rules | `create` in `src/memory-store.js` compares normalized text; identical or equivalent facts reuse the record and corrected facts overwrite it instead of appending |
 | Every-chat injection | `refreshProfile` and `registerProfileContext`, runtime context order `170`, newest 6 facts cut to 500 characters |
 | Team isolation | `scopeOf` in `src/memory-store.js`; team callers need both Team and Project |
 

@@ -85,11 +85,11 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory.js`
 
-构建 `superagent_memory`、`extract_memory`、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话只收到选定结论，插件负责把四类结果写回（`src/memory.js:1-227`）。
+构建 `superagent_memory`、`extract_memory`、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话只收到选定结论，插件负责把四类结果写回（`src/memory.js:1-228`）。
 
 ### `src/memory-extractor.js`
 
-只定义记忆对话角色：标签、5,000 字符 findings 上限、500 字符单条上限、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-39`）。
+只定义记忆对话角色：标签、5,000 字符 findings 上限、500 字符单条上限、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-41`）。
 
 ### `src/memory-panel.js`
 
@@ -97,7 +97,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory-store.js`
 
-保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-347`）。
+保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、按规范化文本相似度去重与覆盖、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-471`）。
 
 ### `src/merge.js`
 
@@ -138,9 +138,9 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 - 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`、`commands`（`index.js:13`、`router.js:6`）。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
-- `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:342-347`）。
+- `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:466-470`）。
 - `src/memory-panel.js` 是唯一记忆面板端点；它复用 `src/board.js` 的 `readJsonBody`，不从请求读路径（`src/memory-panel.js:1-2`）。
-- `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-39`）。
+- `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-41`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
 - `src/github.js` 和 `src/merge.js` 是唯一交付写路径；其他模块不 push、不创建 PR、不合并或删除分支（`src/github.js:77-137`、`src/merge.js:30-136`）。
 - `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
@@ -187,7 +187,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `src/memory.js` | 注册记忆工具、profile 上下文、记忆对话、面板 facade 和轮次归档。 |
 | `src/memory-extractor.js` | 定义记忆对话的角色提示词、标签、四类上限和输出 schema。 |
 | `src/memory-panel.js` | 提供 owner-only 记忆列表、编辑和删除 HTTP 端点。 |
-| `src/memory-store.js` | 保存 Memory 记录和原始归档，执行分类、scope 和密钥检查。 |
+| `src/memory-store.js` | 保存 Memory 记录和原始归档，执行分类、scope、密钥检查以及写入去重/纠错。 |
 | `src/merge.js` | 实现本地 `--no-ff` 合并、分支删除和 `/merge-worker` 命令。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
@@ -214,9 +214,10 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review、合并、记忆和归档。 |
-| `test/memory-extractor.test.js` | 记忆角色提示词、四类提取、空结果、超限事实和面板编辑删除。 |
+| `test/memory-extractor.test.js` | 记忆角色提示词、四类提取、重复提取复用记录、空结果、超限事实和面板编辑删除。 |
 | `test/memory-panel.test.js` | owner 准入、记忆投影、更新/删除路径、body 校验和状态码映射。 |
 | `test/memory-store.test.js` | 分类、team scope、private 引用、面板 team scope、归档不可变、符号链接和并发更新。 |
+| `test/memory-write-rules.test.js` | 相同写入不新增、等价改写不新增、错误记忆覆盖更新、新内容新增、并发相同写入，以及分类和 scope 隔离。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、显式提取抑制和提取失败不影响报告。 |
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
@@ -247,7 +248,7 @@ Task 与 Memory 记录在 `~/.dsh/superagent-lite/`，Worktree 在各项目下�
 | 原始轮次归档 | `memory/archive/<hash>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 
-team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，记录以 `0600` 写入（`src/memory-store.js:168-176`、`src/task-store.js:34-57`、`src/memory-store.js:312-340`）。
+team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，记录以 `0600` 写入（`src/memory-store.js:174-183`、`src/task-store.js:34-57`、`src/memory-store.js:436-464`）。
 
 ## 对外接口
 
@@ -291,6 +292,7 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | `client.js` 字典 | 下一次客户端 bundle 加载 |
 | profile 记忆写入 | 立即刷新注入的 profile 上下文 |
 | Task 或 Memory 记录 | 下一次面板加载或工具调用；面板会修正已审查的 HEAD 并采纳同一 commit 的审查 |
+| 记忆写入 | 立即写入磁盘；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖匹配记录 |
 | 面板记忆编辑或删除 | 立即写入磁盘和面板；下一次工具调用读到新记录 |
 | GitHub remote 与 PR 事实 | PR 事实缓存 30 秒；面板刷新在缓存过期后重新读取 |
 

@@ -12,6 +12,11 @@ const ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
 const TEAM_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const SECRET_PATTERN = /-----BEGIN [^-\r\n]*PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,}|(?:AKIA|ASIA)[A-Z0-9]{16})\b|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:api[-_ ]?key|password|secret|token)\s*[:=]\s*\S+/i
+// A new fact at or above this lexical similarity is the same fact: identical or
+// an equivalent rewrite reuses the record, and a conflicting restatement
+// overwrites it instead of appending a second copy.
+const SAME_MEMORY_SIMILARITY = 0.55
+const MAX_EDIT_COMPARISON = 2000
 
 function object(value, allowed) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -53,6 +58,108 @@ function payloadOf(category, input) {
 
 function hash(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function normalizedText(value) {
+  return value.normalize('NFKC').toLowerCase()
+    .replace(/[\s\u3000]+/g, ' ')
+    .replace(/[.,;:!?。，；：！？、'"“”‘’`()\[\]{}<>《》·—–_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function compactText(value) {
+  return normalizedText(value).replace(/ /g, '')
+}
+
+function memoryTokens(value) {
+  return normalizedText(value).match(/[a-z0-9]+|[\u3400-\u9fff]/g) ?? []
+}
+
+function dice(left, right) {
+  if (left.length === 0 || right.length === 0) return 0
+  const counts = new Map()
+  for (const token of left) counts.set(token, (counts.get(token) ?? 0) + 1)
+  let shared = 0
+  for (const token of right) {
+    const remaining = counts.get(token) ?? 0
+    if (remaining === 0) continue
+    counts.set(token, remaining - 1)
+    ++shared
+  }
+  return 2 * shared / (left.length + right.length)
+}
+
+function commonPrefixLength(left, right) {
+  let index = 0
+  while (index < left.length && index < right.length && left[index] === right[index]) ++index
+  return index
+}
+
+function commonSuffixLength(left, right) {
+  let index = 0
+  while (index < left.length && index < right.length && left[left.length - 1 - index] === right[right.length - 1 - index]) ++index
+  return index
+}
+
+function editDistance(left, right) {
+  let previous = new Uint32Array(right.length + 1)
+  let current = new Uint32Array(right.length + 1)
+  for (let column = 0; column <= right.length; ++column) previous[column] = column
+  for (let row = 1; row <= left.length; ++row) {
+    current[0] = row
+    for (let column = 1; column <= right.length; ++column) {
+      current[column] = Math.min(
+        previous[column] + 1,
+        current[column - 1] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      )
+    }
+    const next = previous
+    previous = current
+    current = next
+  }
+  return previous[right.length]
+}
+
+function textSimilarity(left, right) {
+  const a = compactText(left)
+  const b = compactText(right)
+  if (a === b) return 1
+  if (a.length === 0 || b.length === 0) return 0
+  const longest = Math.max(a.length, b.length)
+  const prefix = commonPrefixLength(a, b) / longest
+  const suffix = commonSuffixLength(a, b) / longest
+  const overlap = dice(memoryTokens(left), memoryTokens(right))
+  // Edit distance is quadratic. Skip it for long facts and for pairs whose
+  // length gap already puts them below the threshold; overlap still applies.
+  const edit = longest > MAX_EDIT_COMPARISON || Math.abs(a.length - b.length) / longest > 1 - SAME_MEMORY_SIMILARITY
+    ? 0
+    : 1 - editDistance(a, b) / longest
+  return Math.max(prefix, suffix, overlap, edit)
+}
+
+function samePayload(record, facts) {
+  if (Object.hasOwn(facts, 'credentialRef')) return record.credentialRef === facts.credentialRef
+  return typeof record.content === 'string' && normalizedText(record.content) === normalizedText(facts.content)
+}
+
+function matchingRecord(records, facts) {
+  if (Object.hasOwn(facts, 'credentialRef')) {
+    return records.find(record => record.credentialRef === facts.credentialRef)
+  }
+  let best
+  for (const record of records) {
+    if (typeof record.content !== 'string') continue
+    const similarity = textSimilarity(record.content, facts.content)
+    if (similarity < SAME_MEMORY_SIMILARITY) continue
+    if (best === undefined || similarity > best.similarity ||
+        (similarity === best.similarity && (record.updatedAt > best.record.updatedAt ||
+          (record.updatedAt === best.record.updatedAt && record.id < best.record.id)))) {
+      best = { record, similarity }
+    }
+  }
+  return best?.record
 }
 
 function storedScope(value) {
@@ -239,17 +346,42 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return { id, category, ...payloadOf(category, payload), source: sourceOf(source), createdAt, updatedAt }
   }
 
+  async function recordsIn(storage, category, scope) {
+    const records = []
+    for (const name of (await readdir(storage)).sort()) {
+      const id = name.slice(0, -5)
+      if (!name.endsWith('.json') || !ID_PATTERN.test(id)) continue
+      const record = await loadRecord(recordPath(storage, id), category, scope, id)
+      if (record !== undefined) records.push(record)
+    }
+    return records
+  }
+
   async function create(caller, input) {
     const { category, source, ...payload } = object(input, ['category', 'source', 'content', 'nonSecret', 'credentialRef'])
     const scope = scopeOf(caller, category)
     const facts = payloadOf(category, payload)
     const origin = sourceOf(source)
     const storage = await partition(category, scope, true)
-    const id = randomUUID()
-    const time = new Date().toISOString()
-    const record = { id, category, ...facts, source: origin, createdAt: time, updatedAt: time }
-    await writeDocument(storage, recordPath(storage, id), { version: VERSION, scope, record }, true)
-    return record
+    return serialized(storage, async () => {
+      const matched = matchingRecord(await recordsIn(storage, category, scope), facts)
+      if (matched !== undefined) {
+        if (samePayload(matched, facts)) return matched
+        // The new fact is an equivalent rewrite or a correction. Overwrite the
+        // matched record and keep its identity; never append a second copy.
+        const record = {
+          id: matched.id, category, ...facts, source: origin,
+          createdAt: matched.createdAt, updatedAt: new Date().toISOString(),
+        }
+        await writeDocument(storage, recordPath(storage, record.id), { version: VERSION, scope, record })
+        return record
+      }
+      const id = randomUUID()
+      const time = new Date().toISOString()
+      const record = { id, category, ...facts, source: origin, createdAt: time, updatedAt: time }
+      await writeDocument(storage, recordPath(storage, id), { version: VERSION, scope, record }, true)
+      return record
+    })
   }
 
   async function read(caller, category, id) {
@@ -262,15 +394,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
   async function list(caller, category) {
     const scope = scopeOf(caller, category)
     const storage = await partition(category, scope, false)
-    if (storage === undefined) return []
-    const records = []
-    for (const name of (await readdir(storage)).sort()) {
-      const id = name.slice(0, -5)
-      if (!name.endsWith('.json') || !ID_PATTERN.test(id)) continue
-      const record = await loadRecord(recordPath(storage, id), category, scope, id)
-      if (record !== undefined) records.push(record)
-    }
-    return records
+    return storage === undefined ? [] : recordsIn(storage, category, scope)
   }
 
   async function update(caller, category, id, changes) {

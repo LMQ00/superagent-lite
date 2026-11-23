@@ -19,12 +19,12 @@ Superagent 轻量版把项目工作拆成一条固定链路：用户输入先在
 - **新工具落进已有阶段。** 派发、执行、审查、交付、记忆五段之外不加工具；一个工具只做一段内的事。
 - **同一状态只有一个写者。** 存储状态由任务生命周期代码写；面板状态在读取时由任务、分支和审查事实推导（`src/status.js:6-34`），没有第二套状态系统（`src/board.js:48-60`）。
 - **权限由代码判定。** 工具身份、任务归属、Worktree 路径、审查 HEAD、文件策略都在代码里检查，提示词只说明用法。
-- **项目与团队的关系写在 Task 记录里。** 不设全局团队配置；团队记忆按 Team 与 Project 的哈希分区存放（`src/memory-store.js:168-177`）。
+- **项目与团队的关系写在 Task 记录里。** 不设全局团队配置；团队记忆按 Team 与 Project 的哈希分区存放（`src/memory-store.js:278-284`）。
 - **交付失败不重试。** GitHub 写入失败或 PR 被关闭时，Task 停在 `delivery-blocked`，由人决定下一步（`src/git-actions.js:458-461`、`src/git-actions.js:273-277`）。
 
 ## 对运维的责任
 
 - **Router Session 的文件策略就是交付权限。** 合并、发送 PR、审查和删除分支都要求 `danger-full-access`；否则动作被拒绝（`src/git-actions.js:106-110`）。
 - **账号由运维提供。** 发送 PR 使用本机 `gh` 的登录态，推送使用所选 remote 的 push URL（`src/github.js:1-137`、`src/git-actions.js:439-480`）。
-- **运行记录要备份。** Task 在 `~/.dsh/superagent-lite/tasks/`，记忆和归档在 `~/.dsh/superagent-lite/memory/`；升级前备份这两个目录（`src/task-store.js:34-40`、`src/memory-store.js:168`）。
+- **运行记录要备份。** Task 在 `~/.dsh/superagent-lite/tasks/`，记忆和归档在 `~/.dsh/superagent-lite/memory/`；升级前备份这两个目录（`src/task-store.js:34-40`、`src/memory-store.js:275`）。
 - **Worktree 要保留。** 合并和恢复依赖 worker 分支与 Worktree，因此 worktree 服务配置 `retainOnArchive: true`（`cordis.patch.yml:1-7`）。
