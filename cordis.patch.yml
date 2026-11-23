@@ -51,6 +51,12 @@
             name: '@deepseek-ai/dsh-time-context'
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              includeDefaultRoots: false
+              customSkillDirs:
+                - !!js dshHomePath('skills')
+                - !!js (process.env.DSH_AGENTS_HOME || dshHomePath('..', '.agents')) + '/skills'
+                - !!js process.env.DSH_BUNDLED_SKILL_DIR || dshHomePath('skills')
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: compaction

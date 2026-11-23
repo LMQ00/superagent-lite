@@ -37,19 +37,28 @@ function registerHelper({ shell = { sandboxMode: 'workspace-write' }, policy, sc
 test('only an expected child is claimed as a helper', () => {
   assert.equal(claimHelper('parent'), false)
   expectHelper('parent')
-  assert.deepEqual(claimHelper('parent'), { scope: undefined })
+  assert.deepEqual(claimHelper('parent'), { scope: undefined, kind: 'memory' })
   assert.equal(claimHelper('parent'), false)
 })
 
 test('nested expectations survive one claim and clear together', () => {
   expectHelper('parent')
   expectHelper('parent')
-  assert.deepEqual(claimHelper('parent'), { scope: undefined })
-  assert.deepEqual(claimHelper('parent'), { scope: undefined })
+  assert.deepEqual(claimHelper('parent'), { scope: undefined, kind: 'memory' })
+  assert.deepEqual(claimHelper('parent'), { scope: undefined, kind: 'memory' })
   assert.equal(claimHelper('parent'), false)
   expectHelper('parent')
   clearHelperExpectation('parent')
   assert.equal(claimHelper('parent'), false)
+})
+
+test('only the memory role may write knowledge', () => {
+  const memory = registerHelper()
+  assert.equal(memory.check({ name: 'knowledge_query' }), undefined)
+  assert.equal(memory.check({ name: 'knowledge_write' }), undefined)
+  const reviewer = registerHelper({ scope: { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) } })
+  assert.equal(reviewer.check({ name: 'knowledge_query' }), undefined)
+  assert.match(reviewer.check({ name: 'knowledge_write' }), /Only the memory role/)
 })
 
 test('the helper guard allows read-only inspection and confines its shell', () => {
