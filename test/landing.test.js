@@ -81,6 +81,11 @@ test('only a merge task may merge its reviewed commit into the project checkout'
   const facts = await fixture('merge-worker')
   const state = stateFor({ ...facts, land: true, mode: 'merge' })
   assert.equal(checkLandingCommand(`git merge --no-ff ${facts.head}`, state, facts.repo), undefined)
+  assert.equal(
+    checkLandingCommand(`git merge --no-ff --log -m "Merge branch '${facts.branch}'" ${facts.head}`, state, facts.repo),
+    undefined,
+  )
+  assert.match(checkLandingCommand(`git merge --squash ${facts.head}`, state, facts.repo), /not supported/)
   assert.match(checkLandingCommand(`git merge ${facts.base}`, state, facts.repo), /reviewed commit/)
   assert.match(checkLandingCommand(`git merge ${facts.head}`, state, facts.worktree), /project checkout/)
 })

@@ -67,7 +67,16 @@ export async function mergeWorkerBranch(ctx, task, target, signal, update = upda
         return { status: 'merging' }
       })
       try {
-        await git(['-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--no-edit', '--no-overwrite-ignore', head])
+        // --log appends the merged branch's one-line commit descriptions to the
+        // merge commit, so the base branch history keeps the functional commits
+        // and their messages instead of only a bare merge line.
+        const mergeArgs = [
+          '-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--log', '--no-overwrite-ignore',
+          '-m', `Merge branch '${branch}'`,
+        ]
+        if (typeof task.title === 'string' && task.title.trim()) mergeArgs.push('-m', task.title.trim())
+        mergeArgs.push(head)
+        await git(mergeArgs)
       } catch (error) {
         await update(task.id, { status: 'delivery-blocked', failure: `Merge did not report success: ${error.message}` })
         throw new Error(`Merge did not report success; inspect the target before retrying: ${error.message}`)
