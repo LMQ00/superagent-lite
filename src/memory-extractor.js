@@ -26,7 +26,9 @@ export const memoryExtractorOutputSchema = Object.freeze({
 
 export function memoryExtractorPrompt(conversation) {
   return [
-    'You are the memory conversation: read the worker conversation and save the information worth reusing.',
+    'You are the memory conversation: read the worker conversation and save only durable information worth reusing long term.',
+    'Saving nothing is a valid and common result: do not add a memory just because the task finished.',
+    'Skip one-off, short-term, or easily stale details such as task progress, transient errors, or counts that will soon change.',
     'Return four arrays and leave a category empty when nothing qualifies.',
     'private: credential reference names only, never secret values; expect this to be extremely rare.',
     'public: objective knowledge and conclusions only; no personal, team-specific, or transient task state.',

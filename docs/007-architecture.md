@@ -96,7 +96,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory-extractor.js`
 
-只定义记忆对话角色：标签、60,000 字符对话总长、4,000 字符单条消息、500 字符凭证参数、500 字符单条事实、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-43`）。
+只定义记忆对话角色：标签、60,000 字符对话总长、4,000 字符单条消息、500 字符凭证参数、500 字符单条事实、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-45`）。
 
 ### `src/memory-panel.js`
 
@@ -151,7 +151,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
 - `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:435-439`）。
 - `src/memory-panel.js` 是唯一记忆面板端点；它复用 `src/board.js` 的 `readJsonBody`，不从请求读路径（`src/memory-panel.js:1-2`）。
-- `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-41`）。
+- `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-45`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
 - `src/github.js` 和 `src/merge.js` 是面板与 `/merge-worker` 的交付写路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-136`、`src/landing.js:387-417`）。
 - `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
