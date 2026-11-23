@@ -567,7 +567,9 @@ test('shows saved memory, searches it, edits a fact, deletes a private reference
 
   tree = board.render()
   const privateRow = byClass(tree, 'sl-memory').find(row => text(row).includes('DEEPSEEK_API_KEY'))
-  nodes(privateRow).find(node => node.type === 'button' && text(node) === '删除').props.onClick()
+  const privateDelete = nodes(privateRow).find(node => node.type === 'button' && text(node) === '删除')
+  assert.match(privateDelete.props.className, /sl-btn--danger/)
+  privateDelete.props.onClick()
   tree = board.render()
   const confirmRow = byClass(tree, 'sl-memory').find(row => text(row).includes('DEEPSEEK_API_KEY'))
   nodes(confirmRow).find(node => node.type === 'button' && text(node) === '确认删除').props.onClick()

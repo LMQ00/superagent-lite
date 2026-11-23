@@ -75,22 +75,22 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### 记忆对话
 
-记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js:112-124`）。它收到选定结论，返回四个数组；插件逐条写入对应分类（`src/memory.js:126-140`）。
+记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js:151-184`）。它自己读取 Worker 的对话记录并返回四个数组；插件逐条写入对应分类（`src/memory.js:169-182`）。
 
 | 属性 | 值 |
 | --- | --- |
-| 触发 | change worker 调用 `extract_memory`，或最终 `message_router` 报告送达后自动触发一次 |
-| 输入 | 选定且不含密钥的结论，1–5,000 字符；自动触发使用报告文本 |
+| 触发 | 最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
+| 输入 | Worker 的对话记录：`[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长保留首尾 |
 | 提取上限 | 1 条 private 凭据引用、3 条 public 结论、1 条 profile 事实、3 条 team 事实；每条最多 500 字符 |
 | 不提取 | 密钥、个人数据、对话细节、任务状态和指令 |
 | 写入 | private、public、profile 使用 Host `memory` 角色；team 使用 Task 的 Team 与规范化 Project 根；每条记录保存触发事件的 Session ID 和序号 |
-| 空结果 | 空数组不写记录；profile 写入后刷新注入上下文；自动触发失败只记录警告，显式 `extract_memory` 把错误返回 Worker |
+| 空结果 | 空数组不写记录；profile 写入后刷新注入上下文；触发失败只记录警告 |
 
-自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js:16-25`、`index.js:78-87`）。
+自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js:16-25`、`index.js:76-85`）。
 
 ### 原始归档
 
-Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条不可变记录（`src/memory.js:212-225`）。
+Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条不可变记录（`src/memory.js:228-241`）。
 
 | 字段 | 内容 |
 | --- | --- |
@@ -105,7 +105,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 
 - 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:110-124`）。
 - 插件没有队列和任务上限。每次派发立即启动 Worker；同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
-- 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:115-119`）。
+- 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:158-162`）。
 - 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
 - 同一 Project 根的合并和分支删除跨 Task 串行，面板和 `/merge-worker` 共用同一个队列；不同 Project 互不等待（`src/merge.js:14-26`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。

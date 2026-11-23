@@ -56,6 +56,10 @@ async function workerWiring(workerId, taskId, projectRoot, structured, { fail = 
     session: {
       id: workerId, seq: 5,
       header: { origin: 'subagent', parentSession: 'router' },
+      deriveMessages: () => [
+        { role: 'user', content: [{ type: 'text', text: 'Implement the change.' }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'Done. Review approved; tests pass.' }] },
+      ],
     },
     ctx: {
       get() {},
@@ -70,11 +74,10 @@ async function workerWiring(workerId, taskId, projectRoot, structured, { fail = 
   return {
     agent, activations, registered, warnings,
     message: () => registered.find(tool => tool.name === 'message_router'),
-    extract: () => registered.find(tool => tool.name === 'extract_memory'),
   }
 }
 
-test('the final report triggers the extractor role and writes the returned categories', async () => {
+test('the final report triggers the extractor role with the worker conversation and writes the returned categories', async () => {
   const taskId = 'a'.repeat(16)
   const workerId = 'worker-a'
   const projectRoot = await taskForWorker(taskId, workerId)
@@ -88,8 +91,15 @@ test('the final report triggers the extractor role and writes the returned categ
   assert.equal(wiring.activations.length, 1)
   assert.equal(wiring.activations[0].label, 'Distill memory')
   assert.equal(wiring.activations[0].delivery, 'caller')
-  assert.match(wiring.activations[0].prompt[0].text, /You are the memory conversation/)
-  assert.match(wiring.activations[0].prompt[0].text, /Done\. Review approved; tests pass\./)
+  const prompt = wiring.activations[0].prompt[0].text
+  assert.match(prompt, /You are the memory conversation/)
+  assert.match(prompt, /\[user\] Implement the change\./)
+  assert.match(prompt, /\[assistant\] Done\. Review approved; tests pass\./)
+  const repeated = await wiring.message().execute({
+    message: 'Done again.',
+  }, { agent: wiring.agent, signal: new AbortController().signal })
+  assert.doesNotMatch(repeated, /memory record/)
+  assert.equal(wiring.activations.length, 1)
   const { createMemoryPanel } = await import('../src/memory.js')
   const { records, injection } = await createMemoryPanel().list()
   const team = records.find(record => record.category === 'team' && record.content === 'Reusable team fact.')
@@ -100,23 +110,15 @@ test('the final report triggers the extractor role and writes the returned categ
   assert.ok(injection.profile.recordIds.length > 0)
 })
 
-test('an explicit extraction suppresses the final-report extraction for that worker Session', async () => {
+test('the worker no longer gets an extract_memory tool that supplies findings', async () => {
   const taskId = 'c'.repeat(16)
   const workerId = 'worker-c'
   const projectRoot = await taskForWorker(taskId, workerId)
   const wiring = await workerWiring(workerId, taskId, projectRoot, {
-    private: [], public: ['Explicit public fact.'], profile: [], team: [],
+    private: [], public: [], profile: [], team: [],
   })
-  const extracted = await wiring.extract().execute({
-    findings: 'A selected finding.',
-  }, { agent: wiring.agent, signal: new AbortController().signal })
-  assert.match(extracted, /Saved 1 memory record/)
-  assert.equal(wiring.activations.length, 1)
-  const result = await wiring.message().execute({
-    message: 'Done. Review approved; tests pass.',
-  }, { agent: wiring.agent, signal: new AbortController().signal })
-  assert.doesNotMatch(result, /memory record/)
-  assert.equal(wiring.activations.length, 1)
+  assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), true)
 })
 
 test('an extraction failure does not fail the final report', async () => {

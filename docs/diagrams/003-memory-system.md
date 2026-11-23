@@ -28,7 +28,7 @@ flowchart LR
 | Diagram part | Code |
 | --- | --- |
 | Raw reference | `archiveWorkerTurn` in `src/memory.js`, records under `memory/archive/`, with an event sequence and per-turn `reference` numbers |
-| Memory conversation | `src/memory-extractor.js`, role label `Distill memory` |
+| Memory conversation | `src/memory-extractor.js`, role label `Distill memory`; reads the worker Session transcript through `workerConversation` in `src/memory.js` |
 | Four categories | `memoryExtractorPrompt` and `memoryFacts` in `src/memory.js`; records in `private`, `public`, `profile`, `team` |
 | On-demand reads | `superagent_memory` with `action=list/read`, one call at a time |
 | Every-chat injection | `refreshProfile` and `registerProfileContext`, runtime context order `170`, newest 6 facts cut to 500 characters |
