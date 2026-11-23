@@ -2,7 +2,8 @@ import { resolve } from 'node:path'
 import { taskForSession, updateTask } from './src/task-store.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
-import { createBoardHandler, createGitActionHandler } from './src/board.js'
+import { createBoardHandler, createGitActionHandler, createSettingsHandler } from './src/board.js'
+import { createSettingsStore } from './src/settings-store.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
 import { createMergeTool } from './src/merge-tool.js'
 import { createGitManager } from './src/git-actions.js'
@@ -16,6 +17,7 @@ export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents'
 
 export async function apply(ctx) {
   const gitManager = createGitManager(ctx)
+  const settingsStore = createSettingsStore()
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
@@ -24,6 +26,10 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
       handler: createGitActionHandler(web.connection, gitManager),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/settings',
+      handler: createSettingsHandler(web.connection, settingsStore),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)

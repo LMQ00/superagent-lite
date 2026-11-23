@@ -52,7 +52,7 @@ npm test
 记忆按作用域分两层：全局记忆由所有项目共享，保存 `用户画像` 和 `共享 skill`；项目记忆只属于当前项目，保存 `职责`、`定位`、`场景` 和 `适用于当前项目与职责的 skill`。Worker 和 Reviewer 的提示词都会同时注入项目记忆和全局记忆；Router 只注入全局记忆。记忆是数据，不构成指令、授权或合并许可。
 
 - 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次「记忆对话」（memory）。它自己读取 worker 的完整原始会话（保留首尾，单条消息和总长度有上限），最终报告工具的参数不进入 transcript；它返回六个记忆字段的更新文本，插件只写回发生变化的字段。没有可复用的结论就不写。
-- 原始会话按回合完整归档在 `~/.dsh/superagent-lite/memory/archive/`，每个事件带会话序号和轮内编号，作为原始参照物保留；归档只由 Host 写入，模型工具没有读取入口。
+- 原始会话按回合完整归档在 `~/.dsh/superagent-lite/memory/archive/`，每个事件带会话序号和轮内编号，作为原始参照物保留；归档只由 Host 写入，模型工具没有读取入口。单个归档文件默认不超过 128M，可在 DSH 设置页「归档」分组调到最大 2G 或选择「不限制」；超过上限的回合不写归档，Host 只记录警告。
 - 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`，项目记忆在 `~/.dsh/superagent-lite/memory/projects/`，按项目根哈希分文件；每个字段最多 4,000 字符。记忆没有单独的模型工具或面板编辑入口，只由记忆对话维护。
 
 原始架构图按编号保存在 [docs/diagrams](docs/diagrams/)：001 术语与主流程、002 预设流程、003 记忆系统。
@@ -64,7 +64,7 @@ npm test
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 插件自身没有暂停、队列或任务数上限；每个任务一个 Worktree，多个任务可以同时跑。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
-- 面板没有设置页，也不自动刷新；行为配置在 `cordis.patch.yml` 和代码里。
+- 面板没有设置页，也不自动刷新；行为配置在 `cordis.patch.yml` 和代码里。DSH 设置页只有「归档」分组，用来调整归档文件大小上限（默认 128M，最大 2G，可不限制）。
 - worker 的原始回合事件归档在 `~/.dsh/superagent-lite/memory/archive/`，可能包含敏感对话内容，不能通过插件的模型工具检索。
 - 审查不接收整份 patch：reviewer 在 `base..head` 和 Worktree 范围内自行读 diff，范围外的读取会被拒绝。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。

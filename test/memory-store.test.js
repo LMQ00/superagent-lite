@@ -64,6 +64,26 @@ test('raw archives are stored by session and event sequence', async t => {
   await assert.rejects(store.archive.write({ sessionId: 's', seq: -1 }, value), /non-negative/)
 })
 
+test('raw archives respect a configured file size limit, including unlimited', async t => {
+  const { directory } = await fixture(t)
+  const source = { sessionId: 'session-limit', seq: 3 }
+  const value = { turn: 1, events: [{ type: 'user/message', data: { text: 'raw' } }] }
+  const exact = Buffer.byteLength(`${JSON.stringify({ version: 1, source, value })}\n`)
+  let limit = exact
+  const store = createMemoryStore(directory, { archiveMaxBytes: async () => limit })
+  await store.archive.write(source, value)
+  assert.deepEqual(await store.archive.read(source), value)
+
+  limit = exact - 1
+  const overLimitSource = { ...source, seq: 4 }
+  await assert.rejects(store.archive.write(overLimitSource, value), new RegExp(`over the ${exact - 1}-byte limit`))
+  assert.equal(await store.archive.read(overLimitSource), undefined)
+
+  limit = null
+  await store.archive.write(overLimitSource, value)
+  assert.deepEqual(await store.archive.read(overLimitSource), value)
+})
+
 test('invalid stored documents fail closed instead of being overwritten', async t => {
   const { root, directory } = await fixture(t)
   const store = createMemoryStore(directory)
