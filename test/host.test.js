@@ -33,8 +33,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
-  const { archiveWorkerTurn, createMemoryTool } = await import('../src/memory.js')
-  const { memoryExtractorOutputSchema } = await import('../src/memory-extractor.js')
+  const { archiveWorkerTurn, createMemoryStore, memoryOutputSchema } = await import('../src/memory.js')
   const { createMessageRouterTool } = await import('../src/message-router.js')
   const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
   const repo = join(root, 'repo')
@@ -102,6 +101,8 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
         assert.ok(spec.prompt[0].text.includes(worktree))
         assert.doesNotMatch(spec.prompt[0].text, /diff --git/)
         assert.doesNotMatch(spec.prompt[0].text, /\+updated/)
+        assert.match(spec.prompt[0].text, /User profile: Prefers terse reviews\./)
+        assert.match(spec.prompt[0].text, /Responsibilities: Review notes carefully\./)
         const claim = claimHelper(spec.parent.session.id)
         assert.ok(claim)
         const listeners = []
@@ -148,6 +149,10 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   git(['commit', '-am', 'change notes'], worktree)
   const head = git(['rev-parse', 'HEAD'], worktree)
   await updateTask(dispatched.taskId, { status: 'running', worktree: { path: worktree, branch } })
+  await createMemoryStore().writeMemory(repo, {
+    global: { userProfile: 'Prefers terse reviews.' },
+    project: { responsibilities: 'Review notes carefully.' },
+  })
   const continueTool = createContinueTool(ctx)
   await continueTool.execute({ taskId: dispatched.taskId, task: 'Add a changelog entry' }, { agent: parent, signal })
   assert.match(sends[0].text, /Add a changelog entry/)
@@ -171,16 +176,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])
   assert.equal((await readTask(dispatched.taskId)).review.head, head)
 
-  const caller = { role: 'worker', teamId: 'team', projectRoot: repo }
-  const memory = createMemoryTool(caller, candidate => candidate === worker)
-  assertSupportedJsonSchema(memory.parameters)
-  assertSupportedJsonSchema(memory.output.schema)
-  assertSupportedJsonSchema(memoryExtractorOutputSchema)
-  worker.session.seq = 3
-  await assert.rejects(memory.execute({ action: 'list', category: 'team' }, { agent: parent, signal }), /not available/i)
-  await memory.execute({ action: 'create', category: 'team', content: 'Use checked-in notes' }, { agent: worker, signal })
-  assert.equal(JSON.parse(await memory.execute({ action: 'list', category: 'team' }, { agent: worker, signal })).total, 1)
-  await assert.rejects(memory.execute({ action: 'list', category: 'archive' }, { agent: worker, signal }))
+  assertSupportedJsonSchema(memoryOutputSchema)
   const events = [{ type: 'turn/start', seq: 0, data: { turn: 1 } }, { type: 'turn/end', seq: 1, data: { turn: 1 } }]
   const archive = []
   await archiveWorkerTurn({ id: worker.id, firstLiveSeq: 0, eventAt: i => events[i], snapshotEvents: (a, b) => events.slice(a, b) }, events[1], { write: (source, snapshot) => archive.push([source, snapshot]) })

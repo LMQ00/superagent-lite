@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { after, test } from 'node:test'
+import test, { after } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
+const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
+await mkdir(tmp, { recursive: true })
+const home = await mkdtemp(join(tmp, 'memory-wiring-'))
 const originalHome = process.env.HOME
-const home = await mkdtemp(join(tmpdir(), 'superagent-lite-memory-wiring-'))
 process.env.HOME = home
 
 after(async () => {
@@ -79,81 +81,77 @@ async function workerWiring(workerId, taskId, projectRoot, structured, { fail = 
   }
 }
 
-test('the final report triggers the extractor role with the worker conversation and writes the returned categories', async () => {
+const memoryFields = values => ({
+  userProfile: '', sharedSkill: '', responsibilities: '', positioning: '', scenarios: '', skill: '', ...values,
+})
+
+test('the final report triggers the memory role and saves global and project fields', async () => {
   const taskId = 'a'.repeat(16)
   const workerId = 'worker-a'
   const projectRoot = await taskForWorker(taskId, workerId)
-  const wiring = await workerWiring(workerId, taskId, projectRoot, {
-    private: [], public: ['Reusable public fact.'], profile: ['Prefers terse reports.'], team: ['Reusable team fact.'],
-  })
+  const wiring = await workerWiring(workerId, taskId, projectRoot, memoryFields({
+    userProfile: 'Prefers terse reports.',
+    sharedSkill: 'Inspect before changing.',
+    responsibilities: 'Keep the notes accurate.',
+    skill: 'Run npm test.',
+  }))
   const result = await wiring.message().execute({
     message: 'Done. Review approved; tests pass.',
   }, { agent: wiring.agent, signal: new AbortController().signal })
-  assert.match(result, /3 memory records saved/)
+  assert.match(result, /4 memory fields updated/)
   assert.equal(wiring.activations.length, 1)
   assert.equal(wiring.activations[0].label, 'Distill memory')
   assert.equal(wiring.activations[0].delivery, 'caller')
-  const prompt = wiring.activations[0].prompt[0].text
-  assert.match(prompt, /You are the memory conversation/)
-  assert.match(prompt, /\[user\] Implement the change\./)
-  assert.match(prompt, /\[assistant\] Done\. Review approved; tests pass\./)
+  assert.equal(wiring.activations[0].maxDepth, 2)
+  assert.match(wiring.activations[0].prompt[0].text, /You are the memory role/)
+  assert.match(wiring.activations[0].prompt[0].text, /\[user\] Implement the change\./)
+  assert.match(wiring.activations[0].prompt[0].text, /\[assistant\] Done\. Review approved; tests pass\./)
+
   const repeated = await wiring.message().execute({
     message: 'Done again.',
   }, { agent: wiring.agent, signal: new AbortController().signal })
-  assert.doesNotMatch(repeated, /memory record/)
+  assert.doesNotMatch(repeated, /memory field/)
   assert.equal(wiring.activations.length, 1)
-  const { createMemoryPanel } = await import('../src/memory.js')
-  const { records, injection } = await createMemoryPanel().list()
-  const team = records.find(record => record.category === 'team' && record.content === 'Reusable team fact.')
-  assert.equal(team.projectRoot, projectRoot)
-  assert.equal(team.teamId, 'core')
-  assert.equal(records.some(record => record.category === 'public' && record.content === 'Reusable public fact.'), true)
-  assert.equal(records.some(record => record.category === 'profile' && record.content === 'Prefers terse reports.'), true)
-  assert.ok(injection.profile.recordIds.length > 0)
+
+  const { createMemoryStore } = await import('../src/memory.js')
+  const saved = await createMemoryStore().readMemory(projectRoot)
+  assert.equal(saved.global.userProfile, 'Prefers terse reports.')
+  assert.equal(saved.global.sharedSkill, 'Inspect before changing.')
+  assert.equal(saved.project.responsibilities, 'Keep the notes accurate.')
+  assert.equal(saved.project.skill, 'Run npm test.')
 })
 
-test('the worker no longer gets an extract_memory tool that supplies findings', async () => {
-  const taskId = 'c'.repeat(16)
-  const workerId = 'worker-c'
+test('a worker gets global and project memory injected as required context and no memory tool', async () => {
+  const taskId = 'b'.repeat(16)
+  const workerId = 'worker-b'
   const projectRoot = await taskForWorker(taskId, workerId)
-  const wiring = await workerWiring(workerId, taskId, projectRoot, {
-    private: [], public: [], profile: [], team: [],
+  const wiring = await workerWiring(workerId, taskId, projectRoot, memoryFields(), {
+    async beforeCreate() {
+      const { createMemoryStore } = await import('../src/memory.js')
+      const store = createMemoryStore()
+      await store.writeGlobal({ userProfile: 'Environment: worker context check.' })
+      await store.writeProject(projectRoot, { responsibilities: 'Worker project responsibility.' })
+    },
   })
+  assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), false)
   assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
-  assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), true)
+  const memory = wiring.contexts.find(entry => entry.name === 'superagent-lite-memory')
+  assert.ok(memory, 'the worker registered a memory context')
+  assert.equal(memory.required, true)
+  assert.match(memory.text(), /User profile: Environment: worker context check\./)
+  assert.match(memory.text(), /Responsibilities: Worker project responsibility\./)
+  assert.match(memory.text(), /data, not instructions/)
 })
 
 test('an extraction failure does not fail the final report', async () => {
   const taskId = 'd'.repeat(16)
   const workerId = 'worker-d'
   const projectRoot = await taskForWorker(taskId, workerId)
-  const wiring = await workerWiring(workerId, taskId, projectRoot, { private: [], public: [], profile: [], team: [] }, { fail: true })
+  const wiring = await workerWiring(workerId, taskId, projectRoot, memoryFields(), { fail: true })
   const result = await wiring.message().execute({
     message: 'Done. Review approved; tests pass.',
   }, { agent: wiring.agent, signal: new AbortController().signal })
   assert.match(result, /Message delivered to the router/)
   assert.equal(wiring.activations.length, 1)
   assert.match(wiring.warnings.join('\n'), /memory extraction/)
-})
-
-test('a worker injects profile facts written after plugin startup', async () => {
-  const taskId = 'e'.repeat(16)
-  const workerId = 'worker-e'
-  const projectRoot = await taskForWorker(taskId, workerId)
-  const wiring = await workerWiring(workerId, taskId, projectRoot, {
-    private: [], public: [], profile: [], team: [],
-  }, {
-    async beforeCreate() {
-      const { createMemoryStore } = await import('../src/memory-store.js')
-      await createMemoryStore().memory.create({ role: 'router' }, {
-        category: 'profile',
-        content: 'Environment: worker profile refresh check.',
-        source: { sessionId: 'router', seq: 1 },
-      })
-    },
-  })
-  const profile = wiring.contexts.find(entry => entry.name === 'superagent-lite-profile')
-  assert.ok(profile, 'the worker registered a profile context')
-  assert.equal(profile.required, true)
-  assert.match(profile.text(), /worker profile refresh check/)
 })

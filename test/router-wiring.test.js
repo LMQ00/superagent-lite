@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { after, test } from 'node:test'
+import test, { after } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
+const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
+await mkdir(tmp, { recursive: true })
+const home = await mkdtemp(join(tmp, 'router-wiring-'))
 const originalHome = process.env.HOME
-const home = await mkdtemp(join(tmpdir(), 'superagent-lite-router-wiring-'))
 process.env.HOME = home
 
 after(async () => {
@@ -14,13 +16,10 @@ after(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-test('the router injects profile facts written after plugin startup', async () => {
-  const { createMemoryStore } = await import('../src/memory-store.js')
-  await createMemoryStore().memory.create({ role: 'router' }, {
-    category: 'profile',
-    content: 'Environment: router profile refresh check.',
-    source: { sessionId: 'router', seq: 1 },
-  })
+test('the router injects global memory, including facts written after startup', async () => {
+  const { createMemoryStore, refreshGlobalMemory } = await import('../src/memory.js')
+  const store = createMemoryStore()
+  await store.writeGlobal({ userProfile: 'Environment: router context check.' })
 
   const { apply } = await import('../router.js')
   const contexts = []
@@ -33,8 +32,13 @@ test('the router injects profile facts written after plugin startup', async () =
   }
   await apply(ctx)
 
-  const profile = contexts.find(entry => entry.name === 'superagent-lite-profile')
-  assert.ok(profile, 'the router registered a profile context')
-  assert.equal(profile.required, true)
-  assert.match(profile.text(), /router profile refresh check/)
+  const memory = contexts.find(entry => entry.name === 'superagent-lite-memory')
+  assert.ok(memory, 'the router registered a global memory context')
+  assert.equal(memory.required, true)
+  assert.match(memory.text(), /User profile: Environment: router context check\./)
+  assert.doesNotMatch(memory.text(), /Project:/)
+
+  await store.writeGlobal({ sharedSkill: 'Written after startup.' })
+  await refreshGlobalMemory()
+  assert.match(memory.text(), /Shared skill: Written after startup\./)
 })

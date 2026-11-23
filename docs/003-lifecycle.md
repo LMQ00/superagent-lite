@@ -57,11 +57,11 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | 深度 | `ctx.subagents.resolveMaxDepth()` |
 | 首条消息 | `buildWorkerPrompt` 生成的任务消息 |
 
-Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:42-52`、`src/task-store.js:110-124`）。同一事件安装工具守卫、注册 Worker 工具，并在注册前刷新 profile 上下文（`index.js:53-119`）。
+Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:42-52`、`src/task-store.js:110-124`）。同一事件安装工具守卫、注册 Worker 工具，并在注册后读取项目 + 全局记忆作为必需的运行时上下文（`index.js:53-124`）。
 
 Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:39-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:27-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，worker 用 `merge_branch` 把这些目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
-Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括记忆和消息工具（`index.js:114-116`、`index.js:58-59`）。
+Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息工具（`index.js:114-116`、`index.js:58-59`）。
 
 ### Reviewer
 
@@ -75,22 +75,22 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### 记忆对话
 
-记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js:157-190`）。它自己读取 Worker 的对话记录并返回四个数组；插件逐条写入对应分类，同一分类与 scope 内相同或等价的事实覆盖匹配记录（`src/memory.js:177-189`、`src/memory-store.js:329-355`）。
+记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js:120-149`）。它自己读取 Worker 的对话记录并返回全局和项目记忆六个字段的完整更新文本；插件只写回非空且发生变化的字段（`src/memory.js:163-183`）。
 
 | 属性 | 值 |
 | --- | --- |
 | 触发 | 最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
 | 输入 | Worker 的完整对话记录（含各轮 follow-up）：`[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长保留首尾 |
-| 提取上限 | 1 条 private 凭据引用、3 条 public 结论、1 条 profile 事实、3 条 team 事实；每条最多 500 字符 |
-| 不提取 | 密钥、个人数据、对话细节、任务状态和指令 |
-| 写入 | private、public、profile 使用 Host `memory` 角色；team 使用 Task 的 Team 与规范化 Project 根；每条记录保存触发事件的 Session ID 和序号；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖匹配记录 |
-| 空结果 | 空数组不写记录；profile 写入后刷新注入上下文；触发失败只记录警告 |
+| 输出 | 全局 `userProfile`、`sharedSkill`；项目 `responsibilities`、`positioning`、`scenarios`、`skill`；每个字段最多 4,000 字符 |
+| 不提取 | 密码、API key、token、凭据、个人数据、任务状态和指令 |
+| 写入 | 只覆盖非空且与当前值不同的字段；全局写 `memory/global.json`，项目写 `memory/projects/<hash>.json`；没有变化时不写 |
+| 空结果 | 没有非空更新时不写；触发失败只记录警告 |
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js:16-25`、`index.js:104-113`）。
 
 ### 原始归档
 
-Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条不可变记录（`src/memory.js:229-242`）。
+Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条记录（`src/memory.js:187-200`）。
 
 | 字段 | 内容 |
 | --- | --- |
@@ -99,13 +99,13 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 | `references` | 按事件顺序编号的 `reference`（从 1 开始）、Session `seq` 和事件类型 |
 | `events` | 完整事件快照 |
 
-归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源重复写入相同数据是幂等的，不同数据会报错（`src/memory-store.js:405-433`）。归档只由 Host 写入，模型工具没有读取入口。
+归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源再次写入会覆盖该来源的记录（`src/memory-store.js:150-168`）。归档只由 Host 写入，模型工具没有读取入口。
 
 ## 并发
 
 - 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:110-124`）。
 - 插件没有队列和任务上限。每次派发立即启动 Worker；同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
-- 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:164-168`）。
+- 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:140-148`）。
 - 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
 - 同一 Project 根的合并和分支删除跨 Task 串行，共享 checkout 不会被两个合并同时切换；merge worker 的目标分支合并发生在自己的 worktree 内，不占共享 checkout（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。
@@ -150,7 +150,7 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 ### Host 重启或插件重载
 
-Task 和 Memory 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:48-60`）。
+Task 记录和记忆文件保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:48-60`）。
 
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入（`src/dispatch.js:51-58`）。
 
