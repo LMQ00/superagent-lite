@@ -2,8 +2,12 @@ import {
   GLOBAL_FIELDS, MAX_FIELD_LENGTH, MEMORY_FIELDS, PROJECT_FIELDS, createMemoryStore,
 } from './memory-store.js'
 import { clearHelperExpectation, expectHelper } from './helper-guard.js'
+import { createSettingsStore } from './settings-store.js'
 
-const store = createMemoryStore()
+const settings = createSettingsStore()
+const store = createMemoryStore(undefined, {
+  archiveMaxBytes: async () => (await settings.read()).archiveMaxBytes,
+})
 
 export const memoryRole = Object.freeze({
   id: 'memory',

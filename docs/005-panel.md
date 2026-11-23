@@ -93,7 +93,9 @@
 
 ## 设置分组
 
-面板没有设置分组。bundle 组成和提示词文字在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里。
+任务面板本身没有设置分组。DSH 设置页新增「归档」分组，用来调整单个归档文件的大小上限：默认 128M，数值可调到 2048（M），也可以勾选「不限制」。保存后写入 `~/.dsh/superagent-lite/settings.json`，下一次归档写入时生效；超过上限的回合不写归档（`client.js:716-849`、`src/board.js:161-204`、`src/settings-store.js:66-83`）。
+
+bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里。
 
 ## 设计原则
 

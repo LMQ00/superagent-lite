@@ -16,9 +16,10 @@
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词 | 记忆对话角色提示词、六个字段、字段上限和注入上下文 | `src/memory.js:36-117` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
-| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-60` |
+| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-80` |
+| 归档大小 | 单个归档文件的上限，默认 128M，最大 2G，可选「不限制」 | DSH 设置页「归档」分组；保存到 `~/.dsh/superagent-lite/settings.json`（`client.js:716-849`、`src/board.js:161-204`、`src/settings-store.js:66-83`） |
 
-文字都在仓库文件里，没有设置页，也没有提示词编辑器；改文字等于改文件并重载 bundle。
+提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。唯一的运行时设置是 DSH 设置页「归档」分组里的归档大小，它只影响归档写入，不改变提示词或任务条件。
 
 ## 路由模式
 
@@ -107,6 +108,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 记忆对话提示词 | 新的 helper 角色文本 | 下一次提取启动时 |
 | 全局记忆 | `memory/global.json` 中的 `userProfile` 和 `sharedSkill` | Router 插件装载时、记忆对话写入后；Worker 和 Reviewer 创建时 |
 | 项目记忆 | `memory/projects/<hash>.json` 中的四个字段 | Worker 创建时、Reviewer 每次审查前 |
+| 归档大小 | `~/.dsh/superagent-lite/settings.json` 中的 `archiveMaxBytes`，`null` 表示不限制 | 每次归档写入前读取；设置页保存后立即生效 |
 
 Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:20-32`）。
 

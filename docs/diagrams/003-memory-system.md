@@ -46,7 +46,7 @@ flowchart TB
 | Raw conversation | `workerConversation` builds the transcript from the worker Session (`src/memory.js`) |
 | Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper (`src/memory.js`) |
 | Summary write | `runMemoryExtraction` writes only non-empty changed fields (`src/memory.js`) |
-| Archive | `archiveWorkerTurn` writes each turn under `memory/archive/` (`src/memory.js`, `src/memory-store.js`) |
+| Archive | `archiveWorkerTurn` writes each turn under `memory/archive/`; one file is capped by the archive size setting (default 128M, max 2G, or unlimited), and an oversized turn is not written (`src/memory.js`, `src/memory-store.js`, `src/settings-store.js`) |
 
 ## Raw description (as supplied)
 
