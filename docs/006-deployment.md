@@ -11,7 +11,7 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | DSH Web Host | 运行插件、Session 和面板 |
 | `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和 Memory 存储 |
 | Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
-| 记忆对话 | 为 change worker 把结论提炼成四类记忆 |
+| 记忆对话 | 读取 change worker 的对话并把有用信息提炼成四类记忆 |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
 | GitHub remote | 可选；发送 PR 需要，合并不需要 |
 
@@ -159,7 +159,7 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | `Team memory requires teamId and projectRoot` | team 记录缺少所属 Team 与 Project；刷新面板让行带上两者 |
 | `Memory record not found` | 记录已在别处删除或 ID 过期；刷新面板 |
 | `Memory content must contain 1–16000 characters` | 把内容控制在 1–16,000 字符 |
-| `Memory extraction did not finish` | 重新运行 `extract_memory`；记忆对话必须返回四个分类数组 |
+| `Memory extraction did not finish` | 检查 Worker 会话是否可读；记忆对话必须返回四个分类数组 |
 | `Memory fact exceeded 500 characters` | 拆分或缩短事实，单条不超过 500 字符 |
 | `Memory extraction returned too many private facts` | 每次私有输出最多 1 条凭据引用 |
 | `The reviewer did not submit a usable verdict` | 重新运行审查；Reviewer 必须调用 `submit_review` 写「通过」或具体意见 |

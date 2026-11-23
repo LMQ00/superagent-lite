@@ -101,9 +101,9 @@
 | 内容 | 保存的事实；private 显示「凭据引用: <name>」而不是内容 |
 | 团队与项目 | 只在 team 记录上显示；编辑和删除请求也带这对值 |
 | ID 与时间 | 记录 UUID 和 `updatedAt` |
-| 编辑 | 行内换成 textarea 和保存/取消；public、profile、team 改内容，private 改凭据引用名；team 请求带 Team 与 Project（`client.js:385-453`） |
-| 删除 | 第一次点击显示「确认删除」和「取消」；确认后 POST `delete`。失败时保留行并显示后端错误 |
-| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:676-744`、`src/memory-store.js:12-13`） |
+| 编辑 | 行内换成 textarea 和保存/取消；public、profile、team 改内容，private 改凭据引用名；team 请求带 Team 与 Project（`client.js:390-457`） |
+| 删除 | 每行都有带垃圾桶图标的「删除」按钮；第一次点击显示「确认删除」和「取消」；确认后 POST `delete`。失败时保留行并显示后端错误（`client.js:699-741`） |
+| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:670-741`、`src/memory-store.js:12-13`） |
 
 「记忆」标签页有自己的加载、空列表和无匹配文字。成功的编辑或删除显示短提示并更新当前行，不重新加载任务列表。面板只在 owner 点击编辑或删除时写记忆。
 

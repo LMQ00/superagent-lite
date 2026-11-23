@@ -29,7 +29,8 @@ flowchart TB
   MP[src/memory-panel.js] --> C
   R --> TG[src/turn-guard.js]
   W -->|每轮 turn/end| RA[(原始归档)]
-  W -->|extract_memory / 最终报告| ME[记忆对话]
+  W -->|最终报告| ME[记忆对话]
+  ME -.->|读取对话| W
   ME --> MS[src/memory.js]
   W --> MS
   MS --> MF[(Memory 文件)]
@@ -91,11 +92,11 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory.js`
 
-构建 `superagent_memory`、`extract_memory`、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话只收到选定结论，插件负责把四类结果写回（`src/memory.js:1-228`）。
+构建 `superagent_memory`、记忆对话输入、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话读取 Worker 的会话记录，插件负责把四类结果写回（`src/memory.js:1-244`）。
 
 ### `src/memory-extractor.js`
 
-只定义记忆对话角色：标签、5,000 字符 findings 上限、500 字符单条上限、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-41`）。
+只定义记忆对话角色：标签、60,000 字符对话总长、4,000 字符单条消息、500 字符凭证参数、500 字符单条事实、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-43`）。
 
 ### `src/memory-panel.js`
 
@@ -191,8 +192,8 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
-| `src/memory.js` | 注册记忆工具、profile 上下文、记忆对话、面板 facade 和轮次归档。 |
-| `src/memory-extractor.js` | 定义记忆对话的角色提示词、标签、四类上限和输出 schema。 |
+| `src/memory.js` | 注册记忆工具、profile 上下文、记忆对话输入、面板 facade 和轮次归档。 |
+| `src/memory-extractor.js` | 定义记忆对话的角色提示词、标签、对话与事实上限和输出 schema。 |
 | `src/memory-panel.js` | 提供 owner-only 记忆列表、编辑和删除 HTTP 端点。 |
 | `src/memory-store.js` | 保存 Memory 记录和原始归档，执行分类、scope、密钥检查以及写入去重/纠错。 |
 | `src/merge.js` | 实现本地 `--no-ff` 合并、分支删除和 `/merge-worker` 命令。 |
@@ -227,7 +228,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `test/memory-panel.test.js` | owner 准入、记忆投影、更新/删除路径、body 校验和状态码映射。 |
 | `test/memory-store.test.js` | 分类、team scope、private 引用、面板 team scope、归档不可变、符号链接和并发更新。 |
 | `test/memory-write-rules.test.js` | 相同写入不新增、等价改写不新增、错误记忆覆盖更新、新内容新增、并发相同写入，以及分类和 scope 隔离。 |
-| `test/memory-wiring.test.js` | 最终报告触发提取、显式提取抑制和提取失败不影响报告。 |
+| `test/memory-wiring.test.js` | 最终报告触发提取并带上 Worker 对话、不再注册 `extract_memory`、提取失败不影响报告。 |
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
 | `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
@@ -271,8 +272,7 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
-| `message_router` | Worker | 把最终结论发给 Router，并触发最终报告记忆提取 |
-| `extract_memory` | Worker | 用记忆对话把选定结论提炼成四类记忆 |
+| `message_router` | Worker | 把最终结论发给 Router，并触发记忆对话读取 Worker 对话 |
 
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |

@@ -5,7 +5,7 @@ import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
 import { createGitManager } from './src/git-actions.js'
-import { archiveWorkerTurn, createMemoryTool, createExtractTool, originFor, refreshProfile, registerProfileContext, runMemoryExtraction } from './src/memory.js'
+import { archiveWorkerTurn, createMemoryTool, originFor, refreshProfile, registerProfileContext, runMemoryExtraction } from './src/memory.js'
 import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
@@ -94,14 +94,13 @@ export async function apply(ctx) {
     })
     const caller = { role: 'worker', teamId: task.teamId, projectRoot: task.projectRoot }
     const canUseMemory = candidate => candidate === agent && !state.frozen && inCheckout()
-    let memoryAttempted = false
     const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
-    const extract = agent.ctx.tools.register(createExtractTool(ctx, agent, caller, canUseMemory, () => { memoryAttempted = true }), { when: ({ agent: candidate }) => canUseMemory(candidate) })
-    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (text, exec) => {
+    let memoryAttempted = false
+    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
       if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
       memoryAttempted = true
       try {
-        return await runMemoryExtraction(ctx, agent, caller, text, originFor(exec), exec.signal)
+        return await runMemoryExtraction(ctx, agent, caller, originFor(exec), exec.signal)
       } catch (error) {
         ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
         return undefined
@@ -111,7 +110,7 @@ export async function apply(ctx) {
       when: () => reportOnly && !state.frozen,
     })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); extract(); memory(); review(); checkout(); guard() } })
+    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {

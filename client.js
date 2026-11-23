@@ -723,11 +723,11 @@ window.__ModuleLoader__.load({
                 }, t('memoryEdit')),
                 confirming
                   ? h('button', {
-                    key: 'confirm', type: 'button', className: 'sl-btn sl-btn--outline',
+                    key: 'confirm', type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
                     disabled: pending, onClick: () => void memoryAction(record, 'delete'),
                   }, t('memoryConfirmDelete'))
                   : h('button', {
-                    key: 'delete', type: 'button', className: 'sl-btn',
+                    key: 'delete', type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
                     disabled: pending || editing,
                     onClick: () => {
                       setMemoryConfirm(key)
@@ -735,7 +735,7 @@ window.__ModuleLoader__.load({
                       setMemoryError('')
                       setMemoryNotice('')
                     },
-                  }, t('memoryDelete')),
+                  }, icon('trash'), t('memoryDelete')),
                 confirming && h('button', {
                   key: 'cancel-delete', type: 'button', className: 'sl-btn',
                   disabled: pending, onClick: () => setMemoryConfirm(''),

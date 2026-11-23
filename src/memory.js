@@ -105,17 +105,59 @@ function memoryFacts(structured) {
   return facts
 }
 
-export async function runMemoryExtraction(ctx, agent, caller, findings, origin, signal) {
-  if (typeof findings !== 'string' || !findings.trim() || findings.length > memoryExtractorRole.maxFindings) {
-    throw new Error(`Findings must contain 1–${memoryExtractorRole.maxFindings} characters`)
+const OMITTED = '\n[... earlier conversation omitted ...]\n'
+
+function textOf(message) {
+  return message.content
+    .filter(block => block.type === 'text' && typeof block.text === 'string')
+    .map(block => block.text)
+    .join('\n')
+    .trim()
+}
+
+function clip(value, limit) {
+  return value.length > limit ? `${value.slice(0, limit)}…` : value
+}
+
+// The memory conversation reads this transcript instead of a summary supplied
+// by the worker. Keep both ends of a long conversation: the task requirements
+// open it and the conclusions close it.
+export function workerConversation(session) {
+  const entries = []
+  for (const message of session.deriveMessages()) {
+    if (message.role === 'system' || message.role === 'developer') continue
+    if (message.role === 'assistant') {
+      const text = textOf(message)
+      if (text) entries.push(`[assistant] ${clip(text, memoryExtractorRole.maxMessage)}`)
+      for (const block of message.content) {
+        if (block.type === 'tool-call') {
+          entries.push(`[tool call] ${block.name} ${clip(block.arguments, memoryExtractorRole.maxArgument)}`)
+        }
+      }
+      continue
+    }
+    const text = textOf(message)
+    if (!text) continue
+    const role = message.role === 'tool' ? (message.isError ? 'tool error' : 'tool result') : message.role
+    entries.push(`[${role}] ${clip(text, memoryExtractorRole.maxMessage)}`)
   }
+  const joined = entries.join('\n')
+  if (joined.length <= memoryExtractorRole.maxTranscript) return joined
+  const head = Math.floor(memoryExtractorRole.maxTranscript * 0.2)
+  const tail = memoryExtractorRole.maxTranscript - head - OMITTED.length
+  return `${joined.slice(0, head)}${OMITTED}${joined.slice(-tail)}`
+}
+
+export async function runMemoryExtraction(ctx, agent, caller, origin, signal) {
+  const conversation = workerConversation(agent.session)
+  if (!conversation.trim()) throw new Error('The worker conversation is empty')
   expectHelper(agent.session.id)
   let activation
   try {
     activation = await ctx.subagents.startActivation({
       provider: 'spawn', parent: agent,
       delivery: 'caller', label: memoryExtractorRole.label, signal, maxDepth: 2,
-      prompt: [{ type: 'text', text: memoryExtractorPrompt(findings) }],
+      prompt: [{ type: 'text', text: memoryExtractorPrompt(conversation) }],
       outputSchema: memoryExtractorOutputSchema,
     })
   } finally {
@@ -139,32 +181,6 @@ export async function runMemoryExtraction(ctx, agent, caller, findings, origin, 
   }
   if (facts.profile.length > 0) await refreshProfile()
   return [...records.values()]
-}
-
-export function createExtractTool(ctx, agent, caller, admit, onAttempt) {
-  return {
-    name: 'extract_memory',
-    description: 'Distill selected findings into the four memory categories (private, public, profile, team) with the separate memory role; the caller writes each fact back to its category. Call it after findings worth keeping; the final report triggers the same role when it was not called.',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: { findings: { type: 'string', description: 'Selected non-secret findings, not the raw transcript.' } },
-      required: ['findings'],
-    },
-    output: { schema: { type: 'string' }, render: (_args, text) => [{ type: 'text', text }] },
-    async execute({ findings }, exec) {
-      if (exec.agent !== agent || !admit(agent)) throw new Error('Memory extraction requires an active worker worktree')
-      if (!findings.trim() || findings.length > memoryExtractorRole.maxFindings) throw new Error(`Findings must contain 1–${memoryExtractorRole.maxFindings} characters`)
-      onAttempt?.()
-      const records = await runMemoryExtraction(ctx, agent, caller, findings, originFor(exec), exec.signal)
-      if (records.length === 0) return 'No reusable memory was saved.'
-      const counts = records.reduce((total, record) => {
-        total[record.category] = (total[record.category] ?? 0) + 1
-        return total
-      }, {})
-      return `Saved ${records.length} memory record${records.length === 1 ? '' : 's'}: ${Object.entries(counts).map(([category, count]) => `${category} ${count}`).join(', ')}.`
-    },
-  }
 }
 
 // Owner panel view and edits. The panel is not a Session: public, profile and
