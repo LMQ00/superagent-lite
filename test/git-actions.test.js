@@ -328,7 +328,7 @@ test('merge refuses a task that has not finished its worker turn', async () => {
     const store = memoryStore([recordFor(facts, { status })])
     await assert.rejects(
       managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal),
-      /Only a task that finished its worker turn can be merged/,
+      /Only a task that finished its worker turn can be delivered/,
     )
     assert.equal((await store.readTask(taskId)).status, status)
   }
@@ -342,7 +342,7 @@ test('a resumed task whose head did not move keeps its approval and can merge', 
   assert.equal((await store.readTask(taskId)).review.head, facts.workerHead)
   await assert.rejects(
     managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal),
-    /Only a task that finished its worker turn can be merged/,
+    /Only a task that finished its worker turn can be delivered/,
   )
   // The worker turn ends without a new commit, so the saved review still covers HEAD.
   await store.updateTask(taskId, { status: 'awaiting-merge' })
@@ -369,14 +369,14 @@ test('a resumed task whose head moved keeps its review but cannot merge it', asy
   await assert.rejects(git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/release'], facts.repo))
 })
 
-test('merge stops when the task leaves its mergeable state during preparation', async () => {
+test('merge stops when the task leaves its deliverable state during preparation', async () => {
   const facts = await setupRepo()
   const store = memoryStore([recordFor(facts)])
   const stale = await store.readTask(taskId)
   await store.updateTask(taskId, { status: 'resuming' })
   await assert.rejects(
     mergeWorkerBranch(context(), stale, 'release', signal, store.updateTask),
-    /left its mergeable state during merge preparation/,
+    /left its deliverable state during preparation/,
   )
   assert.equal(await git(['symbolic-ref', '--short', 'HEAD'], facts.repo), 'main')
   await assert.rejects(git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/release'], facts.repo))
@@ -494,6 +494,10 @@ test('publish pushes to the selected remote and records the pull request', async
   const store = memoryStore([record])
   const calls = []
   const manager = managerFor(store, {
+    gh: async args => {
+      if (args[0] !== 'auth') throw new Error('unexpected gh')
+      return 'Logged in to github.com account tester'
+    },
     publish: async (task, origin, _signal, write) => {
       calls.push(origin)
       await write({ status: 'awaiting-ci', prUrl, prState: 'OPEN' })
@@ -519,6 +523,125 @@ test('publish requires a configured GitHub remote and a reviewed head', async ()
   const moved = recordFor(facts, { review: { head: facts.baseCommit, approved: true, reviewerSessionId: 'reviewer' } })
   store.records.set(taskId, moved)
   await assert.rejects(manager.perform(taskId, 'publish', { remote: 'origin' }, signal), /no longer matches its reviewed commit/)
+})
+
+test('publish refuses a task that has not finished its worker turn', async () => {
+  const facts = await setupRepo()
+  for (const status of ['resuming', 'running', 'publishing', 'merging', 'failed', 'delivery-blocked']) {
+    let called = false
+    const store = memoryStore([recordFor(facts, { status })])
+    const manager = managerFor(store, { publish: async () => { called = true } })
+    await assert.rejects(
+      manager.perform(taskId, 'publish', { remote: 'origin' }, signal),
+      /Only a task that finished its worker turn can be delivered/,
+    )
+    assert.equal(called, false)
+    assert.equal((await store.readTask(taskId)).status, status)
+  }
+})
+
+test('publish during a resume cannot reuse the old reviewed head', async () => {
+  const facts = await setupRepo()
+  const review = { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true }
+  const store = memoryStore([recordFor(facts, { status: 'resuming', review })])
+  const manager = managerFor(store, { publish: async () => { throw new Error('publish must not run') } })
+  await assert.rejects(
+    manager.perform(taskId, 'publish', { remote: 'origin' }, signal),
+    /Only a task that finished its worker turn can be delivered/,
+  )
+  assert.deepEqual((await store.readTask(taskId)).review, review)
+})
+
+test('merge and publish reject the same task states and stale reviews', async () => {
+  const cases = [
+    { status: 'resuming' },
+    { status: 'running' },
+    { status: 'publishing' },
+    { status: 'merging' },
+    { status: 'failed' },
+    { status: 'delivery-blocked' },
+    { status: 'awaiting-merge', review: 'missing' },
+    { status: 'awaiting-merge', review: 'unapproved' },
+    { status: 'awaiting-merge', review: 'stale' },
+  ]
+  for (const { status, review } of cases) {
+    const facts = await setupRepo()
+    const overrides = { status }
+    if (review === 'missing') overrides.review = undefined
+    if (review === 'unapproved') overrides.review = { head: facts.workerHead, reviewerSessionId: 'reviewer', approved: false }
+    if (review === 'stale') overrides.review = { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true }
+    const store = memoryStore([recordFor(facts, overrides)])
+    const manager = managerFor(store, { publish: async () => { throw new Error('publish must not run') } })
+    const failures = []
+    for (const action of ['merge', 'publish']) {
+      const failure = await manager.perform(taskId, action, action === 'merge' ? { target: 'release' } : { remote: 'origin' }, signal)
+        .then(() => undefined, error => error.message)
+      failures.push(failure)
+    }
+    assert.ok(failures[0], `${status} merge should fail`)
+    assert.equal(failures[0], failures[1], `${status} merge and publish should agree`)
+    assert.equal((await store.readTask(taskId)).status, status)
+  }
+})
+
+test('merge and publish accept the same reviewed head while publishing alone checks GitHub', async () => {
+  const facts = await setupRepo()
+  const store = memoryStore([recordFor(facts)])
+  let called = false
+  const manager = managerFor(store, {
+    gh: async args => {
+      if (args[0] !== 'auth') throw new Error('unexpected gh')
+      return 'Logged in to github.com account tester'
+    },
+    publish: async (task, origin, _signal, write) => {
+      called = true
+      await write({ status: 'awaiting-ci', prUrl, prState: 'OPEN' })
+      return { url: prUrl, state: 'OPEN', number: '7', adopted: false }
+    },
+  })
+  const published = await manager.perform(taskId, 'publish', { remote: 'origin' }, signal)
+  assert.equal(published.status, 'awaiting-ci')
+  assert.equal(called, true)
+  const merged = await manager.perform(taskId, 'merge', { target: 'release' }, signal)
+  assert.equal(merged.status, 'merged')
+})
+
+test('publishing alone requires GitHub authentication', async () => {
+  const facts = await setupRepo()
+  const store = memoryStore([recordFor(facts)])
+  let called = false
+  const manager = managerFor(store, {
+    gh: async () => { throw new Error('gh is not logged in') },
+    publish: async () => { called = true; throw new Error('publish must not run') },
+  })
+  await assert.rejects(
+    manager.perform(taskId, 'publish', { remote: 'origin' }, signal),
+    /GitHub authentication is required to publish/,
+  )
+  assert.equal(called, false)
+  assert.equal((await store.readTask(taskId)).status, 'awaiting-merge')
+  const merged = await manager.perform(taskId, 'merge', { target: 'release' }, signal)
+  assert.equal(merged.status, 'merged')
+})
+
+test('publish stops when the task leaves its deliverable state during preparation', async () => {
+  const facts = await setupRepo()
+  const store = memoryStore([recordFor(facts)])
+  let called = false
+  const manager = managerFor(store, {
+    gh: async args => {
+      if (args[0] !== 'auth') throw new Error('unexpected gh')
+      await store.updateTask(taskId, { status: 'resuming' })
+      return 'Logged in to github.com account tester'
+    },
+    publish: async () => { called = true; throw new Error('publish must not run') },
+  })
+  await assert.rejects(
+    manager.perform(taskId, 'publish', { remote: 'origin' }, signal),
+    /left its deliverable state during preparation/,
+  )
+  assert.equal(called, false)
+  assert.equal((await store.readTask(taskId)).status, 'resuming')
 })
 
 test('a panel review records the verdict and moves the task to awaiting-merge', async () => {
