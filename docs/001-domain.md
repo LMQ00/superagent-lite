@@ -54,7 +54,8 @@ flowchart LR
 | 记忆对话（Memory conversation） | 读取 Worker 对话并提炼记忆的独立 helper 子代理。 | 自己读取 Worker 的完整会话记录（含各轮 follow-up），不接收 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数，因此 COMPLETED 摘要本身不进入 transcript；返回 private、public、profile、team 四个数组；每次最多 1/3/1/3 条，每条最多 500 字符；插件把结果写回各自分类并按分类与 scope 去重（`src/memory-extractor.js:4-45`、`src/memory.js:108-190`）。 |
 | 原始归档（Raw archive） | Worker 对话的完整轮次记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；仅 Host 可写，模型工具读不到（`src/memory.js:229-242`、`src/memory-store.js:417-439`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；构建、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作，任务行和记忆行都可勾选后批量删除；记忆只在 owner 明确点击时写入（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:691-925`）。 |
+| Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；构建、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作，任务行和记忆行都可勾选后批量删除；记忆和设置只在 owner 明确操作时写入（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:691-925`）。 |
 
 ## 聚合
 
@@ -105,6 +106,7 @@ Router Session、Worker Session、Reviewer 和记忆对话都是 DSH Session，�
 | Raw archive | 原始归档 | 完整、带编号的 Worker 轮次记录 |
 | Task message | 任务消息 | 跨 Session 消息的聊天卡片 |
 | Panel | 面板 | Web 侧「项目任务」界面 |
+| Worker settings | Worker 设置 | 面板保存的 worker 模型与并发上限 |
 
 ## 枚举值
 
@@ -112,7 +114,8 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 
 | 组 | 取值 | 含义 |
 | --- | --- | --- |
-| 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:67-81`） |
+| 派发 | `queued` | 记录已创建，等待并发名额外再启动 Worker（`src/dispatch.js:67-85`、`src/launch-queue.js`） |
+| 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:67-85`、`src/launch-queue.js`） |
 | 工作 | `running` | Worker 已创建或 Worktree 已保存，任务进行中（`index.js:51-52`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束的 Task 被 follow-up 重新打开（`src/continue.js:127-134`） |
 | 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:131-140`） |
@@ -134,7 +137,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 面板状态 | 含义 |
 | --- | --- |
 | `unmerged` / 未合并 | 当前 worker HEAD 已审查通过且尚未合并；用户可以合并或发送 PR |
-| `running` / 运行中 | Worker 或交付动作正在进行 |
+| `running` / 运行中 | Worker、排队中的 Worker 或交付动作正在进行 |
 | `unreviewed` / 未审查 | worker 分支有提交，但当前 HEAD 没有通过的审查 |
 | `completed` / 已完成 | reviewed HEAD 已合并，或 Worker 结束时没有可交付的提交 |
 | `failed` / 失败 | Worker 回合、交付动作或 Task 失败 |

@@ -11,6 +11,8 @@ import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
+import { createSettingsPanelHandler } from './src/settings-panel.js'
+import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
@@ -30,6 +32,15 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/memory',
       handler: createMemoryPanelHandler(web.connection),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/settings',
+      handler: createSettingsPanelHandler(web.connection, {
+        catalog: async () => (ctx.get?.('sessionController') ?? ctx.sessionController)?.modelCatalog?.(),
+        onChange: () => pumpWorkers(ctx).catch(error => {
+          ctx.logger.warn(`superagent-lite worker queue: ${error instanceof Error ? error.message : String(error)}`)
+        }),
+      }),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -125,6 +136,7 @@ export async function apply(ctx) {
     workers.delete(agent.id)
     if (worker) forgetLanding(worker.taskId)
     dispatchGuard.dispose(agent.session.id)
+    if (!lifetime.signal.aborted) track(pumpWorkers(ctx))
   })
 
   // DSH dispatches agent/status as a scoped event with a single { agent, status }
@@ -145,31 +157,35 @@ export async function apply(ctx) {
     if (worker) worker.state.frozen = true
     if (lifetime.signal.aborted) return
     track((async () => {
-      const task = await taskForSession(undefined, info.id)
-      if (!task || task.parentSessionId !== info.parentSessionId || task.status !== 'running') return
-      const publish = changes => updateTask(task.id, changes)
-      const stopped = { stopReason: info.stopReason, finishedAt: new Date().toISOString() }
-      if (task.mode === 'report') {
-        await publish({ ...stopped, status: 'failed', failure: 'Report-only task ended without report_task' })
-        return
-      }
-      if (info.stopReason !== 'completed' || !task.worktree) {
-        await publish({ ...stopped, status: 'failed' })
-        return
-      }
-      if (task.review?.approved !== true) {
-        await publish({ ...stopped, status: 'review-required' })
-        return
-      }
-      const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(15 * 60_000)])
       try {
-        if (await worktreeHead(ctx, task, signal) !== task.review.head) {
+        const task = await taskForSession(undefined, info.id)
+        if (!task || task.parentSessionId !== info.parentSessionId || task.status !== 'running') return
+        const publish = changes => updateTask(task.id, changes)
+        const stopped = { stopReason: info.stopReason, finishedAt: new Date().toISOString() }
+        if (task.mode === 'report') {
+          await publish({ ...stopped, status: 'failed', failure: 'Report-only task ended without report_task' })
+          return
+        }
+        if (info.stopReason !== 'completed' || !task.worktree) {
+          await publish({ ...stopped, status: 'failed' })
+          return
+        }
+        if (task.review?.approved !== true) {
           await publish({ ...stopped, status: 'review-required' })
           return
         }
-        await publish({ ...stopped, status: 'awaiting-merge' })
-      } catch (error) {
-        await publish({ ...stopped, status: 'delivery-blocked', failure: error.message })
+        const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(15 * 60_000)])
+        try {
+          if (await worktreeHead(ctx, task, signal) !== task.review.head) {
+            await publish({ ...stopped, status: 'review-required' })
+            return
+          }
+          await publish({ ...stopped, status: 'awaiting-merge' })
+        } catch (error) {
+          await publish({ ...stopped, status: 'delivery-blocked', failure: error.message })
+        }
+      } finally {
+        await pumpWorkers(ctx)
       }
     })())
   })

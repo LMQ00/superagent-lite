@@ -45,6 +45,16 @@ window.__ModuleLoader__.load({
         memoryInjection: 'Each chat receives', memoryInjectionTail: 'newest facts, each cut to 500 characters',
         'memoryCategory.public': 'Public', 'memoryCategory.profile': 'Profile', 'memoryCategory.private': 'Private',
         'memoryCategory.team': 'Team',
+        settingsTitle: 'Settings', settingsIntro: 'Defaults for dispatched workers. Saved settings apply to new workers only.',
+        settingsLoadFailed: 'Could not load settings. Try refreshing.', settingsSaved: 'Settings saved.', settingsFailed: 'The settings action failed.',
+        workerModel: 'Worker model', workerModelHint: 'Leave blank to inherit the DSH default model.',
+        modelProvider: 'Provider', modelName: 'Model', modelEffort: 'Reasoning effort (optional)',
+        modelInherit: 'Inherit the DSH default', modelEffortDefault: 'Model default',
+        defaultModel: 'DSH default: {model}', defaultModelUnavailable: 'The DSH default model is unavailable',
+        modelCatalogError: 'Model suggestions are unavailable; known Provider and Model names still work: {error}',
+        maxWorkers: 'Concurrent workers', maxWorkersHint: 'Tasks beyond the limit wait in the queue. Reviews do not count.',
+        saveSettings: 'Save', settingsInvalid: 'Enter a provider and model, or leave all three model fields blank.',
+        queued: 'Queued',
       },
       zh: {
         title: '项目任务', views: '面板分区', refresh: '刷新', loading: '正在加载任务…',
@@ -87,6 +97,16 @@ window.__ModuleLoader__.load({
         memoryInjection: '每轮注入', memoryInjectionTail: '条最新记录，每条最多 500 字符',
         'memoryCategory.public': '公共', 'memoryCategory.profile': '用户画像与环境', 'memoryCategory.private': '私有',
         'memoryCategory.team': '团队',
+        settingsTitle: '设置', settingsIntro: '派发 worker 的默认值。保存后只影响新启动的 worker。',
+        settingsLoadFailed: '无法加载设置，请重试。', settingsSaved: '设置已保存。', settingsFailed: '设置操作失败。',
+        workerModel: 'Worker 模型', workerModelHint: '留空时跟随 DSH 默认模型。',
+        modelProvider: '服务商', modelName: '模型', modelEffort: '推理强度（可选）',
+        modelInherit: '继承 DSH 默认值', modelEffortDefault: '模型默认',
+        defaultModel: 'DSH 当前默认：{model}', defaultModelUnavailable: 'DSH 默认模型暂不可用',
+        modelCatalogError: '无法加载模型建议，仍可填写已知的服务商和模型：{error}',
+        maxWorkers: '并发 worker 上限', maxWorkersHint: '超过上限的任务排队等待；review 不计入并发。',
+        saveSettings: '保存', settingsInvalid: '请填写服务商和模型，或把三个模型字段都留空。',
+        queued: '排队中',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -171,6 +191,13 @@ window.__ModuleLoader__.load({
       .sl-code{font-family:var(--dsw-font-mono,monospace);font-size:12px;color:var(--dsw-alias-label-tertiary)}
       .sl-link{color:var(--dsw-alias-brand-primary);text-decoration:none}
       .sl-link:hover{text-decoration:underline}
+      .sl-settings{display:flex;flex:1;flex-direction:column;gap:16px;min-height:0;max-width:640px;padding-top:8px;overflow-y:auto}
+      .sl-settings__group{display:flex;flex-direction:column;gap:12px;padding:16px;border:0.5px solid var(--dsw-alias-border-l3);border-radius:12px}
+      .sl-settings__title{margin:0;font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+      .sl-settings__field{display:flex;flex-direction:column;gap:4px;min-width:0}
+      .sl-settings__field label{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+      .sl-settings__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+      .sl-settings__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
       .sl-memory-usage{display:flex;flex:none;align-items:center;flex-wrap:wrap;gap:4px 14px;min-width:0;padding:8px 0;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
       .sl-memory-tools{display:flex;flex:none;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
       .sl-memory-filters{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
@@ -205,6 +232,7 @@ window.__ModuleLoader__.load({
         .sl-input{min-width:0;flex:1 1 180px}
         .sl-filters,.sl-scope,.sl-memory-tools{width:100%}
         .sl-scope{margin-inline-start:0}
+        .sl-settings__grid{grid-template-columns:minmax(0,1fr)}
       }
       @media (prefers-reduced-motion:reduce){
         .sl-spinner g{animation:none}
@@ -295,6 +323,16 @@ window.__ModuleLoader__.load({
       const [memoryEditing, setMemoryEditing] = useState('')
       const [memoryText, setMemoryText] = useState('')
       const [memoryConfirm, setMemoryConfirm] = useState('')
+      const [settingsPhase, setSettingsPhase] = useState('loading')
+      const [settingsCatalog, setSettingsCatalog] = useState(undefined)
+      const [settingsLimits, setSettingsLimits] = useState(undefined)
+      const [workerProvider, setWorkerProvider] = useState('')
+      const [workerModel, setWorkerModel] = useState('')
+      const [workerEffort, setWorkerEffort] = useState('')
+      const [maxWorkers, setMaxWorkers] = useState('3')
+      const [settingsPending, setSettingsPending] = useState(false)
+      const [settingsError, setSettingsError] = useState('')
+      const [settingsNotice, setSettingsNotice] = useState('')
       const [selectedTasks, setSelectedTasks] = useState([])
       const [selectedMemory, setSelectedMemory] = useState([])
       const [batch, setBatch] = useState('')
@@ -358,8 +396,30 @@ window.__ModuleLoader__.load({
             }
           }
         }
+        async function loadSettings() {
+          try {
+            const response = await fetch('/superagent-lite/settings', {
+              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            })
+            if (!response.ok) throw new Error('Settings unavailable')
+            const value = await response.json()
+            if (controller.signal.aborted) return
+            const loaded = value?.settings ?? {}
+            const selected = loaded.workerModel ?? {}
+            setWorkerProvider(typeof selected.provider === 'string' ? selected.provider : '')
+            setWorkerModel(typeof selected.model === 'string' ? selected.model : '')
+            setWorkerEffort(typeof selected.reasoningEffort === 'string' ? selected.reasoningEffort : '')
+            setMaxWorkers(String(loaded.maxWorkers ?? 3))
+            setSettingsCatalog(value?.catalog)
+            setSettingsLimits(value?.limits?.maxWorkers)
+            setSettingsPhase('ready')
+          } catch {
+            if (!controller.signal.aborted) setSettingsPhase('error')
+          }
+        }
         void load()
         void loadMemory()
+        void loadSettings()
         return () => controller.abort()
       }, [revision])
 
@@ -391,7 +451,7 @@ window.__ModuleLoader__.load({
           record.content, record.credentialRef, record.id, record.teamId, record.projectRoot,
           t(`memoryCategory.${record.category}`),
         ].some(value => typeof value === 'string' && value.toLowerCase().includes(memoryTerm)))
-      const deletableTask = task => task.status !== 'running' || task.unconfirmed === true
+      const deletableTask = task => task.queued === true || task.status !== 'running' || task.unconfirmed === true
       const selectedTaskRows = tasks.filter(task => selectedTasks.includes(task.id) && deletableTask(task))
       const selectedMemoryRows = memories.filter(record => selectedMemory.includes(memoryKey(record)))
 
@@ -399,6 +459,10 @@ window.__ModuleLoader__.load({
         active.current?.abort()
         setPhase('loading')
         setMemoryPhase('loading')
+        setSettingsPhase('loading')
+        setSettingsError('')
+        setSettingsNotice('')
+        setSettingsPending(false)
         setOpenFailed(false)
         setError('')
         setNotice('')
@@ -639,6 +703,53 @@ window.__ModuleLoader__.load({
           setPending('')
         }
       }
+      const saveSettings = async () => {
+        const provider = workerProvider.trim()
+        const name = workerModel.trim()
+        const effort = workerEffort.trim()
+        if ((provider || name || effort) && (!provider || !name)) {
+          setSettingsError(t('settingsInvalid'))
+          return
+        }
+        const limit = Number(maxWorkers)
+        const min = settingsLimits?.min ?? 1
+        const max = settingsLimits?.max ?? 16
+        if (!Number.isInteger(limit) || limit < min || limit > max) {
+          setSettingsError(t('settingsInvalid'))
+          return
+        }
+        setSettingsPending(true)
+        setSettingsError('')
+        setSettingsNotice('')
+        try {
+          const response = await fetch('/superagent-lite/settings', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              workerModel: provider ? { provider, model: name, ...(effort ? { reasoningEffort: effort } : {}) } : null,
+              maxWorkers: limit,
+            }),
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('settingsFailed'))
+          const saved = value?.settings ?? {}
+          const selected = saved.workerModel ?? {}
+          setWorkerProvider(typeof selected.provider === 'string' ? selected.provider : '')
+          setWorkerModel(typeof selected.model === 'string' ? selected.model : '')
+          setWorkerEffort(typeof selected.reasoningEffort === 'string' ? selected.reasoningEffort : '')
+          setMaxWorkers(String(saved.maxWorkers ?? limit))
+          setSettingsNotice(t('settingsSaved'))
+        } catch (actionError) {
+          setSettingsError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('settingsFailed'))
+        } finally {
+          setSettingsPending(false)
+        }
+      }
       const mergedTask = (task, value) => {
         const view = value?.view
         const git = view?.git ?? {
@@ -743,6 +854,7 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'sl-lv__label' }, t('updated')),
                 h('span', { className: 'sl-lv__value' }, updated)),
               task.unconfirmed && h('span', { className: 'sl-tag', 'data-tone': 'warning' }, t('unconfirmed')),
+              task.queued && h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t('queued')),
               task.land && h('span', { className: 'sl-tag', 'data-tone': 'success' }, t('landAuthorized')),
               h('code', { className: 'sl-code', title: task.id }, task.id)),
             task.failure && h('p', { className: 'sl-task__failure', title: task.failure }, `${t('failure')}: ${task.failure}`),
@@ -923,20 +1035,74 @@ window.__ModuleLoader__.load({
               }, t('confirmDelete')))))
       }
 
-      const taskView = tab !== 'memory'
+      const taskView = tab === 'tasks'
+      const memoryView = tab === 'memory'
+      const settingsView = tab === 'settings'
       const tasksTabId = `${headingId}-tasks-tab`
       const memoryTabId = `${headingId}-memory-tab`
+      const settingsTabId = `${headingId}-settings-tab`
+      const settingsGroups = Array.isArray(settingsCatalog?.groups) ? settingsCatalog.groups : []
+      const settingsProviders = settingsGroups.map(group => group.id)
+      const selectedGroup = settingsGroups.find(group => group.id === workerProvider.trim())
+      const settingsModels = selectedGroup?.models ?? []
+      const selectedModel = settingsModels.find(candidate => candidate.id === workerModel.trim())
+      const settingsEfforts = selectedModel?.reasoning?.efforts ?? []
+      const settingsDefault = settingsCatalog?.default
+      const settingsDefaultLabel = settingsDefault
+        ? `${settingsDefault.provider} / ${settingsDefault.model}${settingsDefault.reasoningEffort ? ` · ${settingsDefault.reasoningEffort}` : ''}`
+        : undefined
+      const settingsField = (label, control) => h('div', { className: 'sl-settings__field' },
+        h('label', { htmlFor: control.props?.id }, t(label)), control)
+      const settingsInput = (label, id, list, value, set) => settingsField(label, h('input', {
+        className: 'sl-input', id, list, value, placeholder: t('modelInherit'), spellCheck: false,
+        onChange: event => set(event.target.value),
+      }))
+      const settingsViewPanel = () => h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': settingsTabId },
+        settingsPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+        settingsPhase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('settingsLoadFailed')),
+        settingsPhase === 'ready' && h('div', { className: 'sl-settings' },
+          h('p', { className: 'sl-hint' },
+            settingsDefaultLabel ? t('defaultModel', { model: settingsDefaultLabel }) : t('defaultModelUnavailable')),
+          h('section', { className: 'sl-settings__group' },
+            h('h2', { className: 'sl-settings__title' }, t('workerModel')),
+            h('p', { className: 'sl-hint' }, t('workerModelHint')),
+            h('div', { className: 'sl-settings__grid' },
+              settingsInput('modelProvider', `${headingId}-provider`, `${headingId}-providers`, workerProvider, setWorkerProvider),
+              settingsInput('modelName', `${headingId}-model`, `${headingId}-models`, workerModel, setWorkerModel),
+              settingsInput('modelEffort', `${headingId}-effort`, `${headingId}-efforts`, workerEffort, setWorkerEffort)),
+            h('datalist', { id: `${headingId}-providers` },
+              ...settingsProviders.map(provider => h('option', { key: provider, value: provider }))),
+            h('datalist', { id: `${headingId}-models` },
+              ...settingsModels.map(model => h('option', { key: model.id, value: model.id }, model.name))),
+            h('datalist', { id: `${headingId}-efforts` },
+              ...settingsEfforts.map(effort => h('option', { key: effort.id, value: effort.id }, effort.name)))),
+          h('section', { className: 'sl-settings__group' },
+            h('h2', { className: 'sl-settings__title' }, t('maxWorkers')),
+            h('p', { className: 'sl-hint' }, t('maxWorkersHint')),
+            settingsField('maxWorkers', h('input', {
+              id: `${headingId}-max-workers`, className: 'sl-input', type: 'number', value: maxWorkers,
+              min: settingsLimits?.min ?? 1, max: settingsLimits?.max ?? 16,
+              onChange: event => setMaxWorkers(event.target.value),
+            }))),
+          settingsError && h('p', { className: 'sl-error', role: 'alert' }, settingsError),
+          settingsNotice && h('p', { className: 'sl-notice', role: 'status' }, settingsNotice),
+          h('div', { className: 'sl-settings__actions' },
+            h('button', {
+              type: 'button', className: 'sl-btn sl-btn--primary', disabled: settingsPending,
+              onClick: () => void saveSettings(),
+            }, t('saveSettings')))))
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
-              h('h1', { id: headingId }, t(taskView ? 'title' : 'memoryTitle')),
-              h('p', { className: 'sl-intro' }, t(taskView ? 'intro' : 'memoryIntro'))),
+              h('h1', { id: headingId }, t(taskView ? 'title' : memoryView ? 'memoryTitle' : 'settingsTitle')),
+              h('p', { className: 'sl-intro' }, t(taskView ? 'intro' : memoryView ? 'memoryIntro' : 'settingsIntro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
-                onClick: refresh, disabled: taskView ? phase === 'loading' : memoryPhase === 'loading',
+                onClick: refresh,
+                disabled: taskView ? phase === 'loading' : memoryView ? memoryPhase === 'loading' : settingsPhase === 'loading',
               }, icon('refresh'), t('refresh')))),
           h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
             h('button', {
@@ -946,10 +1112,15 @@ window.__ModuleLoader__.load({
             }, t('title')),
             h('button', {
               id: memoryTabId, type: 'button', role: 'tab', className: 'sl-tab',
-              'aria-selected': !taskView,
+              'aria-selected': memoryView,
               onClick: () => setTab('memory'),
             }, t('memoryTitle'),
-            memories.length > 0 && h('span', { className: 'sl-tab__count' }, String(memories.length)))),
+            memories.length > 0 && h('span', { className: 'sl-tab__count' }, String(memories.length))),
+            h('button', {
+              id: settingsTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': settingsView,
+              onClick: () => setTab('settings'),
+            }, t('settingsTitle'))),
           taskView
             ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
               tasks.length > 0 && h('div', { className: 'sl-filters' },
@@ -989,7 +1160,7 @@ window.__ModuleLoader__.load({
                       statusLabel(group.key),
                       h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
                     h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow)))))))
-            : h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
+            : memoryView ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
               memoryPhase === 'ready' && h('div', { className: 'sl-memory-usage', 'aria-label': t('memoryUsage') },
                 ...MEMORY_CATEGORIES.map(key => h('span', { key, className: 'sl-lv' },
                   h('span', { className: 'sl-lv__label' }, t(`memoryUsage.${key}`)),
@@ -1031,6 +1202,7 @@ window.__ModuleLoader__.load({
                 h('p', { className: 'sl-hint', role: 'status' }, t('memoryNoMatch')),
               shownMemory.length > 0 && h('div', { className: 'sl-scroll' },
                 h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow))))
+            : settingsViewPanel()
         ),
         dialogView(),
         batchDialog())

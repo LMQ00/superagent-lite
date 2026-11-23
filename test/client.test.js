@@ -204,7 +204,7 @@ test('keeps tasks and memory in separate tabs and scrolls only the active list',
   await flush()
   let tree = board.render()
   const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
-  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '记忆1'])
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '记忆1', '设置'])
   assert.equal(tabs[0].props['aria-selected'], true)
   assert.equal(tabs[1].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
@@ -227,6 +227,69 @@ test('keeps tasks and memory in separate tabs and scrolls only the active list',
   assert.equal(byClass(tree, 'sl-memory').length, 0)
   assert.equal(requests.filter(path => path === '/superagent-lite/tasks').length, 1)
   assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 1)
+  board.dispose()
+})
+
+test('the settings tab edits the worker model and concurrency limit', async () => {
+  const requests = []
+  let saved = { workerModel: null, maxWorkers: 3 }
+  const catalog = {
+    default: { provider: 'deepseek', model: 'deepseek-chat' },
+    groups: [{ id: 'deepseek', name: 'DeepSeek', models: [
+      { id: 'deepseek-chat', name: 'Chat' },
+      { id: 'deepseek-reasoner', name: 'Reasoner', reasoning: { efforts: [{ id: 'high', name: 'High' }] } },
+    ] }],
+    failures: [],
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [] }) }
+      if (path === '/superagent-lite/memory') return { ok: true, json: async () => ({ records: [] }) }
+      if (path === '/superagent-lite/settings' && options.method === 'POST') {
+        saved = JSON.parse(options.body)
+        return { ok: true, json: async () => ({ settings: saved }) }
+      }
+      return {
+        ok: true,
+        json: async () => ({ settings: saved, limits: { maxWorkers: { min: 1, max: 16 } }, catalog }),
+      }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '设置').props.onClick()
+  tree = board.render()
+  assert.equal(tab(tree, '设置').props['aria-selected'], true)
+  assert.match(text(tree), /Worker 模型/)
+  assert.match(text(tree), /留空时跟随 DSH 默认模型/)
+  assert.match(text(tree), /并发 worker 上限/)
+  assert.match(text(tree), /DSH 当前默认/)
+  const input = id => nodes(tree).find(node => node.type === 'input' && node.props?.id === id)
+  input('panel-heading-provider').props.onChange({ target: { value: 'deepseek' } })
+  tree = board.render()
+  input('panel-heading-model').props.onChange({ target: { value: 'deepseek-reasoner' } })
+  tree = board.render()
+  input('panel-heading-effort').props.onChange({ target: { value: 'high' } })
+  tree = board.render()
+  input('panel-heading-provider').props.onChange({ target: { value: 'deepseek' } })
+  nodes(tree).find(node => node.type === 'input' && node.props?.min === 1)
+    .props.onChange({ target: { value: '2' } })
+  tree = board.render()
+  button(tree, '保存').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  const posts = requests.filter(request => request.path === '/superagent-lite/settings' && request.options.method === 'POST')
+  assert.equal(posts.length, 1)
+  assert.deepEqual(JSON.parse(posts[0].options.body), {
+    workerModel: { provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high' },
+    maxWorkers: 2,
+  })
+  assert.match(text(board.render()), /设置已保存/)
   board.dispose()
 })
 

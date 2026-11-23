@@ -18,7 +18,18 @@
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
 | 面板文字 | 任务状态、动作、弹窗和记忆的中英文字典 | `client.js:6-75` |
 
-文字都在仓库文件里，没有设置页，也没有提示词编辑器；改文字等于改文件并重载 bundle。
+文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。面板「设置」只保存 worker 模型和并发上限两项运行时默认值，不编辑提示词。
+
+## Worker 运行时设置
+
+面板「设置」标签页把两项 worker 默认值保存到 `~/.dsh/superagent-lite/settings.json`，只允许安装 owner 读写；文件缺失或内容无效时回到默认值（`src/worker-settings.js`、`src/settings-panel.js`）。
+
+| 项 | 默认 | 约束 | 生效方式 |
+| --- | --- | --- | --- |
+| `workerModel` | `null`，跟随 DSH 默认模型 | `{ provider, model, reasoningEffort? }`；provider 和 model 必填，三项都留空保存 `null` | 启动新 worker 时作为 `agentOptions` 传给 `ctx.subagents.startActivation`；已有 worker 保持原选择 |
+| `maxWorkers` | 3 | 1–16 的整数 | 启动队列在名额内启动新 worker；超出的 Task 写为 `queued` 并等待；review 不占额外名额 |
+
+保存模型时会用 Host 的模型目录校验服务商和模型是否存在；目录暂时不可用时仍允许保存已知名称。改设置只影响之后启动的 worker，不重写运行中或已结束的 Task。
 
 ## 路由模式
 

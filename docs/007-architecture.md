@@ -41,7 +41,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、记忆、提取、消息和报告工具（`index.js:45-119`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/memory` 三个路由，并在启动时以及每个 Worker 创建前刷新 profile（`index.js:19`、`index.js:117`、`index.js:22-33`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、记忆、提取、消息和报告工具（`index.js:45-119`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/memory`、`/superagent-lite/settings` 四个路由，并在启动时以及每个 Worker 创建前刷新 profile（`index.js:19`、`index.js:117`、`index.js:22-33`）。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:143-183`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:136-141`）。它不决定路由，也不编辑项目文件。
 
@@ -55,7 +55,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/dispatch.js`
 
-校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `starting` 记录，建立 Session 映射，调用 `ctx.subagents.startActivation`。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-111`）。
+校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `queued` 记录，建立 Session 映射，交给启动队列在名额内启动。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-115`、`src/launch-queue.js`）。
 
 ### `src/continue.js`
 
@@ -204,6 +204,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
 | `src/memory.js` | 注册记忆工具、profile 上下文、记忆对话输入、面板 facade 和轮次归档。 |
 | `src/memory-extractor.js` | 定义记忆对话的角色提示词、标签、对话与事实上限和输出 schema。 |
+| `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型。 |
 | `src/memory-panel.js` | 提供 owner-only 记忆列表、编辑和删除 HTTP 端点。 |
 | `src/memory-store.js` | 保存 Memory 记录和原始归档，执行分类、scope、密钥检查以及写入去重/纠错。 |
 | `src/merge.js` | 实现本地 `--no-ff` 合并和分支删除。 |
@@ -214,8 +215,10 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/review.js` | 检查已提交 diff，运行只读 Reviewer，接收 `submit_review` 并记录裁决。 |
 | `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
+| `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
+| `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
 | `src/worker-prompt.js` | 生成 change 和 report 任务消息。 |
 | `src/worktree-tool.js` | 创建或进入 Task 的 Worktree，并保存元数据。 |
 
@@ -224,7 +227,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | 测试 | 覆盖什么 |
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务与记忆的批量删除、记忆搜索与编辑删除和错误。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务与记忆的批量删除、记忆搜索与编辑删除、设置标签页和错误。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -240,6 +243,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/landing-wiring.test.js` | Worker shell guard 的安装、真实拒绝与放行、跨任务隔离。 |
 | `test/memory-extractor.test.js` | 记忆角色提示词、四类提取、重复提取复用记录、空结果、超限事实和面板编辑删除。 |
 | `test/memory-panel.test.js` | owner 准入、记忆投影、更新/删除路径、body 校验和状态码映射。 |
+| `test/worker-settings.test.js` | 设置默认值与校验、模型覆盖、并发排队、review 不占名额和设置端点。 |
 | `test/memory-store.test.js` | 分类、team scope、private 引用、面板 team scope、归档不可变、符号链接和并发更新。 |
 | `test/memory-write-rules.test.js` | 相同写入不新增、等价改写不新增、错误记忆覆盖更新、新内容新增、并发相同写入，以及分类和 scope 隔离。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取并带上 Worker 对话、不再注册 `extract_memory`、提取失败不影响报告。 |
@@ -294,6 +298,8 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
 | `/superagent-lite/memory` | `GET`、`POST` | 列出记忆，或执行 `update` / `delete` |
+| `/superagent-lite/settings` | `GET`、`POST` | 读取设置和模型目录，或保存 worker 模型与并发上限 |
+| `/superagent-lite/settings` | `GET`、`POST` | 读取设置和模型目录，或保存 worker 模型与并发上限 |
 
 | 接口 | 值 |
 | --- | --- |

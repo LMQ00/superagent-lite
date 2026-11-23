@@ -50,7 +50,7 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 
 ## 配置
 
-Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
+Bundle 的固定配置是 `cordis.patch.yml` 和源文件；面板「设置」只保存 worker 模型和并发上限两项运行时默认值，存放在 `~/.dsh/superagent-lite/settings.json`。
 
 | 键 | 必填 | 含义 |
 | --- | --- | --- |
@@ -60,6 +60,7 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
 | `engines.dsh` | 是，`0.2.2-rc.3` | Bundle 面向的 Host 版本 |
+| 面板「设置」 | 否 | worker 模型（留空跟随 DSH 默认模型）与并发 worker 上限（1–16，默认 3） |
 
 外部设置单独完成：
 
@@ -131,7 +132,7 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | `Create the assigned project worktree before using any other tool.` | Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
 | `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
 | `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
-| `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发 |
+| `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发；`queued` 的同名 Task 会直接返回 |
 | `The router Session is not running` | 本地合并需要 Router Session 保持运行 |
 | `Git delivery is unavailable under the current Session file policy` | 把 Router Session 设为 full access |
 | `The merge target branch "<name>" was not found` | 在合并弹窗里选择一个存在的本地分支 |
