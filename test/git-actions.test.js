@@ -313,6 +313,10 @@ test('merge writes the reviewed head into the chosen local branch and returns to
   const result = await manager.perform(taskId, 'merge', { target: 'release' }, signal)
   assert.equal(result.status, 'merged')
   assert.equal(result.target, 'release')
+  assert.equal(result.view.status, 'completed')
+  assert.equal(result.view.git.merged, true)
+  assert.equal(result.view.git.canMerge, false)
+  assert.equal(result.view.git.canDelete, true)
   const releaseHead = await git(['rev-parse', 'refs/heads/release'], facts.repo)
   const mergeBase = await git(['merge-base', '--is-ancestor', facts.workerHead, releaseHead], facts.repo)
   assert.equal(mergeBase, '')
@@ -320,6 +324,7 @@ test('merge writes the reviewed head into the chosen local branch and returns to
   const stored = await store.readTask(taskId)
   assert.equal(stored.status, 'merged')
   assert.equal(stored.mergeTarget, 'release')
+  assert.equal(result.updatedAt, stored.updatedAt)
 })
 
 test('merge refuses a task that has not finished its worker turn', async () => {
