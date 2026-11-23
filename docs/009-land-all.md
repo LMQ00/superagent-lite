@@ -52,7 +52,7 @@ scripts/land-all.sh
 ```
 
 - 脚本只合入 `review.approved === true` 且 `review.head` 等于当前 tip 的分支；审查缺失或 head 前移的分支跳过并列在末尾，提示先重审。
-- 每条分支用 `git merge --no-ff`。文本冲突只有在 diff3 的 base 段为空、双方都是新增时，才把双方内容都保留；其它冲突立即停下并保留 merge 现场，打印冲突文件和建议。
+- 每条分支用 `git merge --no-ff`（`merge.conflictStyle=diff3`）。文本冲突只有在 base 段为空、双方都是新增时，才把双方内容都保留；双方各自新增同一路径（add/add）及其它冲突立即停下并保留 merge 现场，打印冲突文件和建议。
 - 每次合并（包括自动解冲突后）运行 `npm test`，失败即停并打印失败用例。
 - 冲突停下后：手工编辑冲突文件 → `git add <文件>` → `git commit --no-edit` → `npm test` → 重跑脚本。脚本是幂等的，已合入分支自动跳过。
 - 实际执行前，本脚本所在分支必须先按常规流程合入 master（或在 master 检出中放一份脚本）；否则 master 上还没有这个命令。

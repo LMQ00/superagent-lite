@@ -9,14 +9,16 @@
 #   1. 已合入 master 的分支直接跳过（幂等，可反复运行）。
 #   2. 只合入 review.approved === true 且 review.head === 分支 tip 的分支；
 #      审查缺失、未通过或 head 已前移的分支列在末尾，提示先重审。
-#   3. git merge --no-ff；文本冲突仅在“双方纯新增”（diff3 的 base 段为空、
-#      两边都新增内容）时自动保留双方，其它冲突立即停下并保留 merge 现场。
+#   3. git merge --no-ff（diff3 冲突样式）；文本冲突仅在“双方纯新增”
+#      （base 段为空、两边都新增内容）时自动保留双方，add/add 同一路径
+#      及其它冲突立即停下并保留 merge 现场。
 #   4. 每次合并（含自动解冲突后）运行 npm test，失败即停并打印失败用例。
 #
 # 风险:
 #   - 直接改写本地 master 并创建 merge commit；不会 push。
-#   - 自动解冲突只覆盖“双方纯新增”的文本块。同一行被双方改写、删除或
-#     语义冲突一律停下人工处理；npm test 通过也不等于语义正确，合并后仍需审查。
+#   - 自动解冲突只覆盖“双方纯新增”的文本块，以及 add/add 同一路径一律
+#     转人工。同一行被双方改写、删除或语义冲突同样停下人工处理；
+#     npm test 通过也不等于语义正确，合并后仍需审查。
 #   - 任务记录不会自动改成 merged。合入后刷新 Git 面板，确认任务已完成并删除分支。
 #   - 合并顺序只是最小冲突的起点，不保证后续分支不冲突；冲突会让脚本停在原地。
 #
@@ -179,6 +181,7 @@ for (const file of process.argv.slice(2)) {
   let ours = []
   let base = []
   let theirs = []
+  let sawBase = false
   let malformed = false
   let hunks = 0
   for (const line of lines) {
@@ -188,13 +191,18 @@ for (const file of process.argv.slice(2)) {
       ours = []
       base = []
       theirs = []
+      sawBase = false
       continue
     }
-    if (line.startsWith('||||||| ') && state === 'ours') { state = 'base'; continue }
+    if (line.startsWith('||||||| ') && state === 'ours') {
+      state = 'base'
+      sawBase = true
+      continue
+    }
     if (line === '=======' && (state === 'ours' || state === 'base')) { state = 'theirs'; continue }
     if (line.startsWith('>>>>>>> ') && state === 'theirs') {
       hunks += 1
-      const additive = base.length === 0 && ours.length > 0 && theirs.length > 0
+      const additive = sawBase && base.length === 0 && ours.length > 0 && theirs.length > 0
       if (!additive || ours.some(isMarker) || theirs.some(isMarker)) {
         malformed = true
         break
@@ -240,9 +248,10 @@ print_conflict_help() {
 # 合并成功返回 0；冲突停下返回 1。
 attempt_merge() {
   local branch="$1" tip="$2"
-  local conflicted=() file
+  local conflicted=() file merge_head merge_base
+  local add_add=()
 
-  if git merge --no-ff --no-edit "$tip"; then
+  if git -c merge.conflictStyle=diff3 merge --no-ff --no-edit "$tip"; then
     return 0
   fi
 
@@ -257,6 +266,30 @@ attempt_merge() {
 
   printf 'land-all: %s 出现文本冲突:\n' "$branch" >&2
   printf '  %s\n' "${conflicted[@]}" >&2
+
+  if ! merge_head="$(git rev-parse MERGE_HEAD 2>/dev/null)"; then
+    printf 'land-all: 找不到 MERGE_HEAD，无法判定冲突类型。\n' >&2
+    print_conflict_help "$branch" "${conflicted[@]}"
+    return 1
+  fi
+  if ! merge_base="$(git merge-base HEAD "$merge_head")"; then
+    printf 'land-all: 无法计算 merge-base，不能安全判定冲突。\n' >&2
+    print_conflict_help "$branch" "${conflicted[@]}"
+    return 1
+  fi
+
+  # add/add 冲突的 diff3 base 段同样为空，但整文件拼接不安全。
+  for file in "${conflicted[@]}"; do
+    if ! git cat-file -e "$merge_base:$file" 2>/dev/null; then
+      add_add+=("$file")
+    fi
+  done
+  if [ "${#add_add[@]}" -gt 0 ]; then
+    printf 'land-all: 以下文件在 merge-base 中不存在（双方各自新增同一路径），不能自动拼接：\n' >&2
+    printf '  %s\n' "${add_add[@]}" >&2
+    print_conflict_help "$branch" "${conflicted[@]}"
+    return 1
+  fi
 
   if ! resolve_additive_conflicts "${conflicted[@]}"; then
     print_conflict_help "$branch" "${conflicted[@]}"
