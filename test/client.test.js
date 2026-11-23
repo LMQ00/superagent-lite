@@ -651,3 +651,181 @@ test('shows saved memory, searches it, edits a fact, deletes a private reference
   })
   board.dispose()
 })
+
+test('selects several tasks and deletes them in one confirmed batch', async () => {
+  let tasks = [
+    task({ id: 'a', title: 'Task A', status: 'answer', mode: 'report', workerSessionId: 'worker-a' }),
+    task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
+    task({ id: 'c', title: 'Task C', status: 'failed' }),
+  ]
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
+        tasks = tasks.filter(item => item.id !== removed)
+        return { ok: true, json: async () => ({ deleted: removed }) }
+      }
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      return { ok: true, json: async () => ({ records: [] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
+  const checkIn = row => nodes(row).find(node => node.type === 'input' && node.props.type === 'checkbox')
+  const runningCheck = checkIn(rowFor('Task B'))
+  assert.equal(runningCheck.props.disabled, true)
+  assert.match(runningCheck.props.title, /worker 仍在运行/)
+  checkIn(rowFor('Task A')).props.onChange()
+  checkIn(rowFor('Task C')).props.onChange()
+  tree = board.render()
+  assert.match(text(tree), /已选择 2/)
+  button(tree, '删除所选').props.onClick()
+  tree = board.render()
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
+  assert.match(text(tree), /删除所选任务/)
+  assert.match(text(tree), /已选择 2/)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task A/)
+  assert.doesNotMatch(text(tree), /Task C/)
+  assert.match(text(tree), /Task B/)
+  assert.match(text(tree), /所选任务已删除/)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
+  assert.deepEqual(requests.filter(request => request.options.method === 'DELETE')
+    .map(request => request.path).sort(),
+  ['/superagent-lite/tasks?taskId=a', '/superagent-lite/tasks?taskId=c'])
+  board.dispose()
+})
+
+test('keeps failed task selections for retry and shows the host error', async () => {
+  let tasks = [
+    task({ id: 'a', title: 'Task A', status: 'answer', mode: 'report' }),
+    task({ id: 'b', title: 'Task B', status: 'answer', mode: 'report' }),
+  ]
+  let rejectB = true
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
+        if (removed === 'b' && rejectB) {
+          rejectB = false
+          return { ok: false, json: async () => ({ error: 'The worker is still running' }) }
+        }
+        tasks = tasks.filter(item => item.id !== removed)
+        return { ok: true, json: async () => ({ deleted: removed }) }
+      }
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      return { ok: true, json: async () => ({ records: [] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
+  const checkIn = row => nodes(row).find(node => node.type === 'input' && node.props.type === 'checkbox')
+  checkIn(rowFor('Task A')).props.onChange()
+  checkIn(rowFor('Task B')).props.onChange()
+  tree = board.render()
+  button(tree, '删除所选').props.onClick()
+  tree = board.render()
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task A/)
+  assert.match(text(tree), /Task B/)
+  assert.match(text(tree), /The worker is still running/)
+  assert.match(text(tree), /已选择 1/)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
+  assert.equal(checkIn(rowFor('Task B')).props.checked, true)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task B/)
+  assert.match(text(tree), /所选任务已删除/)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
+  board.dispose()
+})
+
+test('selects several memory records and deletes them in one confirmed batch', async () => {
+  const records = [
+    { id: 'a', category: 'profile', content: 'Prefers concise replies', updatedAt: '2026-01-04T00:00:00.000Z' },
+    { id: 'b', category: 'public', content: 'Checked-in notes are the source of truth', updatedAt: '2026-01-03T00:00:00.000Z' },
+    { id: 'c', category: 'team', content: 'Run tests before review', teamId: 'alpha', projectRoot: '/one', updatedAt: '2026-01-02T00:00:00.000Z' },
+    { id: 'd', category: 'public', content: 'Keep the release notes', updatedAt: '2026-01-01T00:00:00.000Z' },
+  ]
+  let stored = records
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path !== '/superagent-lite/memory') return { ok: true, json: async () => ({ tasks: [] }) }
+      if (options.method === 'POST') {
+        const body = JSON.parse(options.body)
+        stored = stored.filter(record => record.id !== body.id)
+        return { ok: true, json: async () => ({ deleted: body.id }) }
+      }
+      return { ok: true, json: async () => ({
+        records: stored,
+        injection: { profile: {
+          everyChat: true, limit: 6, maxChars: 500,
+          recordIds: stored.filter(record => record.category === 'profile').slice(0, 6).map(record => record.id),
+        } },
+      }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '记忆').props.onClick()
+  tree = board.render()
+  const rowFor = textValue => byClass(tree, 'sl-memory').find(row => text(row).includes(textValue))
+  const checkIn = row => nodes(row).find(node => node.type === 'input' && node.props.type === 'checkbox')
+  checkIn(rowFor('Prefers concise replies')).props.onChange()
+  checkIn(rowFor('Run tests before review')).props.onChange()
+  tree = board.render()
+  assert.match(text(tree), /已选择 2/)
+  button(tree, '删除所选').props.onClick()
+  tree = board.render()
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
+  assert.match(text(tree), /删除所选记忆/)
+  assert.match(text(tree), /所选记忆将被立即删除/)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Prefers concise replies/)
+  assert.doesNotMatch(text(tree), /Run tests before review/)
+  assert.match(text(tree), /Checked-in notes are the source of truth/)
+  assert.match(text(tree), /Keep the release notes/)
+  assert.match(text(tree), /所选记忆已删除/)
+  assert.match(text(tree), /每轮注入 0\/6/)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
+  const bodies = requests.filter(request => request.path === '/superagent-lite/memory' &&
+    request.options.method === 'POST').map(request => JSON.parse(request.options.body))
+  assert.deepEqual(bodies, [
+    { action: 'delete', category: 'profile', id: 'a' },
+    { action: 'delete', category: 'team', id: 'c', teamId: 'alpha', projectRoot: '/one' },
+  ])
+  board.dispose()
+})

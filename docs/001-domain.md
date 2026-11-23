@@ -54,7 +54,7 @@ flowchart LR
 | 记忆对话（Memory conversation） | 读取 Worker 对话并提炼记忆的独立 helper 子代理。 | 自己读取 Worker 的会话记录，不接收 worker 提交的摘要；返回 private、public、profile、team 四个数组；每次最多 1/3/1/3 条，每条最多 500 字符；插件把结果写回各自分类并按分类与 scope 去重（`src/memory-extractor.js:4-45`、`src/memory.js:108-184`）。 |
 | 原始归档（Raw archive） | Worker 对话的完整轮次记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；仅 Host 可写，模型工具读不到（`src/memory.js:229-242`、`src/memory-store.js:417-439`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；构建、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作；记忆只在 owner 明确点击时写入（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:573-781`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；构建、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作，任务行和记忆行都可勾选后批量删除；记忆只在 owner 明确点击时写入（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:674-904`）。 |
 
 ## 聚合
 

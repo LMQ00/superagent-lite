@@ -23,6 +23,12 @@ window.__ModuleLoader__.load({
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
         deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
         deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
+        selectTask: 'Select task', selectMemory: 'Select memory', selectedCount: 'Selected',
+        clearSelection: 'Clear selection', deleteSelected: 'Delete selected',
+        batchTasksTitle: 'Delete selected tasks',
+        batchTasksHint: 'The selected task records will be removed from this panel. Any worker branch and worktree are kept.',
+        batchMemoryTitle: 'Delete selected memory', batchMemoryHint: 'The selected records will be deleted immediately.',
+        batchTasksDeleted: 'Selected tasks deleted.', batchMemoryDeleted: 'Selected memory deleted.',
         confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
@@ -59,6 +65,12 @@ window.__ModuleLoader__.load({
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
         deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
         deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
+        selectTask: '选择任务', selectMemory: '选择记忆', selectedCount: '已选择',
+        clearSelection: '清除选择', deleteSelected: '删除所选',
+        batchTasksTitle: '删除所选任务',
+        batchTasksHint: '所选任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
+        batchMemoryTitle: '删除所选记忆', batchMemoryHint: '所选记忆将被立即删除。',
+        batchTasksDeleted: '所选任务已删除。', batchMemoryDeleted: '所选记忆已删除。',
         confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
@@ -121,7 +133,7 @@ window.__ModuleLoader__.load({
       .sl-task:last-child{border-bottom:0}
       .sl-task__stage{align-self:stretch;min-width:0;padding-top:1px;border-right:0.5px solid var(--dsw-alias-border-l3)}
       .sl-task__body{display:flex;flex-direction:column;gap:4px;min-width:0}
-      .sl-task__title{min-width:0;font-size:14px;line-height:20px;font-weight:500;overflow-wrap:anywhere}
+      .sl-task__title{display:flex;align-items:flex-start;gap:8px;min-width:0;font-size:14px;line-height:20px;font-weight:500;overflow-wrap:anywhere}
       .sl-task__meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption);overflow-wrap:anywhere}
       .sl-task__failure{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
       .sl-task__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:28px;margin-top:2px;min-width:0}
@@ -166,6 +178,12 @@ window.__ModuleLoader__.load({
       .sl-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
       .sl-memory{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px 8px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
       .sl-memory__head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-width:0}
+      .sl-memory__head .sl-check{align-self:flex-start;margin-top:2px}
+      .sl-check{flex:none;width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
+      .sl-check:disabled{cursor:not-allowed}
+      .sl-task__title .sl-check{margin-top:3px}
+      .sl-batch{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-batch .sl-hint{flex:1 1 auto}
       .sl-memory__content{margin:0;font-size:13px;line-height:20px;overflow-wrap:anywhere;white-space:pre-wrap}
       .sl-memory__content[data-empty='true']{color:var(--dsw-alias-label-caption)}
       .sl-memory__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:28px}
@@ -277,8 +295,27 @@ window.__ModuleLoader__.load({
       const [memoryEditing, setMemoryEditing] = useState('')
       const [memoryText, setMemoryText] = useState('')
       const [memoryConfirm, setMemoryConfirm] = useState('')
+      const [selectedTasks, setSelectedTasks] = useState([])
+      const [selectedMemory, setSelectedMemory] = useState([])
+      const [batch, setBatch] = useState('')
+      const [batchPending, setBatchPending] = useState(false)
+      const [batchError, setBatchError] = useState('')
       const active = useRef(null)
       const headingId = useId()
+
+      const readMemoryView = async signal => {
+        const response = await fetch('/superagent-lite/memory', {
+          method: 'GET', credentials: 'same-origin', cache: 'no-store', signal,
+        })
+        if (!response.ok) throw new Error('Memory unavailable')
+        const value = await response.json()
+        if (!Array.isArray(value?.records)) throw new Error('Invalid memory list')
+        return {
+          records: value.records.filter(record => record?.id && MEMORY_CATEGORIES.includes(record.category)),
+          injection: value.injection?.profile && Array.isArray(value.injection.profile.recordIds)
+            ? value.injection.profile : undefined,
+        }
+      }
 
       useEffect(() => {
         const controller = new AbortController()
@@ -308,18 +345,10 @@ window.__ModuleLoader__.load({
         }
         async function loadMemory() {
           try {
-            const response = await fetch('/superagent-lite/memory', {
-              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
-            })
-            if (!response.ok) throw new Error('Memory unavailable')
-            const value = await response.json()
-            if (!Array.isArray(value?.records)) throw new Error('Invalid memory list')
+            const view = await readMemoryView(controller.signal)
             if (controller.signal.aborted) return
-            const records = value.records.filter(record => record?.id &&
-              MEMORY_CATEGORIES.includes(record.category))
-            setMemories(records)
-            setMemoryInjection(value.injection?.profile && Array.isArray(value.injection.profile.recordIds)
-              ? value.injection.profile : undefined)
+            setMemories(view.records)
+            setMemoryInjection(view.injection)
             setMemoryPhase('ready')
           } catch {
             if (!controller.signal.aborted) {
@@ -362,6 +391,9 @@ window.__ModuleLoader__.load({
           record.content, record.credentialRef, record.id, record.teamId, record.projectRoot,
           t(`memoryCategory.${record.category}`),
         ].some(value => typeof value === 'string' && value.toLowerCase().includes(memoryTerm)))
+      const deletableTask = task => task.status !== 'running' || task.unconfirmed === true
+      const selectedTaskRows = tasks.filter(task => selectedTasks.includes(task.id) && deletableTask(task))
+      const selectedMemoryRows = memories.filter(record => selectedMemory.includes(memoryKey(record)))
 
       const refresh = () => {
         active.current?.abort()
@@ -375,6 +407,11 @@ window.__ModuleLoader__.load({
         setMemoryPending('')
         setMemoryError('')
         setMemoryNotice('')
+        setSelectedTasks([])
+        setSelectedMemory([])
+        setBatch('')
+        setBatchError('')
+        setBatchPending(false)
         setRevision(value => value + 1)
       }
       const filter = (label, empty, key, value, set) => h('label', { className: 'sl-field' },
@@ -388,10 +425,44 @@ window.__ModuleLoader__.load({
         setMemoryConfirm('')
         setMemoryError('')
         setMemoryNotice('')
+        setSelectedMemory(current => current.filter(value => value !== memoryKey(record)))
       }
       const cancelMemoryEdit = () => {
         setMemoryEditing('')
         setMemoryText('')
+      }
+      const toggleTaskSelection = taskId => setSelectedTasks(current => current.includes(taskId)
+        ? current.filter(value => value !== taskId) : [...current, taskId])
+      const toggleMemorySelection = key => setSelectedMemory(current => current.includes(key)
+        ? current.filter(value => value !== key) : [...current, key])
+      const clearSelection = () => {
+        setSelectedTasks([])
+        setSelectedMemory([])
+      }
+      const openBatch = kind => {
+        setBatch(kind)
+        setBatchError('')
+        setDialog(null)
+      }
+      const memoryRequest = async (record, action, extra = {}) => {
+        const body = { action, category: record.category, id: record.id, ...extra }
+        if (record.category === 'team') {
+          body.teamId = record.teamId
+          body.projectRoot = record.projectRoot
+        }
+        const response = await fetch('/superagent-lite/memory', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        let value
+        try {
+          value = await response.json()
+        } catch {
+          value = undefined
+        }
+        if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('memoryFailed'))
+        return value
       }
       const memoryAction = async (record, action) => {
         const key = memoryKey(record)
@@ -399,26 +470,9 @@ window.__ModuleLoader__.load({
         setMemoryError('')
         setMemoryNotice('')
         try {
-          const body = { action, category: record.category, id: record.id }
-          if (record.category === 'team') {
-            body.teamId = record.teamId
-            body.projectRoot = record.projectRoot
-          }
-          if (action === 'update') {
-            body[record.category === 'private' ? 'credentialRef' : 'content'] = memoryText
-          }
-          const response = await fetch('/superagent-lite/memory', {
-            method: 'POST', credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body),
-          })
-          let value
-          try {
-            value = await response.json()
-          } catch {
-            value = undefined
-          }
-          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('memoryFailed'))
+          const extra = action === 'update'
+            ? { [record.category === 'private' ? 'credentialRef' : 'content']: memoryText } : {}
+          const value = await memoryRequest(record, action, extra)
           if (action === 'update') {
             const saved = value?.record
             if (!saved || typeof saved !== 'object') throw new Error(t('memoryFailed'))
@@ -432,18 +486,10 @@ window.__ModuleLoader__.load({
           setMemoryText('')
           setMemoryConfirm('')
           if (record.category === 'profile') {
-            const latest = await fetch('/superagent-lite/memory', {
-              method: 'GET', credentials: 'same-origin', cache: 'no-store',
-            })
-            if (latest.ok) {
-              const view = await latest.json()
-              if (Array.isArray(view?.records)) {
-                setMemories(view.records.filter(item => item?.id &&
-                  MEMORY_CATEGORIES.includes(item.category)))
-                setMemoryInjection(view.injection?.profile && Array.isArray(view.injection.profile.recordIds)
-                  ? view.injection.profile : undefined)
-              }
-            }
+            await readMemoryView().then(view => {
+              setMemories(view.records)
+              setMemoryInjection(view.injection)
+            }).catch(() => {})
           }
         } catch (error) {
           setMemoryError(typeof error?.message === 'string' && error.message ? error.message : t('memoryFailed'))
@@ -507,6 +553,77 @@ window.__ModuleLoader__.load({
         }
         if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
         return value
+      }
+      const confirmBatch = async () => {
+        if (!batch) return
+        setBatchPending(true)
+        setBatchError('')
+        if (batch === 'tasks') {
+          setError('')
+          const removed = []
+          const failed = []
+          for (const task of selectedTaskRows) {
+            try {
+              await removeTask(task.id)
+              removed.push(task.id)
+            } catch (error) {
+              failed.push({ id: task.id, message: typeof error?.message === 'string' && error.message ? error.message : t('actionFailed') })
+            }
+          }
+          if (removed.length > 0) {
+            setTasks(current => current.filter(task => !removed.includes(task.id)))
+            setNotice(t('batchTasksDeleted'))
+          }
+          setSelectedTasks(failed.map(item => item.id))
+          if (failed.length > 0) {
+            const message = [...new Set(failed.map(item => item.message))].join('; ')
+            setError(message)
+            setBatchError(message)
+          } else {
+            setBatch('')
+          }
+          setBatchPending(false)
+          return
+        }
+        if (batch !== 'memory') {
+          setBatchPending(false)
+          return
+        }
+        setMemoryError('')
+        const removed = []
+        const failed = []
+        for (const record of selectedMemoryRows) {
+          try {
+            await memoryRequest(record, 'delete')
+            removed.push(record)
+          } catch (error) {
+            failed.push({ record, message: typeof error?.message === 'string' && error.message ? error.message : t('memoryFailed') })
+          }
+        }
+        const removedKeys = new Set(removed.map(memoryKey))
+        if (removed.length > 0) {
+          setMemories(current => current.filter(record => !removedKeys.has(memoryKey(record))))
+          setMemoryInjection(current => current ? {
+            ...current,
+            recordIds: current.recordIds.filter(id => !removed.some(record => record.category === 'profile' && record.id === id)),
+          } : current)
+          setMemoryNotice(t('batchMemoryDeleted'))
+        }
+        setSelectedMemory(failed.map(item => memoryKey(item.record)))
+        if (failed.length > 0) {
+          const message = [...new Set(failed.map(item => item.message))].join('; ')
+          setMemoryError(message)
+          setBatchError(message)
+        } else {
+          setBatch('')
+        }
+        if (removed.some(record => record.category === 'profile')) {
+          await readMemoryView().then(view => {
+            setMemories(view.records)
+            setMemoryInjection(view.injection)
+          }).catch(() => {})
+        }
+        setBatchPending(false)
       }
       const reviewTask = async task => {
         setPending(`${task.id}:review`)
@@ -584,11 +701,20 @@ window.__ModuleLoader__.load({
         } : task.workerSessionId
         const git = task.git
         const busy = pending.startsWith(`${task.id}:`)
-        const deletable = task.status !== 'running' || task.unconfirmed === true
+        const deletable = deletableTask(task)
         return h('li', { key: task.id, className: 'sl-task' },
           h('div', { className: 'sl-task__stage' }, statusMark(task.status)),
           h('div', { className: 'sl-task__body' },
-            h('div', { className: 'sl-task__title' }, task.title || task.id),
+            h('div', { className: 'sl-task__title' },
+              h('input', {
+                className: 'sl-check', type: 'checkbox',
+                checked: selectedTasks.includes(task.id),
+                disabled: busy || !deletable,
+                title: deletable ? undefined : t('deleteTaskUnavailable'),
+                'aria-label': `${t('selectTask')}: ${task.title || task.id}`,
+                onChange: () => toggleTaskSelection(task.id),
+              }),
+              h('span', null, task.title || task.id)),
             h('div', { className: 'sl-task__meta' },
               chip('team', task.teamId),
               chip('project', task.projectRoot),
@@ -684,6 +810,13 @@ window.__ModuleLoader__.load({
         const fieldLabel = record.category === 'private' ? t('memoryCredentialRef') : t('memoryEdit')
         return h('li', { key, className: 'sl-memory' },
           h('div', { className: 'sl-memory__head' },
+            h('input', {
+              key: 'select', className: 'sl-check', type: 'checkbox',
+              checked: selectedMemory.includes(key),
+              disabled: pending || editing,
+              'aria-label': `${t('selectMemory')}: ${value || record.id}`,
+              onChange: () => toggleMemorySelection(key),
+            }),
             h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t(`memoryCategory.${record.category}`)),
             record.category === 'profile' && injectedProfileIds.has(record.id) &&
               h('span', { className: 'sl-tag', 'data-tone': 'success' }, t('memoryInjectedTag')),
@@ -744,6 +877,31 @@ window.__ModuleLoader__.load({
             pending && h('span', { key: 'pending', className: 'sl-hint' }, t('working'))))
       }
 
+      const batchDialog = () => {
+        if (!batch) return null
+        const memory = batch === 'memory'
+        const count = memory ? selectedMemoryRows.length : selectedTaskRows.length
+        const title = memory ? t('batchMemoryTitle') : t('batchTasksTitle')
+        return h('div', { className: 'sl-modal-backdrop' },
+          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+            h('h2', null, title),
+            h('p', null, memory ? t('batchMemoryHint') : t('batchTasksHint')),
+            h('p', { className: 'sl-hint' }, `${t('selectedCount')} ${count}`),
+            batchError && h('p', { role: 'alert', className: 'sl-error' }, batchError),
+            h('div', { className: 'sl-modal__actions' },
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline', disabled: batchPending,
+                onClick: () => {
+                  setBatch('')
+                  setBatchError('')
+                },
+              }, t('cancel')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--primary',
+                disabled: batchPending || count === 0, onClick: () => void confirmBatch(),
+              }, t('confirmDelete')))))
+      }
+
       const taskView = tab !== 'memory'
       const tasksTabId = `${headingId}-tasks-tab`
       const memoryTabId = `${headingId}-memory-tab`
@@ -786,6 +944,15 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'sl-scope' },
                   filter('team', 'allTeams', 'teamId', team, setTeam),
                   filter('project', 'allProjects', 'projectRoot', project, setProject))),
+              selectedTaskRows.length > 0 && h('div', { className: 'sl-batch' },
+                h('span', { className: 'sl-hint' }, `${t('selectedCount')} ${selectedTaskRows.length}`),
+                h('button', {
+                  type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: batchPending,
+                  onClick: () => openBatch('tasks'),
+                }, icon('trash'), t('deleteSelected')),
+                h('button', {
+                  type: 'button', className: 'sl-btn', disabled: batchPending, onClick: clearSelection,
+                }, t('clearSelection'))),
               phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
               phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
               openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
@@ -824,6 +991,15 @@ window.__ModuleLoader__.load({
                   placeholder: t('memorySearch'), 'aria-label': t('memorySearch'),
                   onChange: event => setMemorySearch(event.target.value),
                 })),
+              selectedMemoryRows.length > 0 && h('div', { className: 'sl-batch' },
+                h('span', { className: 'sl-hint' }, `${t('selectedCount')} ${selectedMemoryRows.length}`),
+                h('button', {
+                  type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: batchPending,
+                  onClick: () => openBatch('memory'),
+                }, icon('trash'), t('deleteSelected')),
+                h('button', {
+                  type: 'button', className: 'sl-btn', disabled: batchPending, onClick: clearSelection,
+                }, t('clearSelection'))),
               memoryError && h('p', { role: 'alert', className: 'sl-error' }, memoryError),
               memoryNotice && h('p', { role: 'status', className: 'sl-notice' }, memoryNotice),
               memoryPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
@@ -835,7 +1011,8 @@ window.__ModuleLoader__.load({
               shownMemory.length > 0 && h('div', { className: 'sl-scroll' },
                 h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow))))
         ),
-        dialogView())
+        dialogView(),
+        batchDialog())
     }
 
     function PanelIcon({ size }) {
