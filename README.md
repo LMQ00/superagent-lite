@@ -87,6 +87,7 @@ worker 的每一轮对话历史按轮次完整归档在 `~/.dsh/superagent-lite/
 - [006 部署](docs/006-deployment.md)
 - [007 架构](docs/007-architecture.md)
 - [008 手册](docs/008-cookbook.md)
+- [009 一键落地](docs/009-land-all.md)
 - [架构原图](docs/diagrams/README.md)（001 术语与主流程、002 预设流程、003 记忆系统）
 
 ## 开发
