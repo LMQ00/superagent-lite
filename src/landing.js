@@ -62,7 +62,7 @@ export function forgetLanding(taskId) {
 
 export function landingRule(authorized, baseBranch = 'the base branch', mode = 'change') {
   if (authorized && mode === 'merge') {
-    return `Landing is authorized for this task: after review, merge only this task's reviewed merge commit into ${baseBranch}; run the merge from the project checkout. Do not push, open a pull request, or merge another branch, another task's commit, or an unreviewed commit. Commands outside that scope are refused.`
+    return `Landing is authorized for this task: after review, merge only this task's reviewed merge commit into ${baseBranch}; run the merge from the project checkout with \`git merge --no-ff --log\` and an explicit \`-m\` merge message naming the reviewed branch, so the branch's functional commits and their commit messages stay in history; never squash the branch. Do not push, open a pull request, or merge another branch, another task's commit, or an unreviewed commit. Commands outside that scope are refused.`
   }
   if (authorized) {
     return `Landing is authorized for this task: you may push the assigned branch and open a pull request for it. Do not merge; a merge request gets a newly dispatched merge worker. Never push or open a pull request for another branch, another task's commit, or an unreviewed commit. Commands outside that scope are refused.`

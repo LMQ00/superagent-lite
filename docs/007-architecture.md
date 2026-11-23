@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期和面板路由；Router 插件 `router.js` 注册路由工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:13-183`、`router.js:1-13`）。
+Host 插件 `index.js` 管理 Worker 生命周期和面板路由；Router 插件 `router.js` 注册路由工具。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-159`、`router.js:1-9`）。
 
 ```mermaid
 flowchart TB
@@ -28,27 +28,19 @@ flowchart TB
   B --> C[client.js 面板]
   C -->|merge、publish、review、delete-branch、delete-task| B
   R --> TG[src/turn-guard.js]
-  W -->|每轮 turn/end| RA[(原始归档)]
-  W -->|最终报告| ME[记忆对话]
-  ME -.->|读取原始会话| W
-  ME --> MS[src/memory.js]
-  MS --> MF[(全局 + 项目记忆)]
-  MS -.->|项目 + 全局注入| W
-  MS -.->|审查时注入| RV
-  MS -.->|全局注入| R
 ```
 
 ## 核心模块
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:45-124`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/settings` 三个路由，并在 Worker 创建时把项目 + 全局记忆注册为必需的运行时上下文（`index.js:18-34`、`index.js:116-124`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:38-98`）。它为已认领的 Reviewer 注册 `submit_review`，并注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/worker-settings` 三个路由（`index.js:16-44`）。启动队列在 Task 结束和 Worker 释放名额时调用 `pumpWorkers`。
 
-`subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:143-183`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:136-141`）。它不决定路由，也不编辑项目文件。
+`subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:119-151`）。`session/event` 只把事件交给派发守卫（`index.js:115-117`）。它不决定路由，也不编辑项目文件。
 
 ### `router.js`
 
-装载时先读取全局记忆，再注册 `dispatch_worker`、`continue_worker` 和全局记忆运行时上下文（`router.js:7-12`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`，并启动一个新的 merge worker（`src/dispatch.js:13-131`）。它不持有 Task 记录。
+装载时注册 `dispatch_worker` 和 `continue_worker`（`router.js:7-9`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:13-131`）。它不持有 Task 记录。
 
 ### `src/task-store.js`
 
@@ -56,7 +48,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/dispatch.js`
 
-校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `starting` 记录，建立 Session 映射，调用 `ctx.subagents.startActivation`。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-111`）。
+校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `queued` 记录，建立 Session 映射，交给启动队列在名额内启动。启动失败把 Task 标为 `failed`。`mode=merge` 先按 Router 和 Project 串行，找到有活 Worker Session 的运行中 merge Task 时把目标追加到 `mergeBranches`、把请求记入 `followUps` 并发送 follow-up；没有才创建新 Task（`src/dispatch.js:44-115`、`src/launch-queue.js`）。
 
 ### `src/continue.js`
 
@@ -74,7 +66,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/worktree-tool.js`
 
-通过 `ctx.worktrees.create` 从 base commit 创建 Worktree，保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，并把 Worker 工作目录切过去。第二次调用只重新进入（`src/worktree-tool.js:23-62`）。
+通过 `ctx.worktrees.create` 从 base commit 创建 Worktree，名字为 `sl-<worktreeName>-<Task ID 前 12 位>`，保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，并把 Worker 工作目录切过去。第二次调用只重新进入（`src/worktree-tool.js:23-64`）。
 
 ### `src/landing.js`
 
@@ -90,19 +82,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/helper-guard.js`
 
-维护待认领 helper 队列，安装只读 guard。Reviewer 和记忆对话继承 Worker 工具集，因此 guard 把 shell 限制在只读模式。没有审查范围时放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`）和受限 shell；带审查范围时进一步收窄到 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`，再套 `review-scope`（`src/helper-guard.js:4-23`、`src/helper-guard.js:73-107`）。
-
-### `src/memory.js`
-
-定义全局和项目记忆的字段与注入文本，构建记忆对话输入，负责 Transcript、提取结果校验、差异写入和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。记忆对话读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript（`src/memory.js:1-200`）。
-
-### `src/memory-store.js`
-
-保存全局记忆、项目记忆和原始归档。全局记忆是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；原始归档按 Session 与序号哈希保存，写入前按 UTF-8 JSON 字节数执行归档大小上限（`src/memory-store.js:1-184`）。
-
-### `src/settings-store.js`
-
-保存运行时设置。当前只有 `archiveMaxBytes`：默认 128M，最大 2G，`null` 表示不限制；校验整数范围，写入使用临时文件 + rename，目录 `0700`、文件 `0600`；读取到损坏或越界文档时报错，不覆盖原文件（`src/settings-store.js:1-83`）。`src/memory.js` 在每次归档写入前读取它，`/superagent-lite/settings` 端点读取和更新它。
+维护待认领 helper 队列，安装只读 guard。Reviewer 继承 Worker 工具集，因此 guard 把 shell 限制在只读模式。没有审查范围时放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`）和受限 shell；带审查范围时进一步收窄到 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`，再套 `review-scope`（`src/helper-guard.js:4-23`、`src/helper-guard.js:73-107`）。
 
 ### `src/delivery.js`
 
@@ -110,11 +90,11 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/merge-tool.js`
 
-merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` 中的分支，把目标分支用 `git merge --no-ff` 合入该 Worker 自己的 worktree 分支；冲突时保留 merge 现场并列出冲突文件，由 Worker 解决、提交后继续。它不写共享 checkout，也不改 Task 状态（`src/merge-tool.js:1-68`）。
+merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` 中的分支，把目标分支用 `git merge --no-ff --log` 合入该 Worker 自己的 worktree 分支，目标分支的 commit 摘要随合并提交进入历史；冲突时保留 merge 现场并列出冲突文件，由 Worker 解决、提交后继续。它不写共享 checkout，也不改 Task 状态（`src/merge-tool.js:1-68`）。
 
 ### `src/merge.js`
 
-实现本地合并和分支删除。`mergeWorkerBranch` 先用共用的 `deliverableHead` 校验交付前提，再检查目标分支、干净 checkout 和 `merge-tree` 预检，切到所选目标，执行 `git merge --no-ff`，复核目标后切回，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:30-100`）。同一 Project 根的合并和删除在此排队，共享 checkout 不会被两个合并同时切换；`deleteWorkerBranch` 移除已合并的 Worktree 并删除分支（`src/merge.js:14-26`、`src/merge.js:104-133`）。用户直接指示的合并由 router 派发 `mode=merge` 的 worker，不续派原任务。
+实现本地合并和分支删除。`mergeWorkerBranch` 先用共用的 `deliverableHead` 校验交付前提，再检查目标分支、干净 checkout 和 `merge-tree` 预检，切到所选目标，执行 `git merge --no-ff --log -m "Merge branch '<worker branch>'" -m '<task title>'`，让 base branch 历史保留分支的功能性 commit 及其摘要，复核目标后切回，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:30-109`）。同一 Project 根的合并和删除在此排队，共享 checkout 不会被两个合并同时切换；`deleteWorkerBranch` 移除已合并的 Worktree 并删除分支（`src/merge.js:14-26`、`src/merge.js:113-142`）。用户直接指示的合并由 router 派发 `mode=merge` 的 worker，不续派原任务。
 
 ### `src/git-actions.js`
 
@@ -130,7 +110,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/board.js`
 
-提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=`、`POST /superagent-lite/git`、`GET /superagent-lite/settings` 和 `PUT /superagent-lite/settings`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；设置端点校验归档大小并返回默认值和最大值；还提供 JSON body 读取工具（`src/board.js:1-204`）。
+提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；还提供 JSON body 读取工具（`src/board.js:1-150`）。
 
 ### `src/report-tool.js`
 
@@ -138,24 +118,21 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/message-router.js`
 
-把 Worker 的最终结论发给 Router，要求活跃 Worker 和 1–4,000 字符文本；送达后调用可选回调，触发最终报告记忆提取（`src/message-router.js:1-27`）。
+把 Worker 的最终结论发给 Router，要求活跃 Worker 和 1–4,000 字符文本（`src/message-router.js:1-25`）。
 
 ### `client.js`
 
-浏览器面板。注册 `main`、`sidebar.panellist` 和 `settings.section` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录；设置页「归档」分组读写归档大小上限，可输入 1–2048（M）或选择不限制。面板不显示或编辑记忆（`client.js:1-881`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。面板不显示设置分组（`client.js:1-709`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
 - `index.js` 和 `router.js` 是唯一插件入口。`src/` 不 import 这两个入口或 `client.js`。
 - `client.js` 只在浏览器运行，通过模块加载器使用 `react`、`slots` 和 `locale`。
-- 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`（`index.js:13`、`router.js:5`）。
+- 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`webServer`、`connection`（`index.js:16`、`router.js:4`）。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
-- `src/memory-store.js` 是唯一记忆与归档存储模块；`src/memory.js` 的注入、提取和归档都经过它的 facade（`src/memory-store.js:120-175`）。
-- `src/settings-store.js` 是唯一运行时设置存储与校验模块；`src/memory.js` 和面板设置端点都经过它（`src/settings-store.js:1-83`）。
-- `src/memory.js` 只持有字段定义、提示词、注入文本和提取流程，不提供模型侧记忆工具（`src/memory.js:1-206`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
-- `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-133`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
+- `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-142`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
 - `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
 
 ### 状态写者
@@ -194,24 +171,24 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/status.js` | 推导六个面板状态，并按 Project 与 commit 索引通过的审查。 |
 | `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
 | `src/delivery.js` | 合并与发送 PR 共用的状态、审查和 HEAD 前置校验。 |
-| `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session。 |
+| `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session；`mode=merge` 把新请求追加给运行中的 merge worker，没有才新派发。 |
 | `src/git-actions.js` | 构建面板视图，执行合并、发送 PR、审查和删除分支动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
-| `src/memory.js` | 定义记忆字段、注入文本、记忆对话提示词与提取流程，并负责轮次归档。 |
-| `src/memory-store.js` | 保存全局记忆、项目记忆和原始归档，执行字段校验、归档大小上限与原子写入。 |
-| `src/settings-store.js` | 保存运行时设置（归档大小），执行范围校验与原子写入。 |
-| `src/merge.js` | 实现本地 `--no-ff` 合并和分支删除。 |
+| `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型。 |
+| `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
-| `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
+| `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务。 |
 | `src/review.js` | 检查已提交 diff，运行只读 Reviewer，接收 `submit_review` 并记录裁决。 |
 | `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
+| `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
+| `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
 | `src/worker-prompt.js` | 生成 change 和 report 任务消息。 |
 | `src/worktree-tool.js` | 创建或进入 Task 的 Worktree，并保存元数据。 |
 
@@ -220,7 +197,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | 测试 | 覆盖什么 |
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、归档设置分组和错误。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、设置标签页和错误。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -228,16 +205,13 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/helper-guard.test.js` | helper 认领、只读工具白名单和 shell 限制。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
-| `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review、记忆和归档。 |
-| `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验。 |
+| `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
+| `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
 | `test/merge-tool.test.js` | merge worker 的目标分支合并、冲突保留和 worktree 状态限制。 |
 | `test/land-all.test.js` | 双方纯新增时保留两边、同一行改写与 add/add 冲突时停下、按计划顺序合并和测试失败即停。 |
 | `test/landing.test.js` | 未授权与授权后的 push/PR/merge 检查、分支与 reviewed HEAD 范围、跨任务授权和伪造授权。 |
 | `test/landing-wiring.test.js` | Worker shell guard 的安装、真实拒绝与放行、跨任务隔离。 |
-| `test/memory.test.js` | 记忆角色提示词、全局 + 项目提取、纠正覆盖、空结果、Transcript 上限、注入文本和归档大小上限。 |
-| `test/memory-store.test.js` | 全局和项目记忆读写、字段校验、按项目隔离、归档、归档大小上限和损坏文件拒绝。 |
-| `test/settings.test.js` | 归档大小默认值、范围校验、无损持久化、损坏设置拒绝和设置端点。 |
-| `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、不再注册记忆工具、提取失败不影响报告。 |
+| `test/worker-settings.test.js` | 设置默认值与校验、模型覆盖、并发排队、review 不占名额和设置端点。 |
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
 | `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
@@ -248,37 +222,34 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/status.test.js` | 六个面板状态、优先级和审查索引。 |
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射和路径形 ID 拒绝。 |
 | `test/turn-guard.test.js` | 每个输入一个决定、提醒预算、idle 投递和中止处理。 |
-| `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report 的参数规则。 |
+| `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report/merge 的参数规则和 `worktreeName` 校验。 |
 | `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒。 |
 | `test/worker-prompt.test.js` | change 与 report 任务消息、段顺序和范围限制。 |
+| `test/worktree-tool.test.js` | 可读 Worktree 与分支名、重复调用重新进入，以及旧 Task 的原命名回退。 |
 
 ## 持久化
 
-Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
+Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 
 | 记录 | 路径 | 写者 |
 | --- | --- | --- |
 | Task | `tasks/<id>.json` | `src/task-store.js` |
 | Worker Session 映射 | `tasks/sessions/<sha256(sessionId)>.json` | `src/dispatch.js` 通过 `linkWorkerSession` |
-| 全局记忆 | `memory/global.json` | `src/memory-store.js` |
-| 项目记忆 | `memory/projects/<sha256(projectRoot)>.json` | `src/memory-store.js` |
-| 原始轮次归档 | `memory/archive/<hash(sessionId, seq)>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
-| 归档大小等设置 | `settings.json` | `src/settings-store.js` 通过设置端点 |
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 
-项目记忆哈希覆盖规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，文件以 `0600` 写入（`src/memory-store.js:71-87`、`src/task-store.js:34-57`、`src/memory-store.js:161-175`、`src/settings-store.js:45-63`）。
+目录以 `0700` 创建，文件以 `0600` 写入（`src/task-store.js:34-57`）。
 
 ## 对外接口
 
 | 工具 | 调用方 | 用途 |
 | --- | --- | --- |
-| `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report`/`merge` 启动 Worker |
+| `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report`/`merge` 启动 Worker；change/merge 必须给出英文 `worktreeName` |
 | `continue_worker` | Router | 给同一 Task 发 follow-up |
 | `create_worktree` | change worker | 创建或进入 Task 的 Worktree |
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
-| `message_router` | Worker | 把最终结论发给 Router，并触发记忆对话读取 Worker 对话；其参数不进入记忆 transcript |
+| `message_router` | Worker | 把最终结论发给 Router |
 
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |
@@ -286,13 +257,11 @@ Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `/superagent-lite/tasks` | `DELETE` | 删除一个已结束 Task 的记录和 worker 会话映射 |
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
-| `/superagent-lite/settings` | `GET` | 返回当前归档大小上限、默认值和可调最大值 |
-| `/superagent-lite/settings` | `PUT` | 保存归档大小上限；`null` 表示不限制 |
+| `/superagent-lite/worker-settings` | `GET`、`POST` | 读取 worker 设置和模型目录，或保存 worker 模型与并发上限 |
 
 | 接口 | 值 |
 | --- | --- |
 | 侧栏槽位 | `sidebar.panellist`，面板标签「项目任务」 |
-| 设置槽位 | `settings.section`，分组「归档」 |
 | 主槽位 | `main` |
 | Locale 命名空间 | `superagent-lite` |
 | 包导出 | `.`、`./router`、`./locale/*.json`、`./icon`、`./client` |
@@ -305,11 +274,6 @@ Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | --- | --- |
 | `cordis.patch.yml` | 下一次 bundle 加载 |
 | `src/` 里的工具文字 | bundle 加载后的下一次拼装回合 |
-| `src/memory.js` 角色文字 | 下一次记忆提取启动 |
 | `client.js` 字典 | 下一次客户端 bundle 加载 |
-| 全局记忆写入 | 刷新 Router 的模块缓存；下一次 Worker 和 Reviewer 读取新文件 |
 | Task 记录 | 下一次面板加载；面板会修正已审查的 HEAD 并采纳同一 commit 的审查 |
-| 项目记忆写入 | 立即写入磁盘；下一次 Worker 创建和 Reviewer 审查读取新文件 |
 | GitHub remote 与 PR 事实 | PR 事实缓存 30 秒；面板刷新在缓存过期后重新读取 |
-
-记忆上下文以 order `170` 注册并标记为 `required`，在 Host 组装模型调用的运行时上下文时读取；关闭可选运行时上下文时仍然注入（`src/memory.js:53-68`）。

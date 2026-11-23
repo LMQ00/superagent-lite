@@ -54,7 +54,7 @@ export function createMergeTool(ctx, agent, taskId) {
         .then(() => true, () => false)
       if (contained) return `${target} is already contained in ${current}; nothing to merge.`
       try {
-        await runCommand(ctx, ['-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--no-edit', target], path, exec.signal)
+        await runCommand(ctx, ['-c', 'commit.gpgsign=false', 'merge', '--no-ff', '--log', '--no-edit', target], path, exec.signal)
       } catch (error) {
         const conflicts = (await runCommand(ctx, ['diff', '--name-only', '--diff-filter=U'], path, exec.signal).catch(() => ''))
           .split('\n').filter(Boolean)

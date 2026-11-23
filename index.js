@@ -2,22 +2,21 @@ import { resolve } from 'node:path'
 import { taskForSession, updateTask } from './src/task-store.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
-import { createBoardHandler, createGitActionHandler, createSettingsHandler } from './src/board.js'
-import { createSettingsStore } from './src/settings-store.js'
+import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
 import { createMergeTool } from './src/merge-tool.js'
 import { createGitManager } from './src/git-actions.js'
-import { archiveWorkerTurn, registerMemoryContext, runMemoryExtraction } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
+import { createSettingsPanelHandler } from './src/settings-panel.js'
+import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 
-export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
+export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory']
 
 export async function apply(ctx) {
   const gitManager = createGitManager(ctx)
-  const settingsStore = createSettingsStore()
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
@@ -28,8 +27,13 @@ export async function apply(ctx) {
       handler: createGitActionHandler(web.connection, gitManager),
     }))
     web.effect(() => web.webServer.register({
-      kind: 'exact', path: '/superagent-lite/settings',
-      handler: createSettingsHandler(web.connection, settingsStore),
+      kind: 'exact', path: '/superagent-lite/worker-settings',
+      handler: createSettingsPanelHandler(web.connection, {
+        catalog: async () => (ctx.get?.('sessionController') ?? ctx.sessionController)?.modelCatalog?.(),
+        onChange: () => pumpWorkers(ctx).catch(error => {
+          ctx.logger.warn(`superagent-lite worker queue: ${error instanceof Error ? error.message : String(error)}`)
+        }),
+      }),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -97,29 +101,12 @@ export async function apply(ctx) {
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
       when: () => !state.frozen && !reportOnly && inCheckout(),
     })
-    const caller = { projectRoot: task.projectRoot }
     const activeWorker = candidate => candidate === agent && !state.frozen && inCheckout()
-    let memoryAttempted = false
-    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
-      if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
-      memoryAttempted = true
-      try {
-        return await runMemoryExtraction(ctx, agent, caller, exec.signal)
-      } catch (error) {
-        ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
-        return undefined
-      }
-    }), { when: ({ agent: candidate }) => activeWorker(candidate) })
+    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id), { when: ({ agent: candidate }) => activeWorker(candidate) })
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
-    const memory = !state.frozen
-      ? await registerMemoryContext(agent.ctx, task.projectRoot).catch(error => {
-        ctx.logger.warn(`superagent-lite memory context: ${error instanceof Error ? error.message : String(error)}`)
-        return undefined
-      })
-      : undefined
-    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { memory?.(); report(); message(); review(); merge(); checkout(); guard() } })
+    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { report(); message(); review(); merge(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -128,6 +115,7 @@ export async function apply(ctx) {
     workers.delete(agent.id)
     if (worker) forgetLanding(worker.taskId)
     dispatchGuard.dispose(agent.session.id)
+    if (!lifetime.signal.aborted) track(pumpWorkers(ctx))
   })
 
   // DSH dispatches agent/status as a scoped event with a single { agent, status }
@@ -138,9 +126,6 @@ export async function apply(ctx) {
 
   ctx.on('session/event', (session, event) => {
     dispatchGuard.onEvent(session, event)
-    if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {
-      track(archiveWorkerTurn(session, event))
-    }
   })
 
   ctx.on('subagent/end', (info) => {
@@ -148,31 +133,35 @@ export async function apply(ctx) {
     if (worker) worker.state.frozen = true
     if (lifetime.signal.aborted) return
     track((async () => {
-      const task = await taskForSession(undefined, info.id)
-      if (!task || task.parentSessionId !== info.parentSessionId || task.status !== 'running') return
-      const publish = changes => updateTask(task.id, changes)
-      const stopped = { stopReason: info.stopReason, finishedAt: new Date().toISOString() }
-      if (task.mode === 'report') {
-        await publish({ ...stopped, status: 'failed', failure: 'Report-only task ended without report_task' })
-        return
-      }
-      if (info.stopReason !== 'completed' || !task.worktree) {
-        await publish({ ...stopped, status: 'failed' })
-        return
-      }
-      if (task.review?.approved !== true) {
-        await publish({ ...stopped, status: 'review-required' })
-        return
-      }
-      const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(15 * 60_000)])
       try {
-        if (await worktreeHead(ctx, task, signal) !== task.review.head) {
+        const task = await taskForSession(undefined, info.id)
+        if (!task || task.parentSessionId !== info.parentSessionId || task.status !== 'running') return
+        const publish = changes => updateTask(task.id, changes)
+        const stopped = { stopReason: info.stopReason, finishedAt: new Date().toISOString() }
+        if (task.mode === 'report') {
+          await publish({ ...stopped, status: 'failed', failure: 'Report-only task ended without report_task' })
+          return
+        }
+        if (info.stopReason !== 'completed' || !task.worktree) {
+          await publish({ ...stopped, status: 'failed' })
+          return
+        }
+        if (task.review?.approved !== true) {
           await publish({ ...stopped, status: 'review-required' })
           return
         }
-        await publish({ ...stopped, status: 'awaiting-merge' })
-      } catch (error) {
-        await publish({ ...stopped, status: 'delivery-blocked', failure: error.message })
+        const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(15 * 60_000)])
+        try {
+          if (await worktreeHead(ctx, task, signal) !== task.review.head) {
+            await publish({ ...stopped, status: 'review-required' })
+            return
+          }
+          await publish({ ...stopped, status: 'awaiting-merge' })
+        } catch (error) {
+          await publish({ ...stopped, status: 'delivery-blocked', failure: error.message })
+        }
+      } finally {
+        await pumpWorkers(ctx)
       }
     })())
   })
