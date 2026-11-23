@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const id = 'superagent-lite'
     const dictionaries = {
       en: {
-        title: 'Project tasks', refresh: 'Refresh', loading: 'Loading tasks…',
+        title: 'Project tasks', views: 'Panel tabs', refresh: 'Refresh', loading: 'Loading tasks…',
         loadFailed: 'Could not load tasks. Try refreshing.', openFailed: 'Could not open the session.',
         empty: 'No tasks yet.', noMatch: 'No tasks match the filters.',
         emptyCategory: 'No tasks in this status.',
@@ -41,7 +41,7 @@ window.__ModuleLoader__.load({
         'memoryCategory.team': 'Team',
       },
       zh: {
-        title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
+        title: '项目任务', views: '面板分区', refresh: '刷新', loading: '正在加载任务…',
         loadFailed: '无法加载任务，请重试。', openFailed: '无法打开会话。',
         empty: '暂无任务。', noMatch: '没有符合筛选条件的任务。',
         emptyCategory: '该状态下暂无任务。',
@@ -79,14 +79,23 @@ window.__ModuleLoader__.load({
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
     const styles = `
-      .sl-board{box-sizing:border-box;height:100%;overflow:auto;scrollbar-gutter:stable;container-type:inline-size;padding:28px clamp(24px,4vw,48px) 48px;padding-inline-start:max(clamp(24px,4vw,48px),var(--dsh-frame-leading-clearance,0px));color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base)}
+      .sl-board{box-sizing:border-box;height:100%;min-height:0;overflow:hidden;container-type:inline-size;display:flex;flex-direction:column;padding:28px clamp(24px,4vw,48px) 0;padding-inline-start:max(clamp(24px,4vw,48px),var(--dsh-frame-leading-clearance,0px));color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base)}
       html[data-platform='darwin'] .sl-board{padding-top:calc(28px + var(--dsh-frame-top-clearance,0px))}
-      .sl-column{display:flex;flex-direction:column;gap:24px;max-width:960px;margin:0 auto}
+      .sl-column{display:flex;flex:1;flex-direction:column;gap:16px;min-height:0;width:100%;max-width:960px;margin:0 auto}
       .sl-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
       .sl-head__text{display:flex;flex-direction:column;gap:4px;min-width:0}
       .sl-head h1{margin:0;font-size:20px;line-height:28px;font-weight:500;overflow-wrap:anywhere}
       .sl-intro{margin:0;max-width:640px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
       .sl-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+      .sl-tabs{display:flex;flex:none;align-items:center;gap:2px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-tab{position:relative;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;height:32px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer}
+      .sl-tab:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .sl-tab[aria-selected='true']{color:var(--dsw-alias-label-primary);font-weight:500}
+      .sl-tab[aria-selected='true']::after{content:'';position:absolute;left:8px;right:8px;bottom:-0.5px;height:2px;border-radius:2px;background:var(--dsw-alias-brand-primary)}
+      .sl-tab:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .sl-tab__count{color:var(--dsw-alias-label-caption);font-size:12px;line-height:18px;font-weight:400;font-variant-numeric:tabular-nums}
+      .sl-body{display:flex;flex:1;flex-direction:column;gap:12px;min-height:0}
+      .sl-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:40px}
       .sl-filters{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
       .sl-filter-group{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
       .sl-filter{display:inline-flex;align-items:center;gap:5px;box-sizing:border-box;height:28px;padding:0 10px;border:0;border-radius:14px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer}
@@ -150,12 +159,8 @@ window.__ModuleLoader__.load({
       .sl-code{font-family:var(--dsw-font-mono,monospace);font-size:12px;color:var(--dsw-alias-label-tertiary)}
       .sl-link{color:var(--dsw-alias-brand-primary);text-decoration:none}
       .sl-link:hover{text-decoration:underline}
-      .sl-memory-section{display:flex;flex-direction:column;gap:8px;min-width:0;padding-top:8px}
-      .sl-memory-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0}
-      .sl-memory-head h2{margin:0;font-size:13px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-secondary)}
-      .sl-memory-count{font-size:13px;line-height:20px;font-weight:400;color:var(--dsw-alias-label-caption);font-variant-numeric:tabular-nums}
-      .sl-memory-usage{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;min-width:0;padding:8px 0;border-top:0.5px solid var(--dsw-alias-border-l3);border-bottom:0.5px solid var(--dsw-alias-border-l3)}
-      .sl-memory-tools{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+      .sl-memory-usage{display:flex;flex:none;align-items:center;flex-wrap:wrap;gap:4px 14px;min-width:0;padding:8px 0;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-memory-tools{display:flex;flex:none;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
       .sl-memory-filters{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
       .sl-input{box-sizing:border-box;height:28px;min-width:180px;max-width:100%;padding:0 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}
       .sl-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
@@ -252,6 +257,7 @@ window.__ModuleLoader__.load({
       const [team, setTeam] = useState('')
       const [project, setProject] = useState('')
       const [category, setCategory] = useState('')
+      const [tab, setTab] = useState('tasks')
       const [openFailed, setOpenFailed] = useState(false)
       const [pending, setPending] = useState('')
       const [error, setError] = useState('')
@@ -737,83 +743,98 @@ window.__ModuleLoader__.load({
             pending && h('span', { key: 'pending', className: 'sl-hint' }, t('working'))))
       }
 
+      const taskView = tab !== 'memory'
+      const tasksTabId = `${headingId}-tasks-tab`
+      const memoryTabId = `${headingId}-memory-tab`
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
-              h('h1', { id: headingId }, t('title')),
-              h('p', { className: 'sl-intro' }, t('intro'))),
+              h('h1', { id: headingId }, t(taskView ? 'title' : 'memoryTitle')),
+              h('p', { className: 'sl-intro' }, t(taskView ? 'intro' : 'memoryIntro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
-                onClick: refresh, disabled: phase === 'loading',
+                onClick: refresh, disabled: taskView ? phase === 'loading' : memoryPhase === 'loading',
               }, icon('refresh'), t('refresh')))),
-          tasks.length > 0 && h('div', { className: 'sl-filters' },
-            h('div', { className: 'sl-filter-group', role: 'group', 'aria-label': t('taskFilters') },
-              h('button', {
-                type: 'button', className: 'sl-filter', 'aria-pressed': category === '',
-                onClick: () => setCategory(''),
-              }, t('all'), h('span', { className: 'sl-filter__count' }, String(scoped.length))),
-              ...CATEGORY_ORDER.map(key => h('button', {
-                key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
-                onClick: () => setCategory(key),
-              }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
-            h('div', { className: 'sl-scope' },
-              filter('team', 'allTeams', 'teamId', team, setTeam),
-              filter('project', 'allProjects', 'projectRoot', project, setProject))),
-          phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
-          phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
-          openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
-          error && h('p', { className: 'sl-error', role: 'alert' }, error),
-          notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
-          phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
-          phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
-            h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
-          shown.length > 0 && h('div', { className: 'sl-groups' },
-            ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
-              h('h2', { className: 'sl-group__title' },
-                statusLabel(group.key),
-                h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
-              h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow))))),
-          h('section', { className: 'sl-memory-section' },
-            h('div', { className: 'sl-memory-head' },
-              h('h2', null, t('memoryTitle')),
-              memories.length > 0 && h('span', { className: 'sl-memory-count' }, String(memories.length))),
-            h('p', { className: 'sl-intro' }, t('memoryIntro')),
-            memoryPhase === 'ready' && h('div', { className: 'sl-memory-usage', 'aria-label': t('memoryUsage') },
-              ...MEMORY_CATEGORIES.map(key => h('span', { key, className: 'sl-lv' },
-                h('span', { className: 'sl-lv__label' }, t(`memoryUsage.${key}`)),
-                h('span', { className: 'sl-lv__value' }, String(memoryCounts[key]))))),
-            memoryInjection && h('p', { className: 'sl-hint' },
-              `${t('memoryInjection')} ${memoryInjection.recordIds.length}/${memoryInjection.limit} ${t('memoryInjectionTail')}`),
-            memoryError && h('p', { role: 'alert', className: 'sl-error' }, memoryError),
-            memoryNotice && h('p', { role: 'status', className: 'sl-notice' }, memoryNotice),
-            memoryPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
-            memoryPhase === 'error' && h('p', { role: 'alert', className: 'sl-error' }, t('memoryLoadFailed')),
-            memoryPhase === 'ready' && memories.length === 0 &&
-              h('p', { role: 'status', className: 'sl-hint' }, t('memoryEmpty')),
-            memoryPhase === 'ready' && memories.length > 0 && h('div', { className: 'sl-memory-tools' },
-              h('div', { className: 'sl-memory-filters', role: 'group', 'aria-label': t('memoryFilters') },
-                h('button', {
-                  type: 'button', className: 'sl-filter', 'aria-pressed': memoryCategory === '',
-                  onClick: () => setMemoryCategory(''),
-                }, t('all'), h('span', { className: 'sl-filter__count' }, String(memories.length))),
-                ...MEMORY_CATEGORIES.map(key => h('button', {
-                  key, type: 'button', className: 'sl-filter', 'aria-pressed': memoryCategory === key,
-                  onClick: () => setMemoryCategory(key),
-                }, t(`memoryCategory.${key}`),
-                h('span', { className: 'sl-filter__count' }, String(memoryCounts[key])))),
-              h('input', {
-                className: 'sl-input', type: 'search', value: memorySearch,
-                placeholder: t('memorySearch'), 'aria-label': t('memorySearch'),
-                onChange: event => setMemorySearch(event.target.value),
-              })),
-            memoryPhase === 'ready' && memories.length > 0 && shownMemory.length === 0 &&
-              h('p', { className: 'sl-hint', role: 'status' }, t('memoryNoMatch')),
-            shownMemory.length > 0 &&
-              h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow)))),
-          dialogView()))
+          h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
+            h('button', {
+              id: tasksTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': taskView,
+              onClick: () => setTab('tasks'),
+            }, t('title')),
+            h('button', {
+              id: memoryTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': !taskView,
+              onClick: () => setTab('memory'),
+            }, t('memoryTitle'),
+            memories.length > 0 && h('span', { className: 'sl-tab__count' }, String(memories.length)))),
+          taskView
+            ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
+              tasks.length > 0 && h('div', { className: 'sl-filters' },
+                h('div', { className: 'sl-filter-group', role: 'group', 'aria-label': t('taskFilters') },
+                  h('button', {
+                    type: 'button', className: 'sl-filter', 'aria-pressed': category === '',
+                    onClick: () => setCategory(''),
+                  }, t('all'), h('span', { className: 'sl-filter__count' }, String(scoped.length))),
+                  ...CATEGORY_ORDER.map(key => h('button', {
+                    key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
+                    onClick: () => setCategory(key),
+                  }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
+                h('div', { className: 'sl-scope' },
+                  filter('team', 'allTeams', 'teamId', team, setTeam),
+                  filter('project', 'allProjects', 'projectRoot', project, setProject))),
+              phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+              phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
+              openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
+              error && h('p', { className: 'sl-error', role: 'alert' }, error),
+              notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
+              phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
+              phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
+                h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
+              shown.length > 0 && h('div', { className: 'sl-scroll' },
+                h('div', { className: 'sl-groups' },
+                  ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
+                    h('h2', { className: 'sl-group__title' },
+                      statusLabel(group.key),
+                      h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
+                    h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow)))))))
+            : h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
+              memoryPhase === 'ready' && h('div', { className: 'sl-memory-usage', 'aria-label': t('memoryUsage') },
+                ...MEMORY_CATEGORIES.map(key => h('span', { key, className: 'sl-lv' },
+                  h('span', { className: 'sl-lv__label' }, t(`memoryUsage.${key}`)),
+                  h('span', { className: 'sl-lv__value' }, String(memoryCounts[key]))))),
+              memoryInjection && h('p', { className: 'sl-hint' },
+                `${t('memoryInjection')} ${memoryInjection.recordIds.length}/${memoryInjection.limit} ${t('memoryInjectionTail')}`),
+              memoryPhase === 'ready' && memories.length > 0 && h('div', { className: 'sl-memory-tools' },
+                h('div', { className: 'sl-memory-filters', role: 'group', 'aria-label': t('memoryFilters') },
+                  h('button', {
+                    type: 'button', className: 'sl-filter', 'aria-pressed': memoryCategory === '',
+                    onClick: () => setMemoryCategory(''),
+                  }, t('all'), h('span', { className: 'sl-filter__count' }, String(memories.length))),
+                  ...MEMORY_CATEGORIES.map(key => h('button', {
+                    key, type: 'button', className: 'sl-filter', 'aria-pressed': memoryCategory === key,
+                    onClick: () => setMemoryCategory(key),
+                  }, t(`memoryCategory.${key}`),
+                  h('span', { className: 'sl-filter__count' }, String(memoryCounts[key]))))),
+                h('input', {
+                  className: 'sl-input', type: 'search', value: memorySearch,
+                  placeholder: t('memorySearch'), 'aria-label': t('memorySearch'),
+                  onChange: event => setMemorySearch(event.target.value),
+                })),
+              memoryError && h('p', { role: 'alert', className: 'sl-error' }, memoryError),
+              memoryNotice && h('p', { role: 'status', className: 'sl-notice' }, memoryNotice),
+              memoryPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+              memoryPhase === 'error' && h('p', { role: 'alert', className: 'sl-error' }, t('memoryLoadFailed')),
+              memoryPhase === 'ready' && memories.length === 0 &&
+                h('p', { role: 'status', className: 'sl-hint' }, t('memoryEmpty')),
+              memoryPhase === 'ready' && memories.length > 0 && shownMemory.length === 0 &&
+                h('p', { className: 'sl-hint', role: 'status' }, t('memoryNoMatch')),
+              shownMemory.length > 0 && h('div', { className: 'sl-scroll' },
+                h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow))))
+        ),
+        dialogView())
     }
 
     function PanelIcon({ size }) {

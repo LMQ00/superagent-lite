@@ -99,6 +99,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const byClass = (tree, className) => nodes(tree).filter(node => node.props?.className === className)
 const button = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label).at(-1)
 const filterButton = (tree, label) => nodes(tree).find(node => node.type === 'button' && text(node).startsWith(label))
+const tab = (tree, label) => nodes(tree).find(node => node.type === 'button' && node.props?.role === 'tab' && text(node).startsWith(label))
 const buttons = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label)
 const select = (tree, predicate) => nodes(tree).find(node => node.type === 'select' && predicate?.(node))
 
@@ -178,6 +179,54 @@ test('renders the six status categories, navigation and session links without a 
   }
   board.dispose()
   assert.ok(requests.every(request => request.options.signal.aborted))
+})
+
+test('keeps tasks and memory in separate tabs and scrolls only the active list', async () => {
+  const requests = []
+  const tasks = Array.from({ length: 12 }, (_, index) => task({
+    id: `t${index}`, title: `Task ${index + 1}`,
+  }))
+  const records = [{ id: 'a', category: 'public', content: 'Remember the release branch', updatedAt: '2026-01-01T00:00:00.000Z' }]
+  const board = setup({
+    fetch: async path => {
+      requests.push(path)
+      return {
+        ok: true,
+        json: async () => path === '/superagent-lite/tasks'
+          ? { tasks }
+          : { records, injection: { profile: { everyChat: true, limit: 6, maxChars: 500, recordIds: [] } } },
+      }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '记忆1'])
+  assert.equal(tabs[0].props['aria-selected'], true)
+  assert.equal(tabs[1].props['aria-selected'], false)
+  assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
+  assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
+  assert.equal(byClass(tree, 'sl-scroll').length, 1)
+  assert.match(text(byClass(tree, 'sl-scroll')[0]), /Task 1/)
+  assert.equal(byClass(tree, 'sl-memory').length, 0)
+
+  tab(tree, '记忆').props.onClick()
+  tree = board.render()
+  assert.equal(tab(tree, '记忆').props['aria-selected'], true)
+  assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
+  assert.equal(byClass(tree, 'sl-task').length, 0)
+  assert.equal(byClass(tree, 'sl-memory').length, 1)
+  assert.match(text(tree), /Remember the release branch/)
+
+  tab(tree, '项目任务').props.onClick()
+  tree = board.render()
+  assert.equal(byClass(tree, 'sl-task').length, 12)
+  assert.equal(byClass(tree, 'sl-memory').length, 0)
+  assert.equal(requests.filter(path => path === '/superagent-lite/tasks').length, 1)
+  assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 1)
+  board.dispose()
 })
 
 test('groups tasks by the six statuses in the specified order', async () => {
@@ -519,6 +568,10 @@ test('shows saved memory, searches it, edits a fact, deletes a private reference
   board.render()
   await flush()
   let tree = board.render()
+  assert.match(text(tree), /项目任务/)
+  assert.doesNotMatch(text(tree), /按需调用，只记结论/)
+  tab(tree, '记忆').props.onClick()
+  tree = board.render()
   assert.match(text(tree), /记忆/)
   assert.match(text(tree), /按需调用，只记结论/)
   assert.match(text(tree), /每轮注入 router 和 worker/)
