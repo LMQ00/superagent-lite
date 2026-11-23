@@ -273,7 +273,7 @@ test('reports a load error and can refresh without workspace navigation', async 
   board.dispose()
 })
 
-test('opens a merge dialog, lists target branches and posts the chosen target', async () => {
+test('opens a merge dialog, lists target branches and updates the row in place after merging', async () => {
   const requests = []
   const board = setup({
     fetch: async (path, options = {}) => {
@@ -281,7 +281,18 @@ test('opens a merge dialog, lists target branches and posts the chosen target', 
       if (path === '/superagent-lite/git') {
         assert.equal(options.method, 'POST')
         assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'merge', target: 'release' })
-        return { ok: true, json: async () => ({ message: 'Merged a into release.' }) }
+        return {
+          ok: true,
+          json: async () => ({
+            message: 'Merged a into release.',
+            status: 'merged',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            view: {
+              status: 'completed',
+              git: gitFacts({ merged: true, canMerge: false, canPublish: false, canDelete: true }),
+            },
+          }),
+        }
       }
       if (path === '/superagent-lite/git?taskId=a') {
         assert.equal(options.method, 'GET')
@@ -294,6 +305,7 @@ test('opens a merge dialog, lists target branches and posts the chosen target', 
   board.render()
   await flush()
   let tree = board.render()
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1'])
   assert.equal(buttons(tree, '合并').length, 1)
   button(tree, '合并').props.onClick()
   await flush()
@@ -314,6 +326,44 @@ test('opens a merge dialog, lists target branches and posts the chosen target', 
   assert.match(text(tree), /Merged a into release/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
   assert.equal(requests.filter(request => request.path === '/superagent-lite/git').length, 1)
+  // The merged row moves to completed with its refreshed Git facts, without a list reload.
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已完成1'])
+  assert.equal(byClass(tree, 'sl-task').length, 1)
+  assert.equal(buttons(tree, '合并').length, 0)
+  assert.equal(buttons(tree, '提交 PR').length, 0)
+  assert.equal(buttons(tree, '删除分支').length, 1)
+  board.dispose()
+})
+
+test('merging updates the row even when the response carries no refreshed view', async () => {
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        return { ok: true, json: async () => ({ message: 'Merged a into main.', status: 'merged' }) }
+      }
+      if (path === '/superagent-lite/git?taskId=a') return { ok: true, json: async () => detail() }
+      return { ok: true, json: async () => ({ tasks: [task({ git: gitFacts() })] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  button(board.render(), '合并').props.onClick()
+  await flush()
+  button(board.render(), '合并').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  const tree = board.render()
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.match(text(tree), /Merged a into main/)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已完成1'])
+  assert.equal(buttons(tree, '合并').length, 0)
+  assert.equal(buttons(tree, '删除分支').length, 1)
   board.dispose()
 })
 

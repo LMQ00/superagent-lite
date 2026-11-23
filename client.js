@@ -639,6 +639,23 @@ window.__ModuleLoader__.load({
           setPending('')
         }
       }
+      const mergedTask = (task, value) => {
+        const view = value?.view
+        const git = view?.git ?? {
+          ...task.git,
+          merged: true, unmerged: false,
+          canMerge: false, canPublish: false, canReview: false, canDelete: true,
+          mergeReason: 'This branch is already merged',
+          publishReason: 'This branch is already merged',
+          reviewReason: 'This task is already merged',
+        }
+        return {
+          ...task,
+          status: view?.status ?? 'completed',
+          git,
+          ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+        }
+      }
       const openDialog = async (kind, task) => {
         setDialog({ kind, task })
         setDialogData({ phase: 'loading' })
@@ -685,7 +702,11 @@ window.__ModuleLoader__.load({
             ? await removeTask(task.id)
             : await post(task.id, action, extra)
           setDialog(null)
-          refresh()
+          if (action === 'merge') {
+            setTasks(current => current.map(item => item.id === task.id ? mergedTask(item, value) : item))
+          } else {
+            refresh()
+          }
           setNotice(typeof value?.message === 'string' && value.message ? value.message : t('actionDone'))
         } catch (actionError) {
           setDialogError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('actionFailed'))

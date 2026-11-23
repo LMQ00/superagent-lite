@@ -39,13 +39,13 @@
 | 提示 | 两个标签页各自显示加载失败、空列表、无结果、动作错误或完成提示；有勾选时显示「已选择 N」「删除所选」和「清除选择」 |
 | 弹窗 | 合并、提交 PR、删除分支、删除任务或批量删除的窗口，一次只开一个 |
 
-加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空两个标签页的旧提示和勾选并重新加载。面板不会自动刷新（`client.js:320-364`、`client.js:908-1016`）。
+加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空两个标签页的旧提示和勾选并重新加载。面板不会自动刷新（`client.js:320-364`、`client.js:929-1037`）。
 
 ## 单条记录怎么读
 
 | 部分 | 行为 |
 | --- | --- |
-| 选择 | Task 标题前或记忆分类前的复选框；运行中且 Worker Session 仍活着的 Task 不可勾选（`client.js:696-756`、`client.js:803-879`） |
+| 选择 | Task 标题前或记忆分类前的复选框；运行中且 Worker Session 仍活着的 Task 不可勾选（`client.js:717-777`、`client.js:824-900`） |
 | 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，不是第七个状态（`client.js:501-506`） |
 | 标题 | 标题；没有标题时显示 Task ID |
 | 团队与项目 | Team 名和项目根 |
@@ -53,24 +53,24 @@
 | 失败原因 | 失败 Task 上显示保存的失败文本 |
 | ID | 16 位 Task ID |
 | Router 会话 | 按 Session ID 打开 |
-| Worker 会话 | 用父、子 Session ID 打开（`client.js:513-528`、`client.js:699-702`） |
+| Worker 会话 | 用父、子 Session ID 打开（`client.js:513-528`、`client.js:720-723`） |
 | Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:231-238`） |
 
 会话按钮打不开时显示打开失败提示。没有 Worker Session 的 Task 不显示 Worker 按钮；面板没有会话打开能力时，标签显示为文本。
 
 ## 行内动作
 
-按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。成功时关闭弹窗、重新加载列表并显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:674-695`、`client.js:696-756`）。
+按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。合并成功后关闭弹窗，并用 Host 返回的最新任务视图就地更新该行，不重新加载列表、不离开面板；其他动作成功时关闭弹窗并重新加载列表。成功都显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:691-716`、`client.js:717-777`）。
 
 ### 合并
 
-打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:642-673`、`src/merge.js:30-101`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge` 的新 worker，合入的是该 worker 的 reviewed merge commit。
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支。Host 在响应里返回合并后的任务视图，面板据此就地把该行改为已完成（`client.js:642-716`、`src/merge.js:30-101`、`src/git-actions.js:414-442`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge` 的新 worker，合入的是该 worker 的 reviewed merge commit。
 
 按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏、HEAD 移动或任务已离开可交付状态都会带原因拒绝（`src/git-actions.js:308-316`、`src/delivery.js:7-19`）。
 
 ### 提交 PR
 
-打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:642-673`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:659-690`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
 
 当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
@@ -84,13 +84,13 @@
 
 ### 删除任务
 
-每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支、Worktree 或记忆归档（`client.js:696-756`、`client.js:544-556`、`src/board.js:14-45`、`src/task-store.js:103-121`）。
+每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支、Worktree 或记忆归档（`client.js:717-777`、`client.js:544-556`、`src/board.js:14-45`、`src/task-store.js:103-121`）。
 
 合并或发布正在执行（存储状态为 `merging` 或 `publishing`）时，服务端拒绝删除；空 ID 或未知 ID 分别返回 400 和 404。
 
 ### 批量删除
 
-两个标签页中每条记录前都有复选框。勾选后列表上方出现「已选择 N」「删除所选」和「清除选择」；点「删除所选」打开一次确认弹窗，确认后逐条调用该记录原有的删除接口：任务用 `DELETE /superagent-lite/tasks?taskId=<id>`，记忆用 POST `delete`。运行中且 Worker Session 仍活着的 Task 复选框禁用，不能进入批量选择；「未确认」的运行中 Task 可以勾选（`client.js:395-396`、`client.js:434-452`、`client.js:557-627`、`client.js:880-904`）。
+两个标签页中每条记录前都有复选框。勾选后列表上方出现「已选择 N」「删除所选」和「清除选择」；点「删除所选」打开一次确认弹窗，确认后逐条调用该记录原有的删除接口：任务用 `DELETE /superagent-lite/tasks?taskId=<id>`，记忆用 POST `delete`。运行中且 Worker Session 仍活着的 Task 复选框禁用，不能进入批量选择；「未确认」的运行中 Task 可以勾选（`client.js:395-396`、`client.js:434-452`、`client.js:557-627`、`client.js:901-925`）。
 
 成功的记录立即从列表移除并显示完成提示；部分失败时确认弹窗保留，展示 Host 返回的错误，成功的记录已经移除，失败项保持勾选，关闭弹窗后错误也显示在列表上方。批量删除任务不删除 worker 分支、Worktree 或记忆归档；批量删除记忆与逐条删除一样立即生效，删除 profile 记录后重新读取注入集合。
 
@@ -100,18 +100,18 @@
 
 | 部分 | 行为 |
 | --- | --- |
-| 用量行 | **私有**：按需调用，保持极少；**公共**：按需调用，只记结论；**用户画像与环境**：每轮注入 Router 和 Worker；**团队**：仅同团队 Worker 可读。每类显示记录数（`client.js:972-975`） |
-| profile 注入 | 接口返回当前注入的记录 ID、上限 6 和每条 500 字符；面板显示 `每轮注入 N/6 条最新记录，每条最多 500 字符`（`client.js:976-977`） |
-| 分类筛选 | 全部加私有、公共、用户画像与环境、团队，各带计数（`client.js:978-989`） |
+| 用量行 | **私有**：按需调用，保持极少；**公共**：按需调用，只记结论；**用户画像与环境**：每轮注入 Router 和 Worker；**团队**：仅同团队 Worker 可读。每类显示记录数（`client.js:993-996`） |
+| profile 注入 | 接口返回当前注入的记录 ID、上限 6 和每条 500 字符；面板显示 `每轮注入 N/6 条最新记录，每条最多 500 字符`（`client.js:997-998`） |
+| 分类筛选 | 全部加私有、公共、用户画像与环境、团队，各带计数（`client.js:999-1010`） |
 | 搜索 | 按内容、凭据引用、ID、Team、Project 或分类标签过滤（`client.js:387-394`） |
 | 注入标记 | 当前在注入集合里的 profile 记录显示「当前注入」 |
 | 内容 | 保存的事实；private 显示「凭据引用: <name>」而不是内容 |
 | 团队与项目 | 只在 team 记录上显示；编辑和删除请求也带这对值 |
 | ID 与时间 | 记录 UUID 和 `updatedAt` |
 | 编辑 | 行内换成 textarea 和保存/取消；public、profile、team 改内容，private 改凭据引用名；team 请求带 Team 与 Project（`client.js:423-499`） |
-| 删除 | 每行都有带垃圾桶图标的「删除」按钮；第一次点击显示「确认删除」和「取消」；确认后 POST `delete`。失败时保留行并显示后端错误（`client.js:803-879`） |
-| 批量删除 | 行首复选框多选后点「删除所选」，一次确认逐条删除；部分失败时保留失败行与错误（`client.js:880-904`） |
-| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:803-879`、`src/memory-store.js:12-13`） |
+| 删除 | 每行都有带垃圾桶图标的「删除」按钮；第一次点击显示「确认删除」和「取消」；确认后 POST `delete`。失败时保留行并显示后端错误（`client.js:824-900`） |
+| 批量删除 | 行首复选框多选后点「删除所选」，一次确认逐条删除；部分失败时保留失败行与错误（`client.js:901-925`） |
+| 限制 | 内容 1–16,000 字符；private 凭据引用 1–128 字符并符合引用名格式（`client.js:824-900`、`src/memory-store.js:12-13`） |
 
 「记忆」标签页有自己的加载、空列表和无匹配文字。成功的编辑或删除显示短提示并更新当前行，不重新加载任务列表。面板只在 owner 点击编辑或删除时写记忆。
 

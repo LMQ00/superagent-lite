@@ -421,10 +421,18 @@ export function createGitManager(ctx, dependencies = {}) {
         (merged.checkoutRestored === false
           ? ` The project checkout is still on ${merged.target}; restore ${task.baseBranch} manually: ${merged.restoreError}`
           : '')
+    // The panel updates this row in place instead of reloading the list, so
+    // return the same view a fresh read would have produced.
+    const record = await store.readTask(task.id).catch(() => undefined)
+    const view = record
+      ? await list([record], signal).then(views => views.get(task.id), () => undefined)
+      : undefined
     return result(task, 'merge', {
       status: 'merged',
       target: merged.target,
       ...(merged.baseHead ? { baseHead: merged.baseHead } : {}),
+      ...(typeof record?.updatedAt === 'string' ? { updatedAt: record.updatedAt } : {}),
+      ...(view ? { view } : {}),
       message,
     })
   }
