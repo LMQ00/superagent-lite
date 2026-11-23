@@ -1,6 +1,5 @@
 import { listTasks, removeTask } from './task-store.js'
 import { panelStatus } from './status.js'
-import { DEFAULT_ARCHIVE_MAX_BYTES, MAX_ARCHIVE_MAX_BYTES } from './settings-store.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 const ACTIVE_DELIVERY = new Set(['merging', 'publishing'])
@@ -147,59 +146,6 @@ export function createGitActionHandler(connection, git) {
       res.writeHead(200, JSON_HEADERS).end(JSON.stringify(result))
     } catch (error) {
       res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
-    }
-  }
-}
-
-function settingsView(archiveMaxBytes) {
-  return {
-    archiveMaxBytes,
-    defaultArchiveMaxBytes: DEFAULT_ARCHIVE_MAX_BYTES,
-    maxArchiveMaxBytes: MAX_ARCHIVE_MAX_BYTES,
-  }
-}
-
-export function createSettingsHandler(connection, settings) {
-  return async (req, res) => {
-    const admission = connection.admit(req)
-    if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
-      res.writeHead(admission.rejection ?? 403, { 'cache-control': 'no-store' }).end()
-      return
-    }
-    if (req.method === 'GET') {
-      try {
-        const current = await settings.read()
-        res.writeHead(200, JSON_HEADERS).end(JSON.stringify(settingsView(current.archiveMaxBytes)))
-      } catch (error) {
-        res.writeHead(500, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
-      }
-      return
-    }
-    if (req.method !== 'PUT') {
-      res.writeHead(405, { allow: 'GET, PUT', 'cache-control': 'no-store' }).end()
-      return
-    }
-    if (String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {
-      res.writeHead(415, { 'cache-control': 'no-store' }).end()
-      return
-    }
-    let body
-    try {
-      body = await readJsonBody(req, 4096)
-    } catch (error) {
-      res.writeHead(error.status ?? 400, { 'cache-control': 'no-store' }).end(JSON.stringify({ error: error.message }))
-      return
-    }
-    if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.hasOwn(body, 'archiveMaxBytes')) {
-      res.writeHead(400, JSON_HEADERS).end(JSON.stringify({ error: 'An archive size limit is required' }))
-      return
-    }
-    try {
-      const next = await settings.setArchiveMaxBytes(body.archiveMaxBytes)
-      res.writeHead(200, JSON_HEADERS).end(JSON.stringify(settingsView(next.archiveMaxBytes)))
-    } catch (error) {
-      res.writeHead(error instanceof TypeError ? 400 : 500, JSON_HEADERS)
-        .end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
     }
   }
 }

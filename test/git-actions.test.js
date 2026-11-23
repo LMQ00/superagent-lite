@@ -46,7 +46,7 @@ async function setupRepo({ remote = true } = {}) {
   return { root, repo, worktree, baseCommit, workerHead }
 }
 
-function memoryStore(initial) {
+function taskStore(initial) {
   const records = new Map(initial.map(record => [record.id, { ...record }]))
   return {
     records,
@@ -142,7 +142,7 @@ test('checks rollups summarize check runs and commit statuses', () => {
 test('a reviewed current head is unmerged with merge and publish actions', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts)
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const manager = managerFor(store)
   const view = (await manager.list([record], signal)).get(taskId)
   assert.equal(view.status, 'unmerged')
@@ -161,7 +161,7 @@ test('a dirty project checkout disables merge and explains why', async () => {
   const facts = await setupRepo()
   await writeFile(join(facts.repo, 'dirty.txt'), 'dirty\n')
   const record = recordFor(facts)
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const dirty = (await managerFor(store).list([record], signal)).get(taskId)
   assert.equal(dirty.status, 'unmerged')
   assert.equal(dirty.git.canMerge, false)
@@ -176,7 +176,7 @@ test('a detached project checkout disables merge with a clear reason', async () 
   const facts = await setupRepo()
   await git(['checkout', '--detach'], facts.repo)
   const record = recordFor(facts)
-  const view = (await managerFor(memoryStore([record])).list([record], signal)).get(taskId)
+  const view = (await managerFor(taskStore([record])).list([record], signal)).get(taskId)
   assert.equal(view.git.canMerge, false)
   assert.equal(view.git.mergeReason, 'The project checkout is not on a branch')
 })
@@ -184,7 +184,7 @@ test('a detached project checkout disables merge with a clear reason', async () 
 test('a branch whose head moved after approval is unreviewed and not mergeable', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { review: { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true } })
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const view = (await managerFor(store).list([record], signal)).get(taskId)
   assert.equal(view.status, 'unreviewed')
   assert.equal(view.git.reviewed, false)
@@ -196,7 +196,7 @@ test('a branch whose head moved after approval is unreviewed and not mergeable',
 test('a reviewed branch settles a stale review-required record as awaiting-merge', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { status: 'review-required' })
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const view = (await managerFor(store).list([record], signal)).get(taskId)
   assert.equal(view.status, 'unmerged')
   assert.equal((await store.readTask(taskId)).status, 'awaiting-merge')
@@ -206,7 +206,7 @@ test('an approved review for the same commit is adopted across tasks', async () 
   const facts = await setupRepo()
   const donor = recordFor(facts, { id: 'a'.repeat(16) })
   const recipient = recordFor(facts, { id: 'b'.repeat(16), status: 'review-required', review: undefined })
-  const store = memoryStore([donor, recipient])
+  const store = taskStore([donor, recipient])
   const manager = managerFor(store)
   const views = await manager.list([donor, recipient], signal)
   assert.equal(views.get(recipient.id).status, 'unmerged')
@@ -220,7 +220,7 @@ test('a merged worker branch shows completed and can delete its branch', async (
   const facts = await setupRepo()
   await git(['merge', '--no-ff', '--no-edit', 'sl-feature'], facts.repo)
   const record = recordFor(facts, { status: 'review-required' })
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const view = (await managerFor(store).list([record], signal)).get(taskId)
   assert.equal(view.status, 'completed')
   assert.equal(view.git.merged, true)
@@ -242,7 +242,7 @@ test('a completed worker turn without commits is completed, not unreviewed', asy
   const record = recordFor({ repo, worktree: repo, baseCommit, workerHead: baseCommit }, {
     status: 'review-required', review: undefined, stopReason: 'completed',
   })
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const view = (await managerFor(store).list([record], signal)).get(taskId)
   assert.equal(view.status, 'completed')
   assert.equal(view.git.hasCommits, false)
@@ -256,7 +256,7 @@ test('an unreadable worktree does not count as a commit-free completed task', as
     review: undefined, worktree: { path: '/missing/worktree', branch: 'sl-feature', baseCommit: 'a'.repeat(40) },
   }
   const manager = createGitManager(context(), {
-    store: memoryStore([record]),
+    store: taskStore([record]),
     git: async () => { throw new Error('no checkout') },
     gh: async () => { throw new Error('gh unavailable') },
     policy: () => ({ mode: 'danger-full-access' }),
@@ -270,7 +270,7 @@ test('report-only and failed tasks land in answer and failed', async () => {
   const facts = await setupRepo()
   const report = recordFor(facts, { id: 'c'.repeat(16), mode: 'report', status: 'completed', review: undefined, worktree: undefined })
   const failed = recordFor(facts, { id: 'd'.repeat(16), status: 'failed', review: undefined, worktree: undefined })
-  const store = memoryStore([report, failed])
+  const store = taskStore([report, failed])
   const manager = managerFor(store)
   const views = await manager.list([report, failed], signal)
   assert.equal(views.get(report.id).status, 'answer')
@@ -292,14 +292,14 @@ test('a closed pull request is failed and a merged pull request is completed', a
       statusCheckRollup: [], mergeable: 'MERGEABLE',
     })
   }
-  const closedView = (await managerFor(memoryStore([closed]), { gh: ghClosed }).list([closed], signal)).get(closed.id)
+  const closedView = (await managerFor(taskStore([closed]), { gh: ghClosed }).list([closed], signal)).get(closed.id)
   assert.equal(closedView.status, 'failed')
   const mergedGh = async () => JSON.stringify({
     state: 'MERGED', headRefOid: facts.workerHead, headRefName: 'sl-feature', baseRefName: 'main',
     isCrossRepository: false, isDraft: false, author: { login: 'dsh' }, comments: 0, reviews: 0,
     statusCheckRollup: [], mergeable: 'MERGEABLE',
   })
-  const mergedStore = memoryStore([merged])
+  const mergedStore = taskStore([merged])
   const mergedView = (await managerFor(mergedStore, { gh: mergedGh }).list([merged], signal)).get(merged.id)
   assert.equal(mergedView.status, 'completed')
   assert.equal((await mergedStore.readTask(merged.id)).status, 'merged')
@@ -308,7 +308,7 @@ test('a closed pull request is failed and a merged pull request is completed', a
 test('merge writes the reviewed head into the chosen local branch and returns to the checkout branch', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts)
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const manager = managerFor(store)
   const result = await manager.perform(taskId, 'merge', { target: 'release' }, signal)
   assert.equal(result.status, 'merged')
@@ -348,7 +348,7 @@ test('merging a merge worker branch records the delivered commits in history', a
     title: 'Merge delivered branches',
     review: { head: mergedHead, reviewerSessionId: 'reviewer', approved: true },
   })
-  const result = await managerFor(memoryStore([record])).perform(taskId, 'merge', { target: 'main' }, signal)
+  const result = await managerFor(taskStore([record])).perform(taskId, 'merge', { target: 'main' }, signal)
   assert.equal(result.status, 'merged')
   const mainHead = await git(['rev-parse', 'refs/heads/main'], facts.repo)
   await git(['merge-base', '--is-ancestor', deliveredHead, mainHead], facts.repo)
@@ -363,7 +363,7 @@ test('merging a merge worker branch records the delivered commits in history', a
 test('merge refuses a task that has not finished its worker turn', async () => {
   const facts = await setupRepo()
   for (const status of ['resuming', 'running', 'publishing', 'merging', 'failed', 'delivery-blocked']) {
-    const store = memoryStore([recordFor(facts, { status })])
+    const store = taskStore([recordFor(facts, { status })])
     await assert.rejects(
       managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal),
       /Only a task that finished its worker turn can be delivered/,
@@ -375,7 +375,7 @@ test('merge refuses a task that has not finished its worker turn', async () => {
 
 test('a resumed task whose head did not move keeps its approval and can merge', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   await store.updateTask(taskId, { status: 'resuming' })
   assert.equal((await store.readTask(taskId)).review.head, facts.workerHead)
   await assert.rejects(
@@ -394,7 +394,7 @@ test('a resumed task whose head did not move keeps its approval and can merge', 
 test('a resumed task whose head moved keeps its review but cannot merge it', async () => {
   const facts = await setupRepo()
   const review = { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true }
-  const store = memoryStore([recordFor(facts, { review })])
+  const store = taskStore([recordFor(facts, { review })])
   await store.updateTask(taskId, { status: 'resuming' })
   assert.deepEqual((await store.readTask(taskId)).review, review)
   // A stale settled record must not turn the old approval into a merge of the new HEAD.
@@ -409,7 +409,7 @@ test('a resumed task whose head moved keeps its review but cannot merge it', asy
 
 test('merge stops when the task leaves its deliverable state during preparation', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   const stale = await store.readTask(taskId)
   await store.updateTask(taskId, { status: 'resuming' })
   await assert.rejects(
@@ -422,7 +422,7 @@ test('merge stops when the task leaves its deliverable state during preparation'
 
 test('merge refuses an unknown target and a conflicting target', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   const manager = managerFor(store)
   await assert.rejects(manager.perform(taskId, 'merge', { target: 'missing' }, signal), /was not found/)
   await writeFile(join(facts.repo, 'notes.txt'), 'main change\n')
@@ -433,7 +433,7 @@ test('merge refuses an unknown target and a conflicting target', async () => {
 test('deleting the worker branch removes its worktree and keeps the task completed', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts)
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const manager = managerFor(store)
   await manager.perform(taskId, 'merge', { target: 'release' }, signal)
   const removed = await manager.perform(taskId, 'delete-branch', {}, signal)
@@ -450,7 +450,7 @@ test('deleting the worker branch removes its worktree and keeps the task complet
 test('a branch deleted after a merged Pull request does not need to be an ancestor of the local base', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { status: 'merged', prState: 'MERGED' })
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const manager = managerFor(store)
   const removed = await manager.perform(taskId, 'delete-branch', {}, signal)
   assert.equal(removed.deleted, true)
@@ -459,7 +459,7 @@ test('a branch deleted after a merged Pull request does not need to be an ancest
 
 test('deleting a branch before the merge is refused', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts, { status: 'awaiting-merge' })])
+  const store = taskStore([recordFor(facts, { status: 'awaiting-merge' })])
   await assert.rejects(managerFor(store).perform(taskId, 'delete-branch', {}, signal), /only after the task is merged/)
 })
 
@@ -478,7 +478,7 @@ test('merges for one Project root are serialized across tasks and restore the ch
     id: idB, review: { head: otherHead, reviewerSessionId: 'reviewer', approved: true },
     worktree: { path: other, branch: 'sl-other', baseCommit: facts.baseCommit, repositoryRoot: facts.repo, sourceBranch: 'main' },
   })
-  const store = memoryStore([first, second])
+  const store = taskStore([first, second])
   let active = 0
   let maxActive = 0
   const base = context()
@@ -529,7 +529,7 @@ test('merges for one Project root are serialized across tasks and restore the ch
 test('publish pushes to the selected remote and records the pull request', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts)
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const calls = []
   const manager = managerFor(store, {
     gh: async args => {
@@ -552,7 +552,7 @@ test('publish pushes to the selected remote and records the pull request', async
 
 test('publish requires a configured GitHub remote and a reviewed head', async () => {
   const facts = await setupRepo({ remote: false })
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   const manager = managerFor(store)
   await assert.rejects(manager.perform(taskId, 'publish', { remote: 'origin' }, signal), /not configured/)
   await git(['remote', 'add', 'origin', 'https://git.example.org/team/project.git'], facts.repo)
@@ -567,7 +567,7 @@ test('publish refuses a task that has not finished its worker turn', async () =>
   const facts = await setupRepo()
   for (const status of ['resuming', 'running', 'publishing', 'merging', 'failed', 'delivery-blocked']) {
     let called = false
-    const store = memoryStore([recordFor(facts, { status })])
+    const store = taskStore([recordFor(facts, { status })])
     const manager = managerFor(store, { publish: async () => { called = true } })
     await assert.rejects(
       manager.perform(taskId, 'publish', { remote: 'origin' }, signal),
@@ -581,7 +581,7 @@ test('publish refuses a task that has not finished its worker turn', async () =>
 test('publish during a resume cannot reuse the old reviewed head', async () => {
   const facts = await setupRepo()
   const review = { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true }
-  const store = memoryStore([recordFor(facts, { status: 'resuming', review })])
+  const store = taskStore([recordFor(facts, { status: 'resuming', review })])
   const manager = managerFor(store, { publish: async () => { throw new Error('publish must not run') } })
   await assert.rejects(
     manager.perform(taskId, 'publish', { remote: 'origin' }, signal),
@@ -608,7 +608,7 @@ test('merge and publish reject the same task states and stale reviews', async ()
     if (review === 'missing') overrides.review = undefined
     if (review === 'unapproved') overrides.review = { head: facts.workerHead, reviewerSessionId: 'reviewer', approved: false }
     if (review === 'stale') overrides.review = { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true }
-    const store = memoryStore([recordFor(facts, overrides)])
+    const store = taskStore([recordFor(facts, overrides)])
     const manager = managerFor(store, { publish: async () => { throw new Error('publish must not run') } })
     const failures = []
     for (const action of ['merge', 'publish']) {
@@ -624,7 +624,7 @@ test('merge and publish reject the same task states and stale reviews', async ()
 
 test('merge and publish accept the same reviewed head while publishing alone checks GitHub', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   let called = false
   const manager = managerFor(store, {
     gh: async args => {
@@ -646,7 +646,7 @@ test('merge and publish accept the same reviewed head while publishing alone che
 
 test('publishing alone requires GitHub authentication', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   let called = false
   const manager = managerFor(store, {
     gh: async () => { throw new Error('gh is not logged in') },
@@ -664,7 +664,7 @@ test('publishing alone requires GitHub authentication', async () => {
 
 test('publish stops when the task leaves its deliverable state during preparation', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   let called = false
   const manager = managerFor(store, {
     gh: async args => {
@@ -685,7 +685,7 @@ test('publish stops when the task leaves its deliverable state during preparatio
 test('a panel review records the verdict and moves the task to awaiting-merge', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { status: 'review-required', review: undefined })
-  const store = memoryStore([record])
+  const store = taskStore([record])
   const manager = managerFor(store, {
     review: async (agent, task) => {
       assert.equal(agent.id, 'worker')
@@ -704,7 +704,7 @@ test('a panel review records the verdict and moves the task to awaiting-merge', 
 test('a panel review needs the worker Session and records requested changes', async () => {
   const facts = await setupRepo()
   const rejected = recordFor(facts, { status: 'review-required', review: undefined })
-  const store = memoryStore([rejected])
+  const store = taskStore([rejected])
   const manager = managerFor(store, {
     review: async () => ({ head: facts.workerHead, approved: false, findings: 'Add a test', reviewerSessionId: 'reviewer-3' }),
   })
@@ -721,7 +721,7 @@ test('a panel review needs the worker Session and records requested changes', as
 
 test('detail lists local branches, GitHub remotes and the gh account', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   const manager = managerFor(store, {
     gh: async args => {
       assert.deepEqual(args, ['auth', 'status', '--hostname', 'github.com'])
@@ -743,7 +743,7 @@ test('detail lists local branches, GitHub remotes and the gh account', async () 
 
 test('detail reports a missing gh account instead of failing', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts)])
+  const store = taskStore([recordFor(facts)])
   const detail = await managerFor(store).detail(taskId, signal)
   assert.equal(detail.gh.ok, false)
   assert.match(detail.gh.error, /gh unavailable/)
@@ -751,7 +751,7 @@ test('detail reports a missing gh account instead of failing', async () => {
 
 test('the manager refuses unknown actions and report-only tasks', async () => {
   const facts = await setupRepo()
-  const store = memoryStore([recordFor(facts, { mode: 'report', worktree: undefined, review: undefined })])
+  const store = taskStore([recordFor(facts, { mode: 'report', worktree: undefined, review: undefined })])
   const manager = managerFor(store)
   await assert.rejects(manager.perform(taskId, 'merge', { target: 'main' }, signal), /Report-only/)
   await assert.rejects(manager.perform(taskId, 'unknown', {}, signal), /Unknown Git action/)

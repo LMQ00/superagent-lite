@@ -44,22 +44,22 @@
 
 | 部分 | 行为 |
 | --- | --- |
-| 选择 | Task 标题前的复选框；运行中且 Worker Session 仍活着的 Task 不可勾选（`client.js:500-560`） |
-| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，不是第七个状态（`client.js:501-506`） |
+| 选择 | Task 标题前的复选框；运行中且 Worker Session 仍活着的 Task 不可勾选（`client.js:503-552`） |
+| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，不是第七个状态（`client.js:503-512`） |
 | 标题 | 标题；没有标题时显示 Task ID |
 | 团队与项目 | Team 名和项目根 |
 | 更新时间 | 存储的 `updatedAt`，缺失时用 `createdAt`，按本地时间 |
 | 失败原因 | 失败 Task 上显示保存的失败文本 |
 | ID | 16 位 Task ID |
 | Router 会话 | 按 Session ID 打开 |
-| Worker 会话 | 用父、子 Session ID 打开（`client.js:513-528`、`client.js:720-723`） |
-| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:231-238`） |
+| Worker 会话 | 用父、子 Session ID 打开（`client.js:528-529`） |
+| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:183-190`） |
 
 会话按钮打不开时显示打开失败提示。没有 Worker Session 的 Task 不显示 Worker 按钮；面板没有会话打开能力时，标签显示为文本。
 
 ## 行内动作
 
-按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。合并成功后关闭弹窗，并用 Host 返回的最新任务视图就地更新该行，不重新加载列表、不离开面板；其他动作成功时关闭弹窗并重新加载列表。成功都显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:691-716`、`client.js:717-777`）。
+按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。合并成功后关闭弹窗，并用 Host 返回的最新任务视图就地更新该行，不重新加载列表、不离开面板；其他动作成功时关闭弹窗并重新加载列表。成功都显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:556-629`）。
 
 ### 合并
 
@@ -69,13 +69,13 @@
 
 ### 提交 PR
 
-打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:659-690`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:556-600`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
 
 当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
 ### 审查
 
-从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:628-641`、`src/git-actions.js:398-419`）。
+从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:540-543`、`src/git-actions.js:398-419`）。
 
 ### 删除分支
 
@@ -83,19 +83,19 @@
 
 ### 删除任务
 
-每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支、Worktree 或记忆归档（`client.js:717-777`、`client.js:544-556`、`src/board.js:14-45`、`src/task-store.js:103-121`）。
+每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支或 Worktree（`client.js:361-372`、`client.js:548-575`、`src/board.js:14-45`、`src/task-store.js:103-121`）。
 
 合并或发布正在执行（存储状态为 `merging` 或 `publishing`）时，服务端拒绝删除；空 ID 或未知 ID 分别返回 400 和 404。
 
 ### 批量删除
 
-每条 Task 前都有复选框。勾选后列表上方出现「已选择 N」「删除所选」和「清除选择」；点「删除所选」打开一次确认弹窗，确认后逐条调用 `DELETE /superagent-lite/tasks?taskId=<id>`。运行中且 Worker Session 仍活着的 Task 复选框禁用，不能进入批量选择；「未确认」的运行中 Task 可以勾选（`client.js:350-405`、`client.js:600-620`）。
+每条 Task 前都有复选框。勾选后列表上方出现「已选择 N」「删除所选」和「清除选择」；点「删除所选」打开一次确认弹窗，确认后逐条调用 `DELETE /superagent-lite/tasks?taskId=<id>`。运行中且 Worker Session 仍活着的 Task 复选框禁用，不能进入批量选择；「未确认」的运行中 Task 可以勾选（`client.js:287-288`、`client.js:374-401`、`client.js:602-623`）。
 
-成功的记录立即从列表移除并显示完成提示；部分失败时确认弹窗保留，展示 Host 返回的错误，成功的记录已经移除，失败项保持勾选，关闭弹窗后错误也显示在列表上方。批量删除任务不删除 worker 分支、Worktree 或记忆归档。
+成功的记录立即从列表移除并显示完成提示；部分失败时确认弹窗保留，展示 Host 返回的错误，成功的记录已经移除，失败项保持勾选，关闭弹窗后错误也显示在列表上方。批量删除任务不删除 worker 分支或 Worktree。
 
 ## 设置
 
-面板的「设置」标签页保存 worker 默认值；DSH 设置页的「归档」分组调整归档大小。两个入口互不影响。
+面板的「设置」标签页保存 worker 默认值。
 
 「设置」标签页读取并保存 `~/.dsh/superagent-lite/worker-settings.json`，只允许安装 owner 操作。加载时显示 DSH 当前默认模型；模型目录不可用时仍允许填写已知的服务商和模型。
 
@@ -104,8 +104,6 @@
 | Worker 模型 | 服务商、模型和可选的推理强度三个输入框，带模型目录建议；三项都留空时保存 `null`，新 worker 跟随 DSH 默认模型（`src/settings-panel.js`、`src/worker-settings.js`） |
 | 并发 worker 上限 | 1–16，默认 3；超出的新 Task 显示「排队中」，有空闲名额后按创建顺序启动；review 是 worker 的子代理，不占额外名额（`src/launch-queue.js`） |
 | 保存 | 只影响之后启动的 worker；已有 worker 保持原模型。失败原因显示在保存按钮上方 |
-
-DSH 设置页新增「归档」分组，用来调整单个归档文件的大小上限：默认 128M，数值可调到 2048（M），也可以勾选「不限制」。保存后写入 `~/.dsh/superagent-lite/settings.json`，下一次归档写入时生效；超过上限的回合不写归档（`client.js:716-849`、`src/board.js:161-204`、`src/settings-store.js:66-83`）。
 
 bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里；设置页不编辑提示词。
 

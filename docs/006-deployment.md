@@ -4,14 +4,13 @@
 
 ## 运行什么
 
-Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆对话角色和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:15-31`）。
+Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:16-30`）。
 
 | 组件 | 作用 |
 | --- | --- |
 | DSH Web Host | 运行插件、Session 和面板 |
-| `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
+| `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由和 Task 存储 |
 | Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
-| 记忆对话 | 读取 change worker 的原始会话并把全局和项目记忆字段写回 |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
 | GitHub remote | 可选；发送 PR 需要，合并不需要 |
 
@@ -50,7 +49,7 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 
 ## 配置
 
-Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行时设置有两处：DSH 设置页「归档」分组里的归档大小上限，以及面板「设置」里的 worker 模型和并发上限。
+Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板「设置」保存 worker 模型和并发上限。
 
 | 键 | 必填 | 含义 |
 | --- | --- | --- |
@@ -60,7 +59,6 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行�
 | Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
 | `engines.dsh` | 是，`0.2.2-rc.3` | Bundle 面向的 Host 版本 |
-| 归档大小上限 | 否，默认 128M | DSH 设置页「归档」；可选 1–2G 的整数或「不限制」，保存在 `~/.dsh/superagent-lite/settings.json` |
 | 面板「设置」 | 否 | worker 模型（留空跟随 DSH 默认模型）与并发 worker 上限（1–16，默认 3），保存在 `~/.dsh/superagent-lite/worker-settings.json` |
 
 外部设置单独完成：
@@ -84,24 +82,21 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行�
 | 停止 | 禁用 bundle，或停止 DSH Web |
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
-| 记忆 | 面板不显示记忆；Worker 和 Reviewer 的提示词自动注入项目 + 全局记忆，Router 注入全局记忆 |
-| 归档大小 | DSH 设置页「归档」分组：默认 128M，最大 2G，可选「不限制」 |
-| 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/`；记忆文件是 `memory/global.json`、`memory/projects/<hash>.json`、`memory/archive/<hash>.json`；归档大小在 `settings.json`，worker 设置在 `worker-settings.json` |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json` |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、Git 动作、任务删除或设置读写成功 |
-| `400` | 任务 ID、JSON 请求体或归档大小不对 |
+| `200` | 列表、Git 动作或任务删除成功 |
+| `400` | 任务 ID 或 JSON 请求体不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
 | `404` | Git 详情或任务删除找不到 Task |
 | `405` | 方法不被该端点接受 |
 | `409` | Git 动作被拒绝或失败，或任务删除被拒绝 |
-| `413` | Git 动作或设置请求体超过 4 KB |
-| `415` | 动作或设置请求体不是 `application/json` |
-| `500` | 设置文件读取或写入失败 |
+| `413` | Git 动作请求体超过 4 KB |
+| `415` | 动作请求体不是 `application/json` |
 
 ## 设置
 
@@ -112,7 +107,6 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行�
 5. 需要合并或发送 PR 时，把 Router Session 设为 full access。
 6. 先问一个只读问题：Router 应直接回答，不启动 Worker。
 7. 再要求一个小的文件改动：面板应把审查通过的 Task 显示为「未合并」，并出现「合并」和「提交 PR」；如果审查未通过，先显示「未审查」。
-8. 完成一个 change 任务：记忆对话会更新全局和项目记忆，下一个 Worker 和 Reviewer 的提示词自动带上这些字段。
 
 ## 升级
 
@@ -123,7 +117,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行�
 5. 重载或重启 DSH Web。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:18-26`）。
+升级不改写 Task 文件，它们留在 `~/.dsh/superagent-lite/`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:18-26`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -162,9 +156,6 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行�
 | `Report-only tasks must leave the project checkout unchanged` | 还原 checkout 改动后再调用 `report_task` |
 | `Report-only task ended without report_task` | 回合结束前必须调用 `report_task`；重新派发报告任务 |
 | `Only the active worker for this task can message its router` | `message_router` 是 Worker 工具，Router 不能调用 |
-| `Memory extraction did not finish` | 检查 Worker 会话是否可读；记忆对话必须以 completed 结束 |
-| `Memory role did not return field "<field>"` | 记忆对话输出缺少字段；重试该任务或修正提示词 |
-| `Memory field "<field>" exceeded 4000 characters` | 缩短该字段到 4,000 字符以内 |
 | `The reviewer did not submit a usable verdict` | 重新运行审查；Reviewer 必须调用 `submit_review` 写「通过」或具体意见 |
 | `The pull request was closed; reopen it or dispatch a new task` | 在 GitHub 重新打开 PR，或派发新任务 |
 | `This branch is already merged` | 分支已合并；不需要再执行合并或发送 |

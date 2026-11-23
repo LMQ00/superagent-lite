@@ -130,6 +130,6 @@ test('a real Session log accepts the helper read-only override', { skip: !anchor
 test('only a claimed reviewer may submit the verdict tool', () => {
   const { check } = registerHelper({ scope: { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) } })
   assert.equal(check({ name: 'submit_review' }), undefined)
-  const extractor = registerHelper()
-  assert.match(extractor.check({ name: 'submit_review' }), /only a reviewer records a verdict/)
+  const helper = registerHelper()
+  assert.match(helper.check({ name: 'submit_review' }), /only a reviewer records a verdict/)
 })
