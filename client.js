@@ -32,14 +32,6 @@ window.__ModuleLoader__.load({
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
         failure: 'Failure',
-        settingsNav: 'Archive', settingsTitle: 'Archive size',
-        settingsIntro: 'The archive keeps the complete conversation of each worker turn. This limits one archive file; a turn above the limit is not archived.',
-        settingsLimit: 'Maximum size per file', settingsUnlimited: 'Unlimited',
-        settingsDefault: 'Default 128M; the adjustable range ends at 2G.',
-        settingsRange: 'Enter a whole number from 1 to 2048 MB.',
-        settingsUnit: 'M', settingsSave: 'Save', settingsSaving: 'Saving…', settingsSaved: 'Saved.',
-        settingsLoadFailed: 'Could not load the archive size limit.',
-        settingsSaveFailed: 'Could not save the archive size limit.',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -69,14 +61,6 @@ window.__ModuleLoader__.load({
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
         failure: '失败原因',
-        settingsNav: '归档', settingsTitle: '归档大小',
-        settingsIntro: '归档保存 worker 每一轮的完整对话。这里限制单个归档文件的大小；超过上限的回合不会写入归档。',
-        settingsLimit: '单个文件上限', settingsUnlimited: '不限制',
-        settingsDefault: '默认 128M，可调数值最大 2G。',
-        settingsRange: '请输入 1 到 2048 之间的整数（M）。',
-        settingsUnit: 'M', settingsSave: '保存', settingsSaving: '保存中…', settingsSaved: '已保存。',
-        settingsLoadFailed: '无法加载归档大小设置。',
-        settingsSaveFailed: '无法保存归档大小设置。',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -178,21 +162,6 @@ window.__ModuleLoader__.load({
       @media (prefers-reduced-motion:reduce){
         .sl-spinner g{animation:none}
       }
-    `
-    const settingsStyles = `
-      .sl-settings{display:flex;flex-direction:column;gap:14px;max-width:560px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}
-      .sl-settings__title{margin:0;font-size:16px;line-height:24px;font-weight:500}
-      .sl-settings__hint{margin:0;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
-      .sl-settings__form{display:flex;flex-direction:column;gap:12px}
-      .sl-settings__field,.sl-settings__check{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary)}
-      .sl-settings__input{box-sizing:border-box;width:120px;height:28px;padding:0 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px}
-      .sl-settings__input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
-      .sl-settings__check input{width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
-      .sl-settings__error{margin:0;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
-      .sl-settings__notice{margin:0;color:var(--dsw-alias-state-success-primary);overflow-wrap:anywhere}
-      .sl-settings__save{align-self:flex-start;box-sizing:border-box;height:28px;padding:0 12px;border:0;border-radius:8px;background:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font:inherit;font-size:12px;line-height:18px;cursor:pointer}
-      .sl-settings__save:disabled{cursor:not-allowed;opacity:.6}
-      .sl-settings__save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
     `
 
     const CATEGORY_ORDER = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
@@ -711,143 +680,6 @@ window.__ModuleLoader__.load({
         batchDialog())
     }
 
-    const MEGABYTE = 1024 * 1024
-
-    function ArchiveSettings({ t }) {
-      const [phase, setPhase] = useState('loading')
-      const [unlimited, setUnlimited] = useState(false)
-      const [megabytes, setMegabytes] = useState('128')
-      const [maxMegabytes, setMaxMegabytes] = useState(2048)
-      const [pending, setPending] = useState(false)
-      const [error, setError] = useState('')
-      const [notice, setNotice] = useState('')
-
-      useEffect(() => {
-        const controller = new AbortController()
-        async function load() {
-          try {
-            const response = await fetch('/superagent-lite/settings', {
-              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
-            })
-            let value
-            try {
-              value = await response.json()
-            } catch {
-              value = undefined
-            }
-            if (controller.signal.aborted) return
-            if (!response.ok) {
-              throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('settingsLoadFailed'))
-            }
-            const limit = value?.archiveMaxBytes
-            if (Number.isInteger(value?.maxArchiveMaxBytes) && value.maxArchiveMaxBytes > 0) {
-              setMaxMegabytes(Math.floor(value.maxArchiveMaxBytes / MEGABYTE))
-            }
-            if (limit === null) {
-              setUnlimited(true)
-              setMegabytes('128')
-            } else if (Number.isFinite(limit) && limit > 0) {
-              setUnlimited(false)
-              setMegabytes(String(limit / MEGABYTE))
-            } else {
-              throw new Error(t('settingsLoadFailed'))
-            }
-            setPhase('ready')
-          } catch (loadError) {
-            if (controller.signal.aborted) return
-            setPhase('error')
-            setError(typeof loadError?.message === 'string' && loadError.message ? loadError.message : t('settingsLoadFailed'))
-          }
-        }
-        void load()
-        return () => controller.abort()
-      }, [])
-
-      const save = async () => {
-        setError('')
-        setNotice('')
-        let archiveMaxBytes
-        if (unlimited) {
-          archiveMaxBytes = null
-        } else {
-          const value = Number(megabytes)
-          if (!Number.isInteger(value) || value < 1 || value > maxMegabytes) {
-            setError(t('settingsRange'))
-            return
-          }
-          archiveMaxBytes = value * MEGABYTE
-        }
-        setPending(true)
-        try {
-          const response = await fetch('/superagent-lite/settings', {
-            method: 'PUT', credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ archiveMaxBytes }),
-          })
-          let value
-          try {
-            value = await response.json()
-          } catch {
-            value = undefined
-          }
-          if (!response.ok) {
-            throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('settingsSaveFailed'))
-          }
-          const saved = value?.archiveMaxBytes
-          if (saved === null) {
-            setUnlimited(true)
-          } else if (Number.isFinite(saved) && saved > 0) {
-            setUnlimited(false)
-            setMegabytes(String(saved / MEGABYTE))
-          }
-          setNotice(t('settingsSaved'))
-        } catch (saveError) {
-          setError(typeof saveError?.message === 'string' && saveError.message ? saveError.message : t('settingsSaveFailed'))
-        } finally {
-          setPending(false)
-        }
-      }
-
-      const field = phase === 'ready' && h('div', { className: 'sl-settings__form' },
-        h('label', { className: 'sl-settings__field' },
-          h('span', null, t('settingsLimit')),
-          h('input', {
-            className: 'sl-settings__input', type: 'number', min: 1, max: maxMegabytes, step: 1,
-            value: megabytes, disabled: pending || unlimited, 'aria-label': t('settingsLimit'),
-            onChange: event => {
-              setMegabytes(event.target.value)
-              setError('')
-              setNotice('')
-            },
-          }),
-          h('span', null, t('settingsUnit'))),
-        h('label', { className: 'sl-settings__check' },
-          h('input', {
-            type: 'checkbox', checked: unlimited, disabled: pending,
-            onChange: event => {
-              setUnlimited(event.target.checked)
-              setError('')
-              setNotice('')
-            },
-          }),
-          h('span', null, t('settingsUnlimited'))),
-        h('p', { className: 'sl-settings__hint' }, t('settingsDefault')),
-        error && h('p', { className: 'sl-settings__error', role: 'alert' }, error),
-        notice && h('p', { className: 'sl-settings__notice', role: 'status' }, notice),
-        h('button', {
-          type: 'button', className: 'sl-settings__save', disabled: pending,
-          onClick: () => void save(),
-        }, pending ? t('settingsSaving') : t('settingsSave')))
-
-      return h('section', { className: 'sl-settings' },
-        h('style', null, settingsStyles),
-        h('h2', { className: 'sl-settings__title' }, t('settingsTitle')),
-        h('p', { className: 'sl-settings__hint' }, t('settingsIntro')),
-        phase === 'loading' && h('p', { className: 'sl-settings__hint', role: 'status' }, t('loading')),
-        phase === 'error' && h('p', { className: 'sl-settings__error', role: 'alert' }, error),
-        field)
-    }
-
     function PanelIcon({ size }) {
       return h('svg', {
         width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
@@ -871,10 +703,6 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist', id, order: 20, locale: id, label: () => t('title'),
         }, PanelIcon))
-        ctx.slots.inject('settings.section', () => ctx.slots.register({
-          name: 'settings.section', id: 'superagent-lite-archive', order: 40, locale: id,
-          label: () => t('settingsNav'),
-        }, ArchiveSettings))
       },
     }
   },

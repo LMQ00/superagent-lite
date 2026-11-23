@@ -2,22 +2,19 @@ import { resolve } from 'node:path'
 import { taskForSession, updateTask } from './src/task-store.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
-import { createBoardHandler, createGitActionHandler, createSettingsHandler } from './src/board.js'
-import { createSettingsStore } from './src/settings-store.js'
+import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
 import { createMergeTool } from './src/merge-tool.js'
 import { createGitManager } from './src/git-actions.js'
-import { archiveWorkerTurn, registerMemoryContext, runMemoryExtraction } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
 import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 
-export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
+export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory']
 
 export async function apply(ctx) {
   const gitManager = createGitManager(ctx)
-  const settingsStore = createSettingsStore()
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
@@ -26,10 +23,6 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
       handler: createGitActionHandler(web.connection, gitManager),
-    }))
-    web.effect(() => web.webServer.register({
-      kind: 'exact', path: '/superagent-lite/settings',
-      handler: createSettingsHandler(web.connection, settingsStore),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -97,29 +90,12 @@ export async function apply(ctx) {
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
       when: () => !state.frozen && !reportOnly && inCheckout(),
     })
-    const caller = { projectRoot: task.projectRoot }
     const activeWorker = candidate => candidate === agent && !state.frozen && inCheckout()
-    let memoryAttempted = false
-    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
-      if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
-      memoryAttempted = true
-      try {
-        return await runMemoryExtraction(ctx, agent, caller, exec.signal)
-      } catch (error) {
-        ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
-        return undefined
-      }
-    }), { when: ({ agent: candidate }) => activeWorker(candidate) })
+    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id), { when: ({ agent: candidate }) => activeWorker(candidate) })
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
-    const memory = !state.frozen
-      ? await registerMemoryContext(agent.ctx, task.projectRoot).catch(error => {
-        ctx.logger.warn(`superagent-lite memory context: ${error instanceof Error ? error.message : String(error)}`)
-        return undefined
-      })
-      : undefined
-    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { memory?.(); report(); message(); review(); merge(); checkout(); guard() } })
+    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { report(); message(); review(); merge(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -138,9 +114,6 @@ export async function apply(ctx) {
 
   ctx.on('session/event', (session, event) => {
     dispatchGuard.onEvent(session, event)
-    if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {
-      track(archiveWorkerTurn(session, event))
-    }
   })
 
   ctx.on('subagent/end', (info) => {

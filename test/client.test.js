@@ -79,11 +79,6 @@ function setup({ fetch, openSession, language = 'en' }) {
       stateIndex = refIndex = effectIndex = 0
       return main.Component({ t: ctx.locale.bind(), ...main.options.inject() })
     },
-    renderSettings() {
-      stateIndex = refIndex = effectIndex = 0
-      const section = slots.get('settings.section')
-      return section.Component({ t: ctx.locale.bind(), close() {} })
-    },
     dispose() {
       for (const { dispose } of effects) dispose()
       for (const dispose of applyDisposers.reverse()) dispose()
@@ -210,7 +205,6 @@ test('scrolls the task list inside a fixed panel without a tab bar', async () =>
   assert.match(text(byClass(tree, 'sl-scroll')[0]), /Task 1/)
   assert.equal(byClass(tree, 'sl-task').length, 12)
   assert.equal(requests.filter(path => path === '/superagent-lite/tasks').length, 1)
-  assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 0)
   board.dispose()
 })
 
@@ -611,94 +605,6 @@ test('selects several tasks and deletes them in one confirmed batch', async () =
   assert.deepEqual(requests.filter(request => request.options.method === 'DELETE')
     .map(request => request.path).sort(),
   ['/superagent-lite/tasks?taskId=a', '/superagent-lite/tasks?taskId=c'])
-  board.dispose()
-})
-
-test('the archive settings section loads and saves a numeric size limit', async () => {
-  const requests = []
-  const view = archiveMaxBytes => ({
-    archiveMaxBytes, defaultArchiveMaxBytes: 134217728, maxArchiveMaxBytes: 2147483648,
-  })
-  const board = setup({
-    fetch: async (path, options = {}) => {
-      requests.push({ path, options })
-      assert.equal(path, '/superagent-lite/settings')
-      if (options.method === 'PUT') {
-        assert.equal(options.credentials, 'same-origin')
-        return { ok: true, json: async () => view(JSON.parse(options.body).archiveMaxBytes) }
-      }
-      return { ok: true, json: async () => view(134217728) }
-    },
-    language: 'zh',
-  })
-  const section = board.slots.get('settings.section')
-  assert.equal(section.options.id, 'superagent-lite-archive')
-  assert.equal(section.options.label(), '归档')
-  assert.match(text(board.renderSettings()), /正在加载/)
-  await flush()
-  let tree = board.renderSettings()
-  assert.match(text(tree), /归档大小/)
-  assert.match(text(tree), /默认 128M/)
-  let number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  assert.equal(number.props.value, '128')
-  assert.equal(number.props.max, 2048)
-  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.type === 'checkbox').props.checked, false)
-  number.props.onChange({ target: { value: '256' } })
-  tree = board.renderSettings()
-  button(tree, '保存').props.onClick()
-  for (let step = 0; step < 4; step += 1) {
-    board.renderSettings()
-    await flush()
-  }
-  const put = requests.find(request => request.options.method === 'PUT')
-  assert.deepEqual(JSON.parse(put.options.body), { archiveMaxBytes: 268435456 })
-  tree = board.renderSettings()
-  assert.match(text(tree), /已保存。/)
-  number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  assert.equal(number.props.value, '256')
-  board.dispose()
-})
-
-test('the archive settings section offers unlimited and refuses an out-of-range value', async () => {
-  const requests = []
-  const body = value => ({ archiveMaxBytes: value, defaultArchiveMaxBytes: 134217728, maxArchiveMaxBytes: 2147483648 })
-  const board = setup({
-    fetch: async (path, options = {}) => {
-      requests.push({ path, options })
-      if (options.method === 'PUT') return { ok: true, json: async () => body(JSON.parse(options.body).archiveMaxBytes) }
-      return { ok: true, json: async () => body(null) }
-    },
-    language: 'en',
-  })
-  board.renderSettings()
-  await flush()
-  let tree = board.renderSettings()
-  let checkbox = nodes(tree).find(node => node.type === 'input' && node.props.type === 'checkbox')
-  assert.equal(checkbox.props.checked, true)
-  let number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  assert.equal(number.props.disabled, true)
-  checkbox.props.onChange({ target: { checked: false } })
-  tree = board.renderSettings()
-  number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  number.props.onChange({ target: { value: '2049' } })
-  tree = board.renderSettings()
-  button(tree, 'Save').props.onClick()
-  await flush()
-  assert.match(text(board.renderSettings()), /whole number from 1 to 2048 MB/)
-  assert.equal(requests.filter(request => request.options.method === 'PUT').length, 0)
-  checkbox = nodes(board.renderSettings()).find(node => node.type === 'input' && node.props.type === 'checkbox')
-  checkbox.props.onChange({ target: { checked: true } })
-  tree = board.renderSettings()
-  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.type === 'number').props.disabled, true)
-  button(tree, 'Save').props.onClick()
-  for (let step = 0; step < 4; step += 1) {
-    board.renderSettings()
-    await flush()
-  }
-  const puts = requests.filter(request => request.options.method === 'PUT')
-  assert.equal(puts.length, 1)
-  assert.deepEqual(JSON.parse(puts[0].options.body), { archiveMaxBytes: null })
-  assert.match(text(board.renderSettings()), /Saved\./)
   board.dispose()
 })
 

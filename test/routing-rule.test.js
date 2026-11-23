@@ -51,7 +51,7 @@ test('dispatch_worker makes answer, report, change, and merge first-class modes'
 test('the router persona names all four modes and defaults merges to a new worker', async () => {
   const persona = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(persona, /Set dispatch_worker mode by need: answer/)
-  assert.match(persona, /answer when the user only asks and memory or the conversation already answers it/)
+  assert.match(persona, /answer when the user only asks and the conversation already answers it/)
   assert.match(persona, /report when the answer needs read-only repository inspection or commands/)
   assert.match(persona, /change when project files must change/)
   assert.match(persona, /merge when the user explicitly authorizes merging delivered worker branches/)

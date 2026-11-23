@@ -21,7 +21,7 @@
 
 ## 彼此冲突
 
-- 代码/测试冲突：`516` ↔ `f270`（`src/continue.js`、`test/continue.test.js`）；`669` ↔ `f270`（`src/dispatch.js`、`src/validation.js`、`cordis.patch.yml`、`test/host.test.js`、`test/report-only.test.js`）；`b841` ↔ `f270`（`src/continue.js`、`src/git-actions.js`）；`9c` ↔ `f270`（`index.js`）。`2b` ↔ `9c` 的 `test/memory-extractor.test.js` 是双方各自新增测试，脚本可自动保留。
+- 代码/测试冲突：`516` ↔ `f270`（`src/continue.js`、`test/continue.test.js`）；`669` ↔ `f270`（`src/dispatch.js`、`src/validation.js`、`cordis.patch.yml`、`test/host.test.js`、`test/report-only.test.js`）；`b841` ↔ `f270`（`src/continue.js`、`src/git-actions.js`）；`9c` ↔ `f270`（`index.js`）。`2b` ↔ `9c` 的测试新增是双方各自新增，脚本可自动保留。
 - 文档冲突：`b841` 与 master、`29`、`2b`、`9c`（`docs/002`、`005`），与 `669`（`002`、`005`、`007`），与 `516`（`002`、`003`、`005`、`007`）；`516` 与 `669`（`docs/001`、`002`、`004`）、与 `f270`（`002`、`004`）；`9c` 与 `29`（`005`）、`2b`（README、`docs/001`、`002`、`003`、`004`、`007`）、`669`（`001`）；`f270` 与 `2b`、`9c`（`007`）。
 - 两两无冲突：`29`–`2b`、`29`–`516`、`29`–`669`、`29`–`f270`、`2b`–`516`、`2b`–`669`、`516`–`9c`。
 
@@ -31,11 +31,11 @@
 
 | 顺序 | 分支 | 内容 | 预期 |
 | --- | --- | --- | --- |
-| 1 | `29dba2f` | 项目任务/记忆标签页与滚动 | 与 master、`2b`、`516` 无冲突 |
-| 2 | `2bda3c5` | memory 写入去重与纠错 | 与 `29` 无冲突 |
+| 1 | `29dba2f` | 项目任务标签页与滚动 | 与 master、`2b`、`516` 无冲突 |
+| 2 | `2bda3c5` | 写入去重与纠错 | 与 `29` 无冲突 |
 | 3 | `516e311` | 续派发精简简报 | 与 `29`、`2b` 无冲突 |
 | 4 | `669e704` | router answer 模式 | 与 `516` 在 `docs/001`、`002`、`004` 冲突；预计第一次停下 |
-| 5 | `9c2ee9c` | memory 读取 worker 对话、删除按钮 | 与 `29`、`2b`、`669` 的 docs 冲突；`2b` 的测试新增可自动解 |
+| 5 | `9c2ee9c` | 读取 worker 对话、删除按钮 | 与 `29`、`2b`、`669` 的 docs 冲突；`2b` 的测试新增可自动解 |
 | 6 | `b8414db` | publish/merge 共用前置校验 | 与 master 及 `516`、`669` 的 docs 冲突 |
 | 7 | `f270c87` | push/merge 的显式 land 授权 | 与 `516`、`669`、`b841` 有代码冲突，与 `2b`、`9c` 有 docs 冲突；放最后，避免阻断前三条无冲突合并 |
 
