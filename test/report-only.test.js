@@ -10,7 +10,7 @@ process.env.HOME = root
 after(() => rm(root, { recursive: true, force: true }))
 
 const { apply } = await import('../index.js')
-const { createTask, linkWorkerSession, readTask } = await import('../src/task-store.js')
+const { createTask, linkWorkerSession, readTask, listTasks } = await import('../src/task-store.js')
 const { createDispatchTool } = await import('../src/dispatch.js')
 
 function git(cwd, args) {
@@ -235,15 +235,16 @@ test('dispatch stores the report mode and builds a report-only prompt', async ()
   const exec = { agent: { id: 'router', session: { id: 'router' } }, callId: 'call', signal: new AbortController().signal }
 
   await assert.rejects(
-    dispatch.execute({ delegate: true, teamId: 'team-dispatch', title: 'Bad mode', task: 'x', mode: 'docs' }, exec),
+    dispatch.execute({ mode: 'docs', teamId: 'team-dispatch', title: 'Bad mode', task: 'x' }, exec),
     /mode/,
   )
   await assert.rejects(
-    dispatch.execute({ delegate: true, teamId: 'team-dispatch', title: 'Bad land', task: 'x', mode: 'report', land: true }, exec),
+    dispatch.execute({ mode: 'report', teamId: 'team-dispatch', title: 'Bad land', task: 'x', land: true }, exec),
     /report-only tasks cannot be authorized to land/,
   )
-  const result = await dispatch.execute({ delegate: true, teamId: 'team-dispatch', title: 'Diagnose', task: '只做诊断，不改代码', mode: 'report' }, exec)
+  const result = await dispatch.execute({ mode: 'report', teamId: 'team-dispatch', title: 'Diagnose', task: '只做诊断，不改代码' }, exec)
   assert.equal(result.delegated, true)
+  assert.equal(result.mode, 'report')
   const task = await readTask(result.taskId)
   assert.equal(task.mode, 'report')
   assert.equal(task.baseCommit, baseCommit)
@@ -251,4 +252,19 @@ test('dispatch stores the report mode and builds a report-only prompt', async ()
   assert.match(env.activations[0].prompt[0].text, /Mode: report-only/)
   assert.match(env.activations[0].prompt[0].text, /Call report_task once with the conclusion and evidence/)
   assert.match(env.activations[0].prompt[0].text, /Do not call create_worktree/)
+})
+
+test('mode=answer answers without creating a task, worktree, command, or worker', async () => {
+  const { repo } = await createRepo('dispatch-answer')
+  const env = harness(repo)
+  const dispatch = createDispatchTool(env.ctx)
+  const exec = { agent: { id: 'router', session: { id: 'router' } }, callId: 'answer', signal: new AbortController().signal }
+  const before = await listTasks()
+
+  assert.deepEqual(await dispatch.execute({ mode: 'answer' }, exec), { delegated: false, mode: 'answer' })
+  assert.equal((await listTasks()).length, before.length)
+  assert.deepEqual(env.activations, [])
+  assert.deepEqual(env.worktrees, [])
+  assert.deepEqual(env.commands, [])
+  assert.deepEqual(env.delivered, [])
 })

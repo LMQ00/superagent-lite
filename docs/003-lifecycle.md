@@ -44,7 +44,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 
 ### Worker Session
 
-`dispatch_worker` 先写 `starting` 记录，再通过 `ctx.subagents.startActivation` 启动一个 Worker Session（`src/dispatch.js:69-100`）。
+`dispatch_worker` 先写 `starting` 记录，再通过 `ctx.subagents.startActivation` 启动一个 Worker Session（`src/dispatch.js:83-98`）。
 
 | 属性 | 值 |
 | --- | --- |
@@ -132,7 +132,7 @@ report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调�
 
 安装 owner 也可以从面板删除 Task 记录。删除移除记录和 worker 会话映射，不结束 Worker Session，也不回收 worker 分支、Worktree 或记忆归档；Worker Session 还活着的运行中 Task、`merging` 或 `publishing` 中的 Task 不能删除（`src/board.js:14-45`、`src/task-store.js:103-121`）。
 
-不需要 Worker 的输入不是 Task：`dispatch_worker` 返回 `delegate=false` 和理由，回合直接回答（`src/dispatch.js:48-49`）。
+不需要 Worker 的输入不是 Task：`dispatch_worker` 收到 `mode=answer` 时直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录，回合直接回答（`src/dispatch.js:47`）。
 
 ## 失败与恢复
 
@@ -150,7 +150,7 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 Task 和 Memory 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:48-60`）。
 
-`continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入（`src/dispatch.js:53-60`）。
+`continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入（`src/dispatch.js:51-58`）。
 
 ### GitHub 交付失败
 

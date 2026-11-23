@@ -4,13 +4,13 @@
 
 ## 流程
 
-一条用户输入进入 Router Session。Router 先做一次派发决定：不需要项目工作就用 `dispatch_worker` 的 `delegate=false` 回答；需要项目工作就创建 Task 并启动一个 Worker Session。change worker 在分配的 Worktree 里修改文件、提交并请求独立 Review；report worker 在项目 checkout 里检查，用 `report_task` 交回结论。Worker 用 `message_router` 把最终结论送回 Router。审查通过的 HEAD 等待用户授权的 Git action：本地合并写回 Project checkout，或推送分支并打开 Pull request。Task 结束后，Worktree 和 worker 分支保留到下一次恢复或交付。记忆独立于 Task 存在：Worker 的每一轮历史按轮次归档，记忆对话从选定的结论里提取四类记录，profile 每轮注入 Router 和 Worker。
+一条用户输入进入 Router Session。Router 先做一次派发决定：不需要项目工作就用 `dispatch_worker` 的 `mode=answer` 直接回答；需要查证就用 `mode=report` 让 worker 只读检查并交回结论；需要改动项目文件就用 `mode=change` 创建 Task 并启动一个 Worker Session。change worker 在分配的 Worktree 里修改文件、提交并请求独立 Review；report worker 在项目 checkout 里检查，用 `report_task` 交回结论。Worker 用 `message_router` 把最终结论送回 Router。审查通过的 HEAD 等待用户授权的 Git action：本地合并写回 Project checkout，或推送分支并打开 Pull request。Task 结束后，Worktree 和 worker 分支保留到下一次恢复或交付。记忆独立于 Task 存在：Worker 的每一轮历史按轮次归档，记忆对话从选定的结论里提取四类记录，profile 每轮注入 Router 和 Worker。
 
 ```mermaid
 flowchart LR
   I[用户输入] --> R[Router Session]
-  R -->|dispatch_worker delegate=false| A[直接回答]
-  R -->|dispatch_worker delegate=true| T[Task]
+  R -->|dispatch_worker mode=answer| A[直接回答]
+  R -->|dispatch_worker mode=change 或 report| T[Task]
   T --> W[Worker Session]
   W -->|change| WT[Worktree]
   WT --> B[Worker branch]
@@ -36,9 +36,9 @@ flowchart LR
 | 用户输入（Input） | 一条开启或继续回合的用户消息。 | 只有 `source.kind === 'user'` 的消息算输入；提醒使用 `superagent-lite-reminder` 来源，不算新输入；AGENTS.md 是仓库约定，不是任务；Worker 报告和环境事件是背景（`src/turn-guard.js:54-71`、`cordis.patch.yml:25-26`）。 |
 | Router Session | 运行 `superagent-lite` 预设的 DSH Session。 | 每个输入先做一次派发决定；不编辑项目文件；只有用户明确授权后才合并（`router.js:1-14`、`cordis.patch.yml:21-43`）。 |
 | 派发决定（Routing decision） | 当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。 | 一个输入一个决定；失败的工具结果不算；最多 2 次提醒重开完成回合（`src/turn-guard.js:73-108`）。 |
-| Task | 一次被委派的工作及其 JSON 记录。 | 只有 `dispatch_worker` 能创建；安装 owner 可从面板删除记录，删除不回收 worker 分支、Worktree 或记忆归档；ID 是 16 位小写十六进制；固定一个 Router Session、一个 Team、一个 Project 和一个 Worker Session（`src/dispatch.js:52`、`src/task-store.js:59-79`、`src/task-store.js:103-121`）。 |
+| Task | 一次被委派的工作及其 JSON 记录。 | 只有 `dispatch_worker` 能创建；安装 owner 可从面板删除记录，删除不回收 worker 分支、Worktree 或记忆归档；ID 是 16 位小写十六进制；固定一个 Router Session、一个 Team、一个 Project 和一个 Worker Session（`src/dispatch.js:50`、`src/task-store.js:59-79`、`src/task-store.js:103-121`）。 |
 | Team | Task 归属的团队名。 | 一个 Team 只拥有一个 Project，首次写入后不得改配（`src/task-store.js:70-75`）。 |
-| Project | Task 工作的 Git 仓库。 | 派发时必须有分支被检出、工作区干净；Task 保存项目根、基础分支和基础 commit（`src/dispatch.js:62-67`）。 |
+| Project | Task 工作的 Git 仓库。 | 派发时必须有分支被检出、工作区干净；Task 保存项目根、基础分支和基础 commit（`src/dispatch.js:60-65`）。 |
 | Project checkout | Project 的主工作区，位于任何 Worktree 之外。 | report 任务在这里检查；本地合并只在这里写入（`src/report-tool.js:26-31`、`src/merge.js:28-55`）。 |
 | Worker Session | 执行一个 Task 的 DSH Session，运行 `superagent-lite-worker` 预设。 | 从项目根启动；除 `create_worktree` 外的工具要求工作目录在分配的 Worktree；subagent 结束时冻结（`index.js:51-66`、`index.js:114-116`）。 |
 | Worktree | worktree 服务为一个 Task 创建的隔离检出。 | 一个 Task 一个 Worktree，位于 `<project>/.agents/worktrees`，名字带 `sl-` 前缀；文件与其他 Task 分开；它不是操作系统安全边界（`cordis.patch.yml:1-7`、`src/worktree-tool.js:39-49`）。 |
@@ -61,7 +61,7 @@ Task 是唯一聚合根。它持有：
 
 | 字段 | 内容 |
 | --- | --- |
-| `id`、`title`、`teamId`、`task`、`mode` | 标识、显示标题、Team、保存的需求文本、`change` 或 `report` |
+| `id`、`title`、`teamId`、`task`、`mode` | 标识、显示标题、Team、保存的需求文本、`change` 或 `report`（`answer` 不建 Task） |
 | `parentSessionId` | 发起派发的 Router Session |
 | `projectRoot`、`baseCommit`、`baseBranch` | 项目根、worker 起点 commit、基础分支 |
 | `workerSessionId` | 唯一的 Worker Session |
@@ -111,7 +111,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 
 | 组 | 取值 | 含义 |
 | --- | --- | --- |
-| 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:80-83`） |
+| 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:67-81`） |
 | 工作 | `running` | Worker 已创建或 Worktree 已保存，任务进行中（`index.js:51-52`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束的 Task 被 follow-up 重新打开（`src/continue.js:127-134`） |
 | 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:131-140`） |
@@ -122,7 +122,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 交付 | `merged` | 提交已进入基础分支：本地合并、外部合并 PR，或面板读取时确认已包含在基础分支（`src/merge.js:78-80`、`src/git-actions.js:309-317`） |
 | 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:142-144`、`src/git-actions.js:273-277`、`src/merge.js:50-52`） |
 | 结束 | `completed` | 只报告任务通过 `report_task` 交付了结论（`src/report-tool.js:34-39`） |
-| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:101-107`、`index.js:123-129`、`src/continue.js:142-147`） |
+| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:104-112`、`index.js:123-129`、`src/continue.js:182-188`） |
 
 面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案，但当前代码没有写入这些状态（`client.js:8-15`、`src/status.js:8-10`）。
 
@@ -139,12 +139,13 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | `failed` / 失败 | Worker 回合、交付动作或 Task 失败 |
 | `answer` / 仅回答 | report 任务交回了报告 |
 
-Task 模式有两个值。
+派发模式有三个值；`answer` 不产生 Task。
 
 | 模式 | 取值 | 含义 |
 | --- | --- | --- |
-| 模式 | `change` | 默认值；Worker 修改项目文件、提交并请求审查 |
-| 模式 | `report` | Worker 在项目 checkout 检查，不提交，以 `report_task` 结束 |
+| 派发模式 | `change` | Worker 修改项目文件、提交并请求审查；写入 Task 的 `mode` |
+| 派发模式 | `report` | Worker 在项目 checkout 检查，不提交，以 `report_task` 结束；写入 Task 的 `mode` |
+| 派发模式 | `answer` | Router 直接回答；不启动 Worker、不建 Worktree、不写 Task 记录 |
 
 ## 图表对齐
 
@@ -152,8 +153,8 @@ Task 模式有两个值。
 
 | 原图规则 | 实现 |
 | --- | --- |
-| Router 每轮处理一个「调用 worker」工具，可以不调用，但要写明为什么 | 派发守卫要求每个用户输入有一次成功的 `dispatch_worker` 或 `continue_worker`；`delegate=false` 加 1–2,000 字符理由就是不派 worker 的决定，没有决定的完成回合会被提醒（`src/turn-guard.js:73-127`）。 |
-| 同一业务的补充在业务面板添新业务，再派 worker | 实现用 `continue_worker` 继续同一个未发布 Task，不新增第二行；不同业务目标或已发布的 Task 新建 Task 和 Worker（`src/continue.js:96`）。 |
+| Router 每轮处理一个「调用 worker」工具，可以不调用，但要写明为什么 | 派发守卫要求每个用户输入有一次成功的 `dispatch_worker` 或 `continue_worker`；`mode=answer` 的成功结果就是不派 worker 的决定，没有决定的完成回合会被提醒（`src/turn-guard.js:73-127`）。 |
+| 同一业务的补充在业务面板添新业务，再派 worker | 实现用 `continue_worker` 继续同一个未发布 Task，不新增第二行；不同业务目标或已发布的 Task 新建 Task 和 Worker（`src/continue.js:121`）。 |
 | Worker 处理完毕，结果返回 Router，能力冻结，业务算已完成 | change worker 结束后进入审查和交付，落为 `review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；只有 report 任务在 `report_task` 后到 `completed`（`index.js:123-145`、`src/report-tool.js:34-39`）。 |
 | 提问由 Router 回答，可查询记忆 | 相同；Router 只在用户要求或路由需要某条已保存事实时调用 `superagent_memory`，然后直接回答（`src/memory.js:31-84`）。 |
 | 若干 worker 组成团队，一个项目通常由一个团队管理，不同项目由 Router 分开 | 相同；第一个 Task 固定 Team 与 Project 的一对一关系，之后不能改配（`src/task-store.js:70-75`）。 |

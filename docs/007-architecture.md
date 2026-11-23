@@ -53,7 +53,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/dispatch.js`
 
-校验参数，从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `starting` 记录，建立 Session 映射，调用 `ctx.subagents.startActivation`。启动失败把 Task 标为 `failed`（`src/dispatch.js:46-112`）。
+校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `starting` 记录，建立 Session 映射，调用 `ctx.subagents.startActivation`。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-111`）。
 
 ### `src/continue.js`
 
@@ -186,7 +186,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `src/board.js` | 提供 owner-only 任务列表、任务删除与 Git 动作 HTTP 端点，并投影面板视图。 |
 | `src/status.js` | 推导六个面板状态，并按 Project 与 commit 索引通过的审查。 |
 | `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
-| `src/dispatch.js` | 校验派发、创建 Task 记录并启动 Worker Session。 |
+| `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session。 |
 | `src/git-actions.js` | 构建面板视图，执行合并、发送 PR、审查和删除分支动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
@@ -231,14 +231,14 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
 | `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
-| `test/report-only.test.js` | report 任务的完成、无分支提交、伪造 Worktree 拒绝和报告提示词。 |
+| `test/report-only.test.js` | report 任务的完成、无分支提交、伪造 Worktree 拒绝、报告提示词，以及 `mode=answer` 无 Task/Worker/命令副作用。 |
 | `test/review-scope.test.js` | Reviewer 文件读取、符号链接和只读命令的范围限制。 |
 | `test/review.test.js` | Reviewer 提示词带范围不带 diff、无证据裁决被拒、读改动文件算证据。 |
-| `test/routing-rule.test.js` | 两个路由工具把不同目标挡在 `continue_worker` 外，persona 说明新工作规则。 |
+| `test/routing-rule.test.js` | 两个路由工具把不同目标挡在 `continue_worker` 外，persona 与工具描述说明三种 mode。 |
 | `test/status.test.js` | 六个面板状态、优先级和审查索引。 |
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射和路径形 ID 拒绝。 |
 | `test/turn-guard.test.js` | 每个输入一个决定、提醒预算、idle 投递和中止处理。 |
-| `test/validation.test.js` | 派发参数规则和 mode 默认值。 |
+| `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report 的参数规则。 |
 | `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒。 |
 | `test/worker-prompt.test.js` | change 与 report 任务消息、段顺序和范围限制。 |
 
@@ -263,7 +263,7 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 
 | 工具 | 调用方 | 用途 |
 | --- | --- | --- |
-| `dispatch_worker` | Router | 记录派发决定，必要时启动 Worker |
+| `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report` 启动 Worker |
 | `continue_worker` | Router | 给同一 Task 发 follow-up |
 | `superagent_memory` | Router、Worker | 按分类读写记忆 |
 | `/merge-worker` | 用户 | 按 Task ID 授权一次本地合并 |

@@ -9,7 +9,7 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界 | `cordis.patch.yml:21-43`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明，包括显式 `land` 授权 | `src/dispatch.js:10-23`、`src/continue.js:118-131` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明，包括 `mode` 的三种取值与显式 `land` 授权 | `src/dispatch.js:10-22`、`src/continue.js:120-131` |
 | Worker 任务消息 | 头部、需求、模式、`land` 条件规则、`Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-69` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
 | 审查提示词、裁决工具与范围 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及 `base..head` / Worktree 范围、只读命令白名单和 workdir 围栏 | `src/review.js:12-34`、`src/review.js:54-67`、`src/review-scope.js:1-231` |
@@ -19,6 +19,18 @@
 | 面板文字 | 任务状态、动作、弹窗和记忆的中英文字典 | `client.js:6-75` |
 
 文字都在仓库文件里，没有设置页，也没有提示词编辑器；改文字等于改文件并重载 bundle。
+
+## 路由模式
+
+`dispatch_worker` 的 `mode` 必填，三个值并列：
+
+| 模式 | 适用 | 结果 |
+| --- | --- | --- |
+| `change` | 用户请求需要改动项目文件、运行命令或交付代码 | 创建 Task 和 change worker，在 Worktree 修改、提交并请求审查 |
+| `report` | 用户只是询问，但回答需要查证仓库或运行只读命令 | 创建 Task 和 report worker，在项目 checkout 只读检查，用 `report_task` 交回结论 |
+| `answer` | 用户只是询问，Router 凭知识、记忆或对话已经能回答 | Router 直接回答；不启动 worker、不建 Worktree、不写 Task 记录 |
+
+判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。判定只读输入本身，不先检查仓库。
 
 ## 回复规则
 
@@ -72,7 +84,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-20`、`index.js:57-66`、`src/helper-guard.js:73-107`、`src/git-actions.js:168-237`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:57-66`、`src/helper-guard.js:73-107`、`src/git-actions.js:168-237`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
@@ -93,6 +105,6 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | profile 记忆 | 每条一条 Memory 记录，带 `createdAt` 和 `updatedAt` | 插件启动时和每次 profile 写入后；最近 6 条作为运行时上下文注入 |
 | 其他 Memory 记录 | `~/.dsh/superagent-lite/memory/<category>/` 下的一条记录 | 下一次面板加载或记忆工具调用时；面板编辑或删除立即生效 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:69-83`、`src/review.js:20-32`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:20-32`）。
 
 profile 上下文在插件启动时由 `refreshProfile()` 刷新，并在每次写入 `profile` 分类后刷新；每条事实截到 500 字符，最多 6 条进入提示词，按 `updatedAt` 从新到旧（`index.js:16`、`src/memory.js:10-18`、`src/memory.js:80`）。
