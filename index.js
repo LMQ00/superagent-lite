@@ -11,7 +11,7 @@ import { archiveWorkerTurn, registerMemoryContext, runMemoryExtraction } from '.
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
-import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
+import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
@@ -46,8 +46,12 @@ export async function apply(ctx) {
     if (agent.session.header.origin !== 'subagent') return
     const helper = claimHelper(agent.session.header.parentSession)
     if (helper) {
-      registerReadOnlyGuard(agent, helper.scope)
-      if (helper.scope) agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
+      if (helper.scope) {
+        registerReviewGuard(agent, helper.scope)
+        agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
+      } else {
+        registerReadOnlyGuard(agent)
+      }
       return
     }
     const task = await taskForSession(undefined, agent.id)

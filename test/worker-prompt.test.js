@@ -19,7 +19,7 @@ test('change tasks are told to work in a worktree, commit and request independen
   assert.match(text, /Mode: change/)
   assert.match(text, /call create_worktree once/)
   assert.match(text, /Commit on the assigned branch, then call review_worker_commit/)
-  assert.match(text, /separate read-only subagent/)
+  assert.match(text, /separate reviewer that cannot edit files or change branches/)
   assert.match(text, /Landing is not authorized for this task/)
   assert.match(text, /do not push, open a pull request, or merge/)
   assert.match(text, /The landing guard refuses those commands/)

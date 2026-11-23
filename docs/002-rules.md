@@ -45,7 +45,7 @@
 | 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker` 和 `continue_worker`；全局记忆由运行时上下文注入 | 每个输入 |
 | 委派 | `dispatch_worker` 且 `mode=change`、`mode=report` 或 `mode=merge` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
 | 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
-| 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
+| 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个独立 reviewer；reviewer 不能写改文件或改变分支 | 否；需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
 | 落地 | change/report 派发或续派发时携带 `land=true` | change worker 可推送指派分支、开 PR；只限指派分支与 reviewed HEAD | 否；未携带时不推送、不开 PR、不合并 |
 | 合并 | 用户直接指示时由 router 派发 `mode=merge` 的新 worker；面板任务行的合并操作 | merge worker 先把 `mergeBranches` 合入自己的 worktree 分支并审查合并结果，再把 reviewed commit 本地合入 base branch；面板直接把 reviewed HEAD 合入所选分支，不需要 `gh` | 否；需要明确授权、审查通过的 HEAD、干净的项目 checkout 和 full access |
@@ -92,7 +92,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 - `review_worker_commit` 要求 Task 处于 `running`、已有 Worktree、工作区干净、HEAD 不是基础 commit、基础 commit 是 HEAD 的祖先，且 base..head 有净改动（`src/review.js:71-78`）。
 - Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
-- Reviewer 收到保存的需求、follow-up 文本、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:20-32`）。
+- Reviewer 收到保存的需求、follow-up 文本、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:56-71`）。
 - 审查针对已提交的 diff；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:24-29`）。
 - Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:6-34`、`src/review.js:125-140`）。
 - 工具拿到裁决后，还要确认 Reviewer 实际读过改动、Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`（`src/review.js:109-122`）。
@@ -100,30 +100,20 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:254-269`）。
 - 审查没有通过不直接改 Task 状态；Worker 修完再提交、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`（`index.js:131-133`）。
 
-### 放行命令与围栏
+### 审查限制
 
-Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-guard.js` 和 `src/review-scope.js` 执行。
+Reviewer 可以查看任意文件、运行命令和测试；只有两条限制：不能使用写改文件的工具，不能运行会改变 git 分支或历史的命令。以下规则由 `src/helper-guard.js` 和 `src/review-scope.js` 执行。
 
 | 项目 | 放行 | 拒绝 |
 | --- | --- | --- |
-| 工具 | `submit_review`、`structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:23`） | 其他所有工具 |
-| Git 子命令 | `diff`、`show`、`log`、`status`（`src/review-scope.js:17`） | 其他子命令 |
-| 版本参数 | `HEAD`、基础 commit、head commit，或至少 7 位的唯一前缀 | 其他 revision |
-| `git diff` | 必须同时命名 base 与 head，例如 `git diff <base>..<head>` | 缺少任一端的 diff |
-| `git log` | 必须使用 `base..head` | 缺少任一端；读 patch 时可用 `-p`、`-u`、`--patch`、`--raw`、`-U<n>` |
-| `git show` | 只读 base 或 head，可带 `:<path>` | 其他 commit、其他 revision、`.git` 内路径 |
-| `git status` | 只带 flag | 位置参数 |
-| 只读命令 | `ls`、`cat`、`head`、`tail`、`wc`、`pwd`、`file`、`stat` | 其他命令；写、执行和网络命令 |
-| 命令形态 | 一次一条普通命令，可从 Worktree 根或其子目录运行 | shell 操作符、引号、重定向、管道、后台运行 |
-| 路径 | Worktree 内路径 | 绝对路径越界、`..` 越界、解析符号链接后越界、`:` 开头、`.git` 内路径 |
-| workdir | 未指定，或 Worktree 内路径 | 类型不是字符串或越界 |
-| 沙箱 | Shell 挂载了只读限制且当前 Session 解析为 `read-only` | 请求放宽沙箱、沙箱不能限制文件写入 |
-| `sandbox_permissions` | 不传 | 任何值 |
-| `run_in_background` | 不传或 `false` | `true` |
+| 工具 | 除写改工具外的全部继承工具，包括 `submit_review`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`、网络与 job 工具（`src/helper-guard.js:101-110`） | `write`、`edit`、`apply_patch`、`str_replace_editor`（`src/helper-guard.js:22`） |
+| Git 子命令 | 读取与检查类命令，如 `diff`、`show`、`log`、`status`、`blame` | `commit`、`merge`、`rebase`、`cherry-pick`、`revert`、`reset`、`checkout`、`switch`、`branch`、`tag`、`stash`、`push`、`fetch`、`pull`、`am`、`update-ref`、`symbolic-ref`、`worktree`、`filter-branch`、`replace`、`commit-tree`（`src/review-scope.js:15-19`、`src/review-scope.js:123-130`） |
+| 命令形态 | 任意 shell 命令，包括管道、重定向、引号、后台运行、任意 workdir 和沙箱参数；`sh -c`、`bash -lc`、`pwsh -Command`、`env`、`sudo`、`xargs` 等包装中的命令同样检查 | 包装或分段后出现的被禁 git 子命令 |
+| 路径 | Worktree 内外均可，绝对路径、符号链接和 `.git` 不再额外拦截 | 由写改工具完成的文件写入 |
+| 证据 | 必须实际读过改动：一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用（`src/review-scope.js:260-281`） | 没有证据的裁决被拒绝：`The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`（`src/review.js:118`） |
 
-- Git flag 黑名单包括 `--all`、`--branches`、`--tags`、`--remotes`、`--glob`、`--exclude`、`--reflog`、`--walk-reflogs`、`--source`、`--decorate-refs`、`--cached`、`--staged`、`--no-index`、`--ext-diff`、`--textconv`、`--output`、`--relative`、`--src-prefix`、`--dst-prefix`、`--line-prefix`、子模块相关 flag 和短 flag `-a`（`src/review-scope.js:10-16`、`src/review-scope.js:30-34`）。
-- Reader 必须实际读过改动：一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用会留下证据（`src/review-scope.js:212-229`、`src/review.js:87-89`）。
-- 没有留下证据的裁决被拒绝：`The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`（`src/review.js:87-89`）。
+- 命令检查会跳过 git 的全局选项（如 `-c`、`-C`、`--git-dir`、`--work-tree`）再取子命令，所以 `git -C <path> commit` 同样被拒。
+- 审查结束后仍会复核 Worktree 的分支、干净工作区和 HEAD；HEAD 变动时审查失败并需重跑（`src/review.js:120`、`src/review.js:44-54`）。
 
 ## Git 操作规则
 
@@ -214,7 +204,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## 版本
 
-Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-87`、`src/review.js:20-32`、`src/continue.js:136`）。
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-87`、`src/review.js:56-71`、`src/continue.js:136`）。
 
 Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:560-579`、`src/merge.js:23-43`）。
 

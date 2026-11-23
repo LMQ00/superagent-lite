@@ -1,29 +1,8 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import test, { after } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import test from 'node:test'
 import { createReviewScope } from '../src/review-scope.js'
-import { registerReadOnlyGuard, takeHelperEvidence } from '../src/helper-guard.js'
 
-const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
-await mkdir(tmp, { recursive: true })
-const root = await mkdtemp(join(tmp, 'review-scope-'))
-const worktree = join(root, 'worktree')
-await mkdir(join(worktree, '.git'), { recursive: true })
-await writeFile(join(worktree, 'changed.js'), 'export const value = 1\n')
-await writeFile(join(worktree, 'README.md'), 'notes\n')
-await mkdir(join(worktree, 'nested'), { recursive: true })
-await writeFile(join(worktree, 'nested', 'inner.js'), 'export const inner = 1\n')
-await writeFile(join(worktree, '.git', 'config'), '[core]\n')
-await writeFile(join(root, 'outside.txt'), 'outside\n')
-if (process.platform !== 'win32') {
-  await symlink(join(root, 'outside.txt'), join(worktree, 'link.txt'))
-  await symlink(root, join(worktree, 'link-dir'))
-}
-
-after(() => rm(root, { recursive: true, force: true }))
-
+const worktree = '/repo/worktree'
 const base = 'a'.repeat(40)
 const head = 'b'.repeat(40)
 
@@ -31,132 +10,73 @@ function scope(changedFiles = ['changed.js']) {
   return createReviewScope({ worktree, baseCommit: base, headCommit: head, changedFiles })
 }
 
-function helper(reviewScope, id = 'reviewer') {
-  let check
-  const listeners = []
-  const agent = {
-    session: { id, append() {} },
-    ctx: {
-      get: name => name === 'shell' ? { sandboxMode: 'workspace-write' }
-        : name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'read-only' }) }
-        : undefined,
-      tools: { guard(fn) { check = fn } },
-      on(name, fn) { if (name === 'session/event') listeners.push(fn) },
-    },
-  }
-  registerReadOnlyGuard(agent, reviewScope)
-  const emit = event => { for (const listener of listeners) listener(agent.session, event) }
-  return { agent, check, emit }
-}
-
-function toolCall(callId, name, input) {
-  return { type: 'tool/call', data: { callId, name, arguments: JSON.stringify(input) } }
-}
-
-function toolResult(callId, isError = false) {
-  return { type: 'tool/result', data: { message: { toolCallId: callId, isError } } }
-}
-
-test('file reads are confined to the worker worktree', () => {
-  const reviewScope = scope()
-  assert.equal(reviewScope.checkPath('changed.js'), undefined)
-  assert.equal(reviewScope.checkPath(join(worktree, 'changed.js')), undefined)
-  assert.match(reviewScope.checkPath('../outside.txt'), /outside the worker worktree/)
-  assert.match(reviewScope.checkPath(join(root, 'outside.txt')), /outside the worker worktree/)
-  assert.match(reviewScope.checkPath('.git/config'), /\.git/)
-  assert.match(reviewScope.checkPath('/etc/passwd'), /outside the worker worktree/)
-  assert.equal(reviewScope.checkFileTool('glob', {}), undefined)
-  assert.match(reviewScope.checkFileTool('grep', { path: '../outside.txt' }), /outside the worker worktree/)
-  assert.equal(reviewScope.checkFileTool('structured_output', {}), undefined)
-})
-
-test('a symlink cannot carry a read outside the worker worktree', { skip: process.platform === 'win32' }, () => {
-  assert.match(scope().checkPath('link.txt'), /resolves outside the worker worktree/)
-})
-
-test('read-only inspection commands are confined to the worker worktree', () => {
-  const reviewScope = scope()
-  for (const command of [
-    'ls',
-    'ls -la',
-    'ls changed.js nested',
-    'cat changed.js',
-    'head -n 5 changed.js',
-    'tail -n 5 changed.js',
-    'wc -l changed.js',
-    'pwd',
-    'file changed.js',
-    'stat changed.js',
-  ]) {
-    assert.equal(reviewScope.checkCommand(command), undefined, command)
-  }
-  const refusals = [
-    ['find .', /only read-only inspection commands/],
-    ['tree .', /only read-only inspection commands/],
-    ['sed -n 1p changed.js', /only read-only inspection commands/],
-    ['awk changed.js', /only read-only inspection commands/],
-    ['xargs cat', /only read-only inspection commands/],
-    ['tee out.txt', /only read-only inspection commands/],
-    ['cat ../outside.txt', /outside the worker worktree/],
-    ['cat .git/config', /\.git/],
-    ['ls /etc', /outside the worker worktree/],
-    ['cat changed.js | head', /shell operators/],
-    ['cat "changed.js"', /shell operators/],
-    ['cat changed.js > out.txt', /shell operators/],
-  ]
-  for (const [command, expected] of refusals) {
-    assert.match(reviewScope.checkCommand(command), expected, command)
-  }
-})
-
-test('a symlinked read-only argument cannot carry a read outside the worker worktree', { skip: process.platform === 'win32' }, () => {
-  assert.match(scope().checkCommand('cat link.txt'), /resolves outside the worker worktree/)
-})
-
-test('workdir may be a worktree subdirectory but not an escape', () => {
-  const reviewScope = scope()
-  assert.equal(reviewScope.checkWorkdir(undefined), undefined)
-  assert.equal(reviewScope.checkWorkdir(worktree), undefined)
-  assert.equal(reviewScope.checkWorkdir('nested'), undefined)
-  assert.equal(reviewScope.checkWorkdir(join(worktree, 'nested')), undefined)
-  assert.match(reviewScope.checkWorkdir(root), /outside the worker worktree/)
-  assert.match(reviewScope.checkWorkdir(join(worktree, '.git')), /\.git/)
-  assert.match(reviewScope.checkWorkdir(42), /must be a path inside/)
-})
-
-test('a symlinked workdir cannot escape the worker worktree', { skip: process.platform === 'win32' }, () => {
-  assert.match(scope().checkWorkdir('link-dir'), /resolves outside the worker worktree/)
-})
-
-test('git inspection stays inside base..head', () => {
+test('only git commands that change branches or history are refused', () => {
   const reviewScope = scope()
   for (const command of [
     `git diff ${base}..${head}`,
     `git diff --stat ${base} ${head}`,
-    `git diff ${head}..${base}`,
     `git show ${head}`,
-    `git show ${head}:changed.js`,
-    `git show ${base}:changed.js`,
-    `git log --oneline ${base}..${head}`,
+    `git log --all --oneline`,
     'git status --porcelain',
+    'git blame changed.js',
+    'git grep value',
+    'cat /etc/hosts',
+    'grep "git commit" changed.js',
+    'npm test',
+    'node scripts/check.js | tee report.txt',
+    'find . -name "*.js"',
+    `sh -c 'git diff ${base}..${head}'`,
   ]) {
     assert.equal(reviewScope.checkCommand(command), undefined, command)
   }
-  const refusals = [
-    ['git log --all', /widen/],
-    [`git log ${head}`, /must use/],
-    [`git show ${'c'.repeat(40)}:changed.js`, /may only read/],
-    [`git diff ${head}`, /must stay within/],
-    ['git -C ../repo diff', /not an allowed inspection command/],
-    [`git diff ${base}..${head} | head`, /shell operators/],
-    [`git diff --output=${join(root, 'out.patch')} ${base}..${head}`, /widen/],
-    [`git show ${head}~1:changed.js`, /shell operators/],
-    [`git diff ${base}..${head} -- ../outside.txt`, /outside the worker worktree/],
-    ['git diff', /must name the base and head/],
-    ['git status changed.js', /takes flags only/],
-  ]
-  for (const [command, expected] of refusals) {
-    assert.match(reviewScope.checkCommand(command), expected, command)
+})
+
+test('git commands that move branches or history are refused', () => {
+  const reviewScope = scope()
+  for (const command of [
+    'git commit -m x',
+    'git commit --amend',
+    'git merge feature',
+    'git rebase main',
+    `git -C ${worktree} commit -m x`,
+    'git -c user.name=dsh commit -m x',
+    'git --no-pager commit -m x',
+    'git --git-dir=.git commit -m x',
+    '/usr/bin/git commit -m x',
+    'cd repo && git merge feature',
+    'git status; git commit -m x',
+    'git diff HEAD | git commit -m x',
+    `sh -c 'git commit -m x'`,
+    'bash -lc "git rebase main"',
+    'pwsh -Command "git commit -m x"',
+    'env GIT_AUTHOR_NAME=dsh git commit -m x',
+    'sudo git commit -m x',
+    'xargs git commit -m x',
+    'find . -name "*.js" -exec git commit -m x ;',
+    'timeout 10 git commit -m x',
+    'eval "git commit -m x"',
+    'echo $(git commit -m x)',
+    'echo `git commit -m x`',
+    'bash -c "echo $(git commit -m x)"',
+    'git checkout main',
+    'git switch -c branch',
+    'git reset --hard HEAD~1',
+    'git branch -D branch',
+    'git tag release',
+    'git stash',
+    'git push origin main',
+    'git fetch origin',
+    'git pull origin main',
+    'git cherry-pick abc123',
+    'git revert abc123',
+    'git am patch.diff',
+    'git update-ref refs/heads/x HEAD',
+    'git symbolic-ref HEAD refs/heads/x',
+    'git worktree add ../x',
+    'git filter-branch --all',
+    'git replace abc123 def456',
+  ]) {
+    assert.match(reviewScope.checkCommand(command), /may not change git branches or history/, command)
   }
 })
 
@@ -165,6 +85,10 @@ test('only a diff or changed-file read counts as evidence', () => {
   assert.equal(diffScope.hasEvidence(), false)
   diffScope.record('bash', { command: `git diff ${base}..${head}` })
   assert.equal(diffScope.hasEvidence(), true)
+
+  const twoRevisionScope = scope()
+  twoRevisionScope.record('bash', { command: `git diff ${base} ${head}` })
+  assert.equal(twoRevisionScope.hasEvidence(), true)
 
   const fileScope = scope()
   fileScope.record('read', { file_path: 'README.md' })
@@ -185,46 +109,20 @@ test('only a diff or changed-file read counts as evidence', () => {
   assert.equal(logScope.hasEvidence(), false)
   logScope.record('bash', { command: `git log -p ${base}..${head}` })
   assert.equal(logScope.hasEvidence(), true)
-})
 
-test('the helper guard refuses out-of-scope reads and records admitted evidence', () => {
-  const reviewScope = scope()
-  const { check, emit } = helper(reviewScope, 'reviewer-scoped')
-  assert.equal(check({ name: 'read', arguments: { file_path: 'changed.js' } }), undefined)
-  assert.match(check({ name: 'read', arguments: { file_path: '../outside.txt' } }), /outside the worker worktree/)
-  assert.match(check({ name: 'read_page' }), /only inspect the worker worktree/)
-  assert.match(check({ name: 'write' }), /only inspect the worker worktree/)
-  assert.equal(check({ name: 'bash', arguments: { command: `git diff ${base}..${head}` } }), undefined)
-  assert.match(check({ name: 'bash', arguments: { command: 'git log --all' } }), /widen/)
-  assert.match(check({
-    name: 'bash',
-    arguments: { command: `git diff ${base}..${head}`, run_in_background: true },
-  }), /background commands are not allowed/)
-  assert.equal(check({
-    name: 'bash',
-    arguments: { command: `git diff ${base}..${head}`, workdir: join(worktree, 'nested') },
-  }), undefined)
-  assert.match(check({
-    name: 'bash',
-    arguments: { command: `git diff ${base}..${head}`, workdir: root },
-  }), /outside the worker worktree/)
+  const shellScope = scope()
+  shellScope.record('bash', { command: `sh -c 'git diff ${base}..${head}'` })
+  assert.equal(shellScope.hasEvidence(), true)
 
-  emit(toolCall('read-outside', 'read', { file_path: '../outside.txt' }))
-  emit(toolResult('read-outside'))
-  emit(toolCall('diff', 'bash', { command: `git diff ${base}..${head}` }))
-  emit(toolResult('diff'))
-  assert.equal(takeHelperEvidence('reviewer-scoped'), true)
-  assert.equal(takeHelperEvidence('reviewer-scoped'), false)
-})
+  const substitutionScope = scope()
+  substitutionScope.record('bash', { command: `echo $(git diff ${base}..${head})` })
+  assert.equal(substitutionScope.hasEvidence(), true)
 
-test('a failed or changed-file-less read is not evidence', () => {
-  const failed = helper(scope(), 'reviewer-failed')
-  failed.emit(toolCall('diff', 'bash', { command: `git diff ${base}..${head}` }))
-  failed.emit(toolResult('diff', true))
-  assert.equal(takeHelperEvidence('reviewer-failed'), false)
+  const tripleDotScope = scope()
+  tripleDotScope.record('bash', { command: `git diff ${base}...${head}` })
+  assert.equal(tripleDotScope.hasEvidence(), true)
 
-  const unrelated = helper(scope(), 'reviewer-unrelated')
-  unrelated.emit(toolCall('read', 'read', { file_path: 'README.md' }))
-  unrelated.emit(toolResult('read'))
-  assert.equal(takeHelperEvidence('reviewer-unrelated'), false)
+  const grepScope = scope()
+  grepScope.record('grep', { path: 'changed.js' })
+  assert.equal(grepScope.hasEvidence(), true)
 })

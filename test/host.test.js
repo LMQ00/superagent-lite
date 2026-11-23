@@ -35,7 +35,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const { readTask, updateTask } = await import('../src/task-store.js')
   const { archiveWorkerTurn, createMemoryStore, memoryOutputSchema } = await import('../src/memory.js')
   const { createMessageRouterTool } = await import('../src/message-router.js')
-  const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
+  const { claimHelper, registerReviewGuard } = await import('../src/helper-guard.js')
   const repo = join(root, 'repo')
   const worktree = join(root, 'worktree')
   await mkdir(repo)
@@ -86,8 +86,8 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
         }
         ++reviewCalls
         assert.equal(spec.agentPreset, undefined)
-        assert.match(spec.prompt[0].text, /Read it yourself/)
-        assert.match(spec.prompt[0].text, /only commits/)
+        assert.match(spec.prompt[0].text, /Inspect it yourself/)
+        assert.match(spec.prompt[0].text, /file write\/edit tools are unavailable/)
         assert.match(spec.prompt[0].text, /Uncommitted local changes and assumptions about the repository are not part of the change/)
         assert.match(spec.prompt[0].text, /Follow-ups are context only: they can explain additional changes/)
         assert.match(spec.prompt[0].text, /"followUps":\["Add a changelog entry"\]/)
@@ -115,7 +115,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
             on(name, fn) { if (name === 'session/event') listeners.push(fn) },
           },
         }
-        registerReadOnlyGuard(reviewer, claim.scope)
+        registerReviewGuard(reviewer, claim.scope)
         await createReviewResultTool(reviewer).execute({ content: '通过' }, { agent: reviewer })
         for (const event of [
           { type: 'tool/call', data: { callId: 'review-diff', name: 'bash', arguments: JSON.stringify({ command: `git diff ${baseCommit}..${head}` }) } },

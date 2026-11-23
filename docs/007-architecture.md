@@ -14,7 +14,7 @@ flowchart TB
   D --> W[Worker Session]
   W --> WT[Worktree]
   W -->|review_worker_commit| RV[src/review.js]
-  RV --> HR[只读 Reviewer]
+  RV --> HR[独立 Reviewer]
   HR -->|submit_review| RV
   W -->|message_router| R
   T --> G[src/git-actions.js]
@@ -82,15 +82,15 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/review.js`
 
-提供 `worktreeHead`：检查仓库根、分支、干净工作区和 HEAD（`src/review.js:42-52`）。`runReview` 检查净改动，创建审查范围，启动只读 Reviewer，从 Reviewer 的 `submit_review` 取回裁决（内容「通过」是通过，其他内容记为意见），校验证据并复核 HEAD 后写入 Review（`src/review.js:12-34`、`src/review.js:69-123`）。`review_worker_commit` 和面板的审查动作共用 `runReview`；Reviewer 的提示词不包含 diff（`src/review.js:54-67`）。
+提供 `worktreeHead`：检查仓库根、分支、干净工作区和 HEAD（`src/review.js:44-54`）。`runReview` 检查净改动，创建改动范围，启动独立 Reviewer（只禁写改工具与改变分支或历史的 git 命令），从 Reviewer 的 `submit_review` 取回裁决（内容「通过」是通过，其他内容记为意见），校验证据并复核 HEAD 后写入 Review（`src/review.js:12-34`、`src/review.js:73-127`）。`review_worker_commit` 和面板的审查动作共用 `runReview`；Reviewer 的提示词不包含 diff（`src/review.js:56-71`）。
 
 ### `src/review-scope.js`
 
-定义 Reviewer 的「改动」范围：Worktree 加 `base..head`。它校验文件路径、符号链接、`.git`、绝对路径、git 子命令、版本参数、flag、只读命令和 workdir，并记录是否真的读过 diff 或改动文件（`src/review-scope.js:1-231`）。
+定义 Reviewer 的「改动」：Worktree 加 `base..head`。Reviewer 可以读取任意文件和运行任意命令；它只拒绝会改变 git 分支或历史的子命令，并记录 Reviewer 是否真的读过 diff 或改动文件（`src/review-scope.js:1-283`）。
 
 ### `src/helper-guard.js`
 
-维护待认领 helper 队列，安装只读 guard。Reviewer 和记忆对话继承 Worker 工具集，因此 guard 把 shell 限制在只读模式。没有审查范围时放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`）和受限 shell；带审查范围时进一步收窄到 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`，再套 `review-scope`（`src/helper-guard.js:4-23`、`src/helper-guard.js:73-107`）。
+维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`）和受限 shell，并强制 Session 的 `read-only` 沙箱；Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-23`、`src/helper-guard.js:74-110`）。
 
 ### `src/memory.js`
 
@@ -197,7 +197,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session。 |
 | `src/git-actions.js` | 构建面板视图，执行合并、发送 PR、审查和删除分支动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
-| `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
+| `src/helper-guard.js` | 计数待认领 helper；记忆对话保持只读，Reviewer 只禁写改工具与改变分支的 git 命令。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
 | `src/memory.js` | 定义记忆字段、注入文本、记忆对话提示词与提取流程，并负责轮次归档。 |
 | `src/memory-store.js` | 保存全局记忆、项目记忆和原始归档，执行字段校验、归档大小上限与原子写入。 |
@@ -207,8 +207,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务。 |
-| `src/review.js` | 检查已提交 diff，运行只读 Reviewer，接收 `submit_review` 并记录裁决。 |
-| `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
+| `src/review.js` | 检查已提交 diff，运行独立 Reviewer，接收 `submit_review` 并记录裁决。 |
+| `src/review-scope.js` | 记录 Reviewer 是否读过改动，并拒绝会改变 git 分支或历史的命令。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
@@ -225,7 +225,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
-| `test/helper-guard.test.js` | helper 认领、只读工具白名单和 shell 限制。 |
+| `test/helper-guard.test.js` | helper 认领、记忆只读工具与 shell 限制、Reviewer 只禁写改工具。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review、记忆和归档。 |
@@ -242,8 +242,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
 | `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
 | `test/report-only.test.js` | report 任务的完成、无分支提交、伪造 Worktree 拒绝、报告提示词，以及 `mode=answer` 无 Task/Worker/命令副作用。 |
-| `test/review-scope.test.js` | Reviewer 文件读取、符号链接和只读命令的范围限制。 |
-| `test/review.test.js` | Reviewer 提示词带范围不带 diff、无证据裁决被拒、读改动文件算证据。 |
+| `test/review-scope.test.js` | Reviewer 可自由读取，改变分支的 git 命令被拒，diff/改动文件算证据。 |
+| `test/review.test.js` | Reviewer 提示词不带 diff、无证据裁决被拒、读改动文件算证据。 |
 | `test/routing-rule.test.js` | 两个路由工具把不同目标挡在 `continue_worker` 外，persona 与工具描述说明三种 mode。 |
 | `test/status.test.js` | 六个面板状态、优先级和审查索引。 |
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射和路径形 ID 拒绝。 |

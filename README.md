@@ -3,7 +3,7 @@
 一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在独立 Worktree 中执行、提交并接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
 - router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 让新派发的 merge worker 合并已交付分支；同一未发布任务的补充用 `continue_worker`。
-- worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。
+- worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个独立子代理审查该提交；reviewer 不能使用写改文件的工具，也不能运行改变分支或历史的 git 命令。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发新的 merge worker：它先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 
@@ -66,7 +66,7 @@ npm test
 - 插件自身没有暂停、队列或任务数上限；每个任务一个 Worktree，多个任务可以同时跑。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
 - 面板没有设置页，也不自动刷新；行为配置在 `cordis.patch.yml` 和代码里。DSH 设置页只有「归档」分组，用来调整归档文件大小上限（默认 128M，最大 2G，可不限制）。
 - worker 的原始回合事件归档在 `~/.dsh/superagent-lite/memory/archive/`，可能包含敏感对话内容，不能通过插件的模型工具检索。
-- 审查不接收整份 patch：reviewer 在 `base..head` 和 Worktree 范围内自行读 diff，范围外的读取会被拒绝。
+- 审查不接收整份 patch：reviewer 自己读 `base..head` 和改动文件，可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
 
 ## 文档
