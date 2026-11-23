@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createTask, readTask, linkWorkerSession, updateTask } from './task-store.js'
-import { buildWorkerPrompt } from './worker-prompt.js'
 import { initLanding, forgetLanding } from './landing.js'
+import { enqueueWorker } from './launch-queue.js'
 import { runCommand } from './process.js'
 import { validateDispatchArguments } from './validation.js'
 
@@ -68,7 +68,9 @@ export function createDispatchTool(ctx) {
       render: (_args, value) => [{
         type: 'text',
         text: value.delegated
-          ? `Worker started for ${value.teamId}; task ${value.taskId}; session ${value.workerSessionId}.`
+          ? value.status === 'queued'
+            ? `Worker queued for ${value.teamId}; task ${value.taskId}; session ${value.workerSessionId}.`
+            : `Worker started for ${value.teamId}; task ${value.taskId}; session ${value.workerSessionId}.`
           : 'No worker started; answered this turn directly.',
       }],
     },
@@ -114,7 +116,7 @@ export function createDispatchTool(ctx) {
         baseCommit,
         baseBranch,
         workerSessionId,
-        status: 'starting',
+        status: 'queued',
         createdAt: new Date().toISOString(),
       }
       if (!await createTask(taskRecord)) throw new Error(`Task ${id} already exists`)
@@ -122,20 +124,7 @@ export function createDispatchTool(ctx) {
 
       try {
         await linkWorkerSession(id, workerSessionId)
-        await ctx.subagents.startActivation({
-          provider: 'spawn',
-          parent: exec.agent,
-          cwd: projectRoot,
-          name: `sl-${id}`,
-          childId: workerSessionId,
-          label: `${teamId}: ${title}`,
-          agentPreset: 'superagent-lite-worker',
-          prompt: [{ type: 'text', text: buildWorkerPrompt({ title, teamId, task: taskText, baseBranch, mode, land, branches: mergeBranches }) }],
-          promptSource: { kind: 'agent-message', form: 'relay', senderSessionId: exec.agent.id },
-          signal: exec.signal,
-          delivery: 'parent',
-          maxDepth: ctx.subagents.resolveMaxDepth(),
-        })
+        await enqueueWorker(ctx, taskRecord, exec.agent)
       } catch (error) {
         forgetLanding(id)
         await updateTask(id, {
@@ -146,8 +135,12 @@ export function createDispatchTool(ctx) {
         throw error
       }
 
-      const { status } = await readTask(id)
-      return { delegated: true, mode, taskId: id, workerSessionId, status, teamId }
+      const started = await readTask(id)
+      if (started?.status === 'failed') {
+        forgetLanding(id)
+        throw new Error(started.failure ?? 'The worker could not be started')
+      }
+      return { delegated: true, mode, taskId: id, workerSessionId, status: started?.status ?? 'queued', teamId }
     },
   }
 }

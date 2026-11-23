@@ -5,7 +5,7 @@
 
 export const PANEL_STATUSES = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
 
-const RUNNING = new Set(['starting', 'running', 'resuming', 'publishing', 'merging'])
+const RUNNING = new Set(['queued', 'starting', 'running', 'resuming', 'publishing', 'merging'])
 const STOPPED = new Set(['cancelled', 'interrupted', 'merge-conflict'])
 const FAILED = new Set(['failed', 'delivery-blocked', 'merge-conflict', 'interrupted', 'cancelled'])
 

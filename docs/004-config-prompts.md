@@ -19,7 +19,18 @@
 | 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-80` |
 | 归档大小 | 单个归档文件的上限，默认 128M，最大 2G，可选「不限制」 | DSH 设置页「归档」分组；保存到 `~/.dsh/superagent-lite/settings.json`（`client.js:716-849`、`src/board.js:161-204`、`src/settings-store.js:66-83`） |
 
-提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。唯一的运行时设置是 DSH 设置页「归档」分组里的归档大小，它只影响归档写入，不改变提示词或任务条件。
+提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。运行时设置有两处：DSH 设置页「归档」分组里的归档大小，只影响归档写入；面板「设置」标签页保存 worker 模型和并发上限，不编辑提示词。
+
+## Worker 运行时设置
+
+面板「设置」标签页把两项 worker 默认值保存到 `~/.dsh/superagent-lite/worker-settings.json`，只允许安装 owner 读写；文件缺失或内容无效时回到默认值（`src/worker-settings.js`、`src/settings-panel.js`）。
+
+| 项 | 默认 | 约束 | 生效方式 |
+| --- | --- | --- | --- |
+| `workerModel` | `null`，跟随 DSH 默认模型 | `{ provider, model, reasoningEffort? }`；provider 和 model 必填，三项都留空保存 `null` | 启动新 worker 时作为 `agentOptions` 传给 `ctx.subagents.startActivation`；已有 worker 保持原选择 |
+| `maxWorkers` | 3 | 1–16 的整数 | 启动队列在名额内启动新 worker；超出的 Task 写为 `queued` 并等待；review 不占额外名额 |
+
+保存模型时会用 Host 的模型目录校验服务商和模型是否存在；目录暂时不可用时仍允许保存已知名称。改设置只影响之后启动的 worker，不重写运行中或已结束的 Task。
 
 ## 路由模式
 
@@ -109,6 +120,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 全局记忆 | `memory/global.json` 中的 `userProfile` 和 `sharedSkill` | Router 插件装载时、记忆对话写入后；Worker 和 Reviewer 创建时 |
 | 项目记忆 | `memory/projects/<hash>.json` 中的四个字段 | Worker 创建时、Reviewer 每次审查前 |
 | 归档大小 | `~/.dsh/superagent-lite/settings.json` 中的 `archiveMaxBytes`，`null` 表示不限制 | 每次归档写入前读取；设置页保存后立即生效 |
+| Worker 设置 | `~/.dsh/superagent-lite/worker-settings.json` 中的 `workerModel` 和 `maxWorkers` | 启动新 worker 时读取；面板保存后立即影响之后的派发 |
 
 Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:20-32`）。
 

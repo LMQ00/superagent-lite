@@ -44,6 +44,7 @@ test('an unavailable Git view falls back to the recorded lifecycle status', () =
   assert.equal(panelStatus(task({ status: 'failed' }), {}), 'failed')
   assert.equal(panelStatus(task({ status: 'completed' }), {}), 'completed')
   assert.equal(panelStatus(task({ status: 'starting' }), {}), 'running')
+  assert.equal(panelStatus(task({ status: 'queued' }), {}), 'running')
 })
 
 test('the review index links approved commits to their project only', () => {

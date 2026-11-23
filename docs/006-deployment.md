@@ -50,7 +50,7 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 
 ## 配置
 
-Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；唯一的运行时设置是 DSH 设置页「归档」分组里的归档大小上限。
+Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；运行时设置有两处：DSH 设置页「归档」分组里的归档大小上限，以及面板「设置」里的 worker 模型和并发上限。
 
 | 键 | 必填 | 含义 |
 | --- | --- | --- |
@@ -61,6 +61,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；唯一�
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
 | `engines.dsh` | 是，`0.2.2-rc.3` | Bundle 面向的 Host 版本 |
 | 归档大小上限 | 否，默认 128M | DSH 设置页「归档」；可选 1–2G 的整数或「不限制」，保存在 `~/.dsh/superagent-lite/settings.json` |
+| 面板「设置」 | 否 | worker 模型（留空跟随 DSH 默认模型）与并发 worker 上限（1–16，默认 3），保存在 `~/.dsh/superagent-lite/worker-settings.json` |
 
 外部设置单独完成：
 
@@ -85,7 +86,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；唯一�
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 记忆 | 面板不显示记忆；Worker 和 Reviewer 的提示词自动注入项目 + 全局记忆，Router 注入全局记忆 |
 | 归档大小 | DSH 设置页「归档」分组：默认 128M，最大 2G，可选「不限制」 |
-| 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/`；记忆文件是 `memory/global.json`、`memory/projects/<hash>.json`、`memory/archive/<hash>.json`；归档大小在 `settings.json` |
+| 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/`；记忆文件是 `memory/global.json`、`memory/projects/<hash>.json`、`memory/archive/<hash>.json`；归档大小在 `settings.json`，worker 设置在 `worker-settings.json` |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
@@ -134,7 +135,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；唯一�
 | `Create the assigned project worktree before using any other tool.` | Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
 | `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
 | `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
-| `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发 |
+| `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发；`queued` 的同名 Task 会直接返回 |
 | `The router Session is not running` | 本地合并需要 Router Session 保持运行 |
 | `Git delivery is unavailable under the current Session file policy` | 把 Router Session 设为 full access |
 | `The merge target branch "<name>" was not found` | 在合并弹窗里选择一个存在的本地分支 |

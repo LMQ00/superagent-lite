@@ -42,7 +42,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:45-124`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/settings` 三个路由，并在 Worker 创建时把项目 + 全局记忆注册为必需的运行时上下文（`index.js:18-34`、`index.js:116-124`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:45-124`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/settings` 和 `/superagent-lite/worker-settings` 四个路由，并在 Worker 创建时把项目 + 全局记忆注册为必需的运行时上下文（`index.js:18-44`、`index.js:116-124`）。启动队列在 Task 结束和 Worker 释放名额时调用 `pumpWorkers`。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:143-183`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:136-141`）。它不决定路由，也不编辑项目文件。
 
@@ -56,7 +56,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/dispatch.js`
 
-校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `starting` 记录，建立 Session 映射，调用 `ctx.subagents.startActivation`。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-111`）。
+校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `queued` 记录，建立 Session 映射，交给启动队列在名额内启动。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-115`、`src/launch-queue.js`）。
 
 ### `src/continue.js`
 
@@ -202,6 +202,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/memory.js` | 定义记忆字段、注入文本、记忆对话提示词与提取流程，并负责轮次归档。 |
 | `src/memory-store.js` | 保存全局记忆、项目记忆和原始归档，执行字段校验、归档大小上限与原子写入。 |
 | `src/settings-store.js` | 保存运行时设置（归档大小），执行范围校验与原子写入。 |
+| `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型。 |
 | `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
@@ -210,8 +211,10 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/review.js` | 检查已提交 diff，运行只读 Reviewer，接收 `submit_review` 并记录裁决。 |
 | `src/review-scope.js` | 定义 Reviewer 可读的 Worktree 与 `base..head` 范围并执行放行检查。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
+| `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
+| `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
 | `src/worker-prompt.js` | 生成 change 和 report 任务消息。 |
 | `src/worktree-tool.js` | 创建或进入 Task 的 Worktree，并保存元数据。 |
 
@@ -220,7 +223,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | 测试 | 覆盖什么 |
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、归档设置分组和错误。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、设置标签页、归档设置分组和错误。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -237,6 +240,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/memory.test.js` | 记忆角色提示词、全局 + 项目提取、纠正覆盖、空结果、Transcript 上限、注入文本和归档大小上限。 |
 | `test/memory-store.test.js` | 全局和项目记忆读写、字段校验、按项目隔离、归档、归档大小上限和损坏文件拒绝。 |
 | `test/settings.test.js` | 归档大小默认值、范围校验、无损持久化、损坏设置拒绝和设置端点。 |
+| `test/worker-settings.test.js` | 设置默认值与校验、模型覆盖、并发排队、review 不占名额和设置端点。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、不再注册记忆工具、提取失败不影响报告。 |
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
@@ -289,6 +293,7 @@ Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
 | `/superagent-lite/settings` | `GET` | 返回当前归档大小上限、默认值和可调最大值 |
 | `/superagent-lite/settings` | `PUT` | 保存归档大小上限；`null` 表示不限制 |
+| `/superagent-lite/worker-settings` | `GET`、`POST` | 读取 worker 设置和模型目录，或保存 worker 模型与并发上限 |
 
 | 接口 | 值 |
 | --- | --- |

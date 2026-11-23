@@ -106,6 +106,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const byClass = (tree, className) => nodes(tree).filter(node => node.props?.className === className)
 const button = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label).at(-1)
 const filterButton = (tree, label) => nodes(tree).find(node => node.type === 'button' && text(node).startsWith(label))
+const tab = (tree, label) => nodes(tree).find(node => node.type === 'button' && node.props?.role === 'tab' && text(node).startsWith(label))
 const buttons = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label)
 const select = (tree, predicate) => nodes(tree).find(node => node.type === 'select' && predicate?.(node))
 
@@ -188,7 +189,7 @@ test('renders the six status categories, navigation and session links without a 
   assert.ok(requests.every(request => request.options.signal.aborted))
 })
 
-test('scrolls the task list inside a fixed panel without a tab bar', async () => {
+test('keeps the task list scrollable beside the settings tab', async () => {
   const requests = []
   const tasks = Array.from({ length: 12 }, (_, index) => task({
     id: `t${index}`, title: `Task ${index + 1}`,
@@ -203,14 +204,78 @@ test('scrolls the task list inside a fixed panel without a tab bar', async () =>
   board.render()
   await flush()
   const tree = board.render()
-  assert.equal(nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab').length, 0)
+  const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置'])
+  assert.equal(tabs[0].props['aria-selected'], true)
+  assert.equal(tabs[1].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
   assert.match(text(byClass(tree, 'sl-scroll')[0]), /Task 1/)
   assert.equal(byClass(tree, 'sl-task').length, 12)
   assert.equal(requests.filter(path => path === '/superagent-lite/tasks').length, 1)
-  assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 0)
+  board.dispose()
+})
+
+test('the settings tab edits the worker model and concurrency limit', async () => {
+  const requests = []
+  let saved = { workerModel: null, maxWorkers: 3 }
+  const catalog = {
+    default: { provider: 'deepseek', model: 'deepseek-chat' },
+    groups: [{ id: 'deepseek', name: 'DeepSeek', models: [
+      { id: 'deepseek-chat', name: 'Chat' },
+      { id: 'deepseek-reasoner', name: 'Reasoner', reasoning: { efforts: [{ id: 'high', name: 'High' }] } },
+    ] }],
+    failures: [],
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [] }) }
+      if (path === '/superagent-lite/worker-settings' && options.method === 'POST') {
+        saved = JSON.parse(options.body)
+        return { ok: true, json: async () => ({ settings: saved }) }
+      }
+      return {
+        ok: true,
+        json: async () => ({ settings: saved, limits: { maxWorkers: { min: 1, max: 16 } }, catalog }),
+      }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '设置').props.onClick()
+  tree = board.render()
+  assert.equal(tab(tree, '设置').props['aria-selected'], true)
+  assert.match(text(tree), /Worker 模型/)
+  assert.match(text(tree), /留空时跟随 DSH 默认模型/)
+  assert.match(text(tree), /并发 worker 上限/)
+  assert.match(text(tree), /DSH 当前默认/)
+  const input = id => nodes(tree).find(node => node.type === 'input' && node.props?.id === id)
+  input('panel-heading-provider').props.onChange({ target: { value: 'deepseek' } })
+  tree = board.render()
+  input('panel-heading-model').props.onChange({ target: { value: 'deepseek-reasoner' } })
+  tree = board.render()
+  input('panel-heading-effort').props.onChange({ target: { value: 'high' } })
+  tree = board.render()
+  input('panel-heading-provider').props.onChange({ target: { value: 'deepseek' } })
+  nodes(tree).find(node => node.type === 'input' && node.props?.min === 1)
+    .props.onChange({ target: { value: '2' } })
+  tree = board.render()
+  button(tree, '保存').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  const posts = requests.filter(request => request.path === '/superagent-lite/worker-settings' && request.options.method === 'POST')
+  assert.equal(posts.length, 1)
+  assert.deepEqual(JSON.parse(posts[0].options.body), {
+    workerModel: { provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high' },
+    maxWorkers: 2,
+  })
+  assert.match(text(board.render()), /设置已保存/)
   board.dispose()
 })
 

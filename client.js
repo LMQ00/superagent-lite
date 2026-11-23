@@ -40,6 +40,17 @@ window.__ModuleLoader__.load({
         settingsUnit: 'M', settingsSave: 'Save', settingsSaving: 'Saving…', settingsSaved: 'Saved.',
         settingsLoadFailed: 'Could not load the archive size limit.',
         settingsSaveFailed: 'Could not save the archive size limit.',
+        views: 'Panel views',
+        workerSettingsTitle: 'Settings', workerSettingsIntro: 'Defaults for dispatched workers. Saved settings apply to new workers only.',
+        workerSettingsLoadFailed: 'Could not load settings. Try refreshing.',
+        workerSettingsSaved: 'Settings saved.', workerSettingsFailed: 'The settings action failed.',
+        workerModel: 'Worker model', workerModelHint: 'Leave blank to inherit the DSH default model.',
+        modelProvider: 'Provider', modelName: 'Model', modelEffort: 'Reasoning effort (optional)',
+        modelInherit: 'Inherit the DSH default',
+        defaultModel: 'DSH default: {model}', defaultModelUnavailable: 'The DSH default model is unavailable',
+        maxWorkers: 'Concurrent workers', maxWorkersHint: 'Tasks beyond the limit wait in the queue. Reviews do not count.',
+        saveSettings: 'Save', settingsInvalid: 'Enter a provider and model, or leave all three model fields blank.',
+        queued: 'Queued',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -77,6 +88,17 @@ window.__ModuleLoader__.load({
         settingsUnit: 'M', settingsSave: '保存', settingsSaving: '保存中…', settingsSaved: '已保存。',
         settingsLoadFailed: '无法加载归档大小设置。',
         settingsSaveFailed: '无法保存归档大小设置。',
+        views: '面板分区',
+        workerSettingsTitle: '设置', workerSettingsIntro: '派发 worker 的默认值。保存后只影响新启动的 worker。',
+        workerSettingsLoadFailed: '无法加载设置，请重试。',
+        workerSettingsSaved: '设置已保存。', workerSettingsFailed: '设置操作失败。',
+        workerModel: 'Worker 模型', workerModelHint: '留空时跟随 DSH 默认模型。',
+        modelProvider: '服务商', modelName: '模型', modelEffort: '推理强度（可选）',
+        modelInherit: '继承 DSH 默认值',
+        defaultModel: 'DSH 当前默认：{model}', defaultModelUnavailable: 'DSH 默认模型暂不可用',
+        maxWorkers: '并发 worker 上限', maxWorkersHint: '超过上限的任务排队等待；review 不计入并发。',
+        saveSettings: '保存', settingsInvalid: '请填写服务商和模型，或把三个模型字段都留空。',
+        queued: '排队中',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -89,6 +111,12 @@ window.__ModuleLoader__.load({
       .sl-head h1{margin:0;font-size:20px;line-height:28px;font-weight:500;overflow-wrap:anywhere}
       .sl-intro{margin:0;max-width:640px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
       .sl-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+      .sl-tabs{display:flex;flex:none;align-items:center;gap:2px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-tab{position:relative;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;height:32px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer}
+      .sl-tab:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .sl-tab[aria-selected='true']{color:var(--dsw-alias-label-primary);font-weight:500}
+      .sl-tab[aria-selected='true']::after{content:'';position:absolute;left:8px;right:8px;bottom:-0.5px;height:2px;border-radius:2px;background:var(--dsw-alias-brand-primary)}
+      .sl-tab:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
       .sl-body{display:flex;flex:1;flex-direction:column;gap:12px;min-height:0}
       .sl-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:40px}
       .sl-filters{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
@@ -154,6 +182,15 @@ window.__ModuleLoader__.load({
       .sl-code{font-family:var(--dsw-font-mono,monospace);font-size:12px;color:var(--dsw-alias-label-tertiary)}
       .sl-link{color:var(--dsw-alias-brand-primary);text-decoration:none}
       .sl-link:hover{text-decoration:underline}
+      .sl-worker-settings{display:flex;flex:1;flex-direction:column;gap:16px;min-height:0;max-width:640px;padding-top:8px;overflow-y:auto}
+      .sl-worker-settings__group{display:flex;flex-direction:column;gap:12px;padding:16px;border:0.5px solid var(--dsw-alias-border-l3);border-radius:12px}
+      .sl-worker-settings__title{margin:0;font-size:14px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+      .sl-worker-settings__field{display:flex;flex-direction:column;gap:4px;min-width:0}
+      .sl-worker-settings__field label{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+      .sl-worker-settings__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+      .sl-worker-settings__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .sl-input{box-sizing:border-box;height:28px;min-width:180px;max-width:100%;padding:0 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}
+      .sl-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
       .sl-check{flex:none;width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
       .sl-check:disabled{cursor:not-allowed}
       .sl-task__title .sl-check{margin-top:3px}
@@ -174,6 +211,7 @@ window.__ModuleLoader__.load({
         .sl-select{min-width:0;flex:1 1 140px}
         .sl-filters,.sl-scope{width:100%}
         .sl-scope{margin-inline-start:0}
+        .sl-worker-settings__grid{grid-template-columns:minmax(0,1fr)}
       }
       @media (prefers-reduced-motion:reduce){
         .sl-spinner g{animation:none}
@@ -258,6 +296,7 @@ window.__ModuleLoader__.load({
       const [team, setTeam] = useState('')
       const [project, setProject] = useState('')
       const [category, setCategory] = useState('')
+      const [tab, setTab] = useState('tasks')
       const [openFailed, setOpenFailed] = useState(false)
       const [pending, setPending] = useState('')
       const [error, setError] = useState('')
@@ -266,6 +305,16 @@ window.__ModuleLoader__.load({
       const [dialogData, setDialogData] = useState({ phase: 'loading' })
       const [dialogChoice, setDialogChoice] = useState('')
       const [dialogError, setDialogError] = useState('')
+      const [settingsPhase, setSettingsPhase] = useState('loading')
+      const [settingsCatalog, setSettingsCatalog] = useState(undefined)
+      const [settingsLimits, setSettingsLimits] = useState(undefined)
+      const [workerProvider, setWorkerProvider] = useState('')
+      const [workerModel, setWorkerModel] = useState('')
+      const [workerEffort, setWorkerEffort] = useState('')
+      const [maxWorkers, setMaxWorkers] = useState('3')
+      const [settingsPending, setSettingsPending] = useState(false)
+      const [settingsError, setSettingsError] = useState('')
+      const [settingsNotice, setSettingsNotice] = useState('')
       const [selectedTasks, setSelectedTasks] = useState([])
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
@@ -298,7 +347,29 @@ window.__ModuleLoader__.load({
             }
           }
         }
+        async function loadSettings() {
+          try {
+            const response = await fetch('/superagent-lite/worker-settings', {
+              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            })
+            if (!response.ok) throw new Error('Settings unavailable')
+            const value = await response.json()
+            if (controller.signal.aborted) return
+            const loaded = value?.settings ?? {}
+            const selected = loaded.workerModel ?? {}
+            setWorkerProvider(typeof selected.provider === 'string' ? selected.provider : '')
+            setWorkerModel(typeof selected.model === 'string' ? selected.model : '')
+            setWorkerEffort(typeof selected.reasoningEffort === 'string' ? selected.reasoningEffort : '')
+            setMaxWorkers(String(loaded.maxWorkers ?? 3))
+            setSettingsCatalog(value?.catalog)
+            setSettingsLimits(value?.limits?.maxWorkers)
+            setSettingsPhase('ready')
+          } catch {
+            if (!controller.signal.aborted) setSettingsPhase('error')
+          }
+        }
         void load()
+        void loadSettings()
         return () => controller.abort()
       }, [revision])
 
@@ -315,12 +386,16 @@ window.__ModuleLoader__.load({
         .map(key => ({ key, tasks: shown.filter(task => task.status === key) }))
         .filter(group => group.tasks.length > 0)
 
-      const deletableTask = task => task.status !== 'running' || task.unconfirmed === true
+      const deletableTask = task => task.queued === true || task.status !== 'running' || task.unconfirmed === true
       const selectedTaskRows = tasks.filter(task => selectedTasks.includes(task.id) && deletableTask(task))
 
       const refresh = () => {
         active.current?.abort()
         setPhase('loading')
+        setSettingsPhase('loading')
+        setSettingsError('')
+        setSettingsNotice('')
+        setSettingsPending(false)
         setOpenFailed(false)
         setError('')
         setNotice('')
@@ -448,6 +523,53 @@ window.__ModuleLoader__.load({
           setPending('')
         }
       }
+      const saveSettings = async () => {
+        const provider = workerProvider.trim()
+        const name = workerModel.trim()
+        const effort = workerEffort.trim()
+        if ((provider || name || effort) && (!provider || !name)) {
+          setSettingsError(t('settingsInvalid'))
+          return
+        }
+        const limit = Number(maxWorkers)
+        const min = settingsLimits?.min ?? 1
+        const max = settingsLimits?.max ?? 16
+        if (!Number.isInteger(limit) || limit < min || limit > max) {
+          setSettingsError(t('settingsInvalid'))
+          return
+        }
+        setSettingsPending(true)
+        setSettingsError('')
+        setSettingsNotice('')
+        try {
+          const response = await fetch('/superagent-lite/worker-settings', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              workerModel: provider ? { provider, model: name, ...(effort ? { reasoningEffort: effort } : {}) } : null,
+              maxWorkers: limit,
+            }),
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('workerSettingsFailed'))
+          const saved = value?.settings ?? {}
+          const selected = saved.workerModel ?? {}
+          setWorkerProvider(typeof selected.provider === 'string' ? selected.provider : '')
+          setWorkerModel(typeof selected.model === 'string' ? selected.model : '')
+          setWorkerEffort(typeof selected.reasoningEffort === 'string' ? selected.reasoningEffort : '')
+          setMaxWorkers(String(saved.maxWorkers ?? limit))
+          setSettingsNotice(t('workerSettingsSaved'))
+        } catch (actionError) {
+          setSettingsError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('workerSettingsFailed'))
+        } finally {
+          setSettingsPending(false)
+        }
+      }
       const mergedTask = (task, value) => {
         const view = value?.view
         const git = view?.git ?? {
@@ -552,6 +674,7 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'sl-lv__label' }, t('updated')),
                 h('span', { className: 'sl-lv__value' }, updated)),
               task.unconfirmed && h('span', { className: 'sl-tag', 'data-tone': 'warning' }, t('unconfirmed')),
+              task.queued && h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t('queued')),
               task.land && h('span', { className: 'sl-tag', 'data-tone': 'success' }, t('landAuthorized')),
               h('code', { className: 'sl-code', title: task.id }, task.id)),
             task.failure && h('p', { className: 'sl-task__failure', title: task.failure }, `${t('failure')}: ${task.failure}`),
@@ -683,30 +806,98 @@ window.__ModuleLoader__.load({
               h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
             h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow))))))
 
+      const taskView = tab === 'tasks'
+      const settingsView = tab === 'settings'
+      const tasksTabId = `${headingId}-tasks-tab`
+      const settingsTabId = `${headingId}-settings-tab`
+      const settingsGroups = Array.isArray(settingsCatalog?.groups) ? settingsCatalog.groups : []
+      const settingsProviders = settingsGroups.map(group => group.id)
+      const selectedGroup = settingsGroups.find(group => group.id === workerProvider.trim())
+      const settingsModels = selectedGroup?.models ?? []
+      const selectedModel = settingsModels.find(candidate => candidate.id === workerModel.trim())
+      const settingsEfforts = selectedModel?.reasoning?.efforts ?? []
+      const settingsDefault = settingsCatalog?.default
+      const settingsDefaultLabel = settingsDefault
+        ? `${settingsDefault.provider} / ${settingsDefault.model}${settingsDefault.reasoningEffort ? ` · ${settingsDefault.reasoningEffort}` : ''}`
+        : undefined
+      const settingsField = (label, control) => h('div', { className: 'sl-worker-settings__field' },
+        h('label', { htmlFor: control.props?.id }, t(label)), control)
+      const settingsInput = (label, id, list, value, set) => settingsField(label, h('input', {
+        className: 'sl-input', id, list, value, placeholder: t('modelInherit'), spellCheck: false,
+        onChange: event => set(event.target.value),
+      }))
+      const settingsViewPanel = () => h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': settingsTabId },
+        settingsPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+        settingsPhase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('workerSettingsLoadFailed')),
+        settingsPhase === 'ready' && h('div', { className: 'sl-worker-settings' },
+          h('p', { className: 'sl-hint' },
+            settingsDefaultLabel ? t('defaultModel', { model: settingsDefaultLabel }) : t('defaultModelUnavailable')),
+          h('section', { className: 'sl-worker-settings__group' },
+            h('h2', { className: 'sl-worker-settings__title' }, t('workerModel')),
+            h('p', { className: 'sl-hint' }, t('workerModelHint')),
+            h('div', { className: 'sl-worker-settings__grid' },
+              settingsInput('modelProvider', `${headingId}-provider`, `${headingId}-providers`, workerProvider, setWorkerProvider),
+              settingsInput('modelName', `${headingId}-model`, `${headingId}-models`, workerModel, setWorkerModel),
+              settingsInput('modelEffort', `${headingId}-effort`, `${headingId}-efforts`, workerEffort, setWorkerEffort)),
+            h('datalist', { id: `${headingId}-providers` },
+              ...settingsProviders.map(provider => h('option', { key: provider, value: provider }))),
+            h('datalist', { id: `${headingId}-models` },
+              ...settingsModels.map(model => h('option', { key: model.id, value: model.id }, model.name))),
+            h('datalist', { id: `${headingId}-efforts` },
+              ...settingsEfforts.map(effort => h('option', { key: effort.id, value: effort.id }, effort.name)))),
+          h('section', { className: 'sl-worker-settings__group' },
+            h('h2', { className: 'sl-worker-settings__title' }, t('maxWorkers')),
+            h('p', { className: 'sl-hint' }, t('maxWorkersHint')),
+            settingsField('maxWorkers', h('input', {
+              id: `${headingId}-max-workers`, className: 'sl-input', type: 'number', value: maxWorkers,
+              min: settingsLimits?.min ?? 1, max: settingsLimits?.max ?? 16,
+              onChange: event => setMaxWorkers(event.target.value),
+            }))),
+          settingsError && h('p', { className: 'sl-error', role: 'alert' }, settingsError),
+          settingsNotice && h('p', { className: 'sl-notice', role: 'status' }, settingsNotice),
+          h('div', { className: 'sl-worker-settings__actions' },
+            h('button', {
+              type: 'button', className: 'sl-btn sl-btn--primary', disabled: settingsPending,
+              onClick: () => void saveSettings(),
+            }, t('saveSettings')))))
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
-              h('h1', { id: headingId }, t('title')),
-              h('p', { className: 'sl-intro' }, t('intro'))),
+              h('h1', { id: headingId }, t(taskView ? 'title' : 'workerSettingsTitle')),
+              h('p', { className: 'sl-intro' }, t(taskView ? 'intro' : 'workerSettingsIntro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
-                onClick: refresh, disabled: phase === 'loading',
+                onClick: refresh,
+                disabled: taskView ? phase === 'loading' : settingsPhase === 'loading',
               }, icon('refresh'), t('refresh')))),
-          h('div', { className: 'sl-body' },
-            filters,
-            selection,
-            phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
-            phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
-            openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
-            error && h('p', { className: 'sl-error', role: 'alert' }, error),
-            notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
-            phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
-            phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
-              h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
-            list)),
+          h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
+            h('button', {
+              id: tasksTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': taskView,
+              onClick: () => setTab('tasks'),
+            }, t('title')),
+            h('button', {
+              id: settingsTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': settingsView,
+              onClick: () => setTab('settings'),
+            }, t('workerSettingsTitle'))),
+          taskView
+            ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
+              filters,
+              selection,
+              phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+              phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
+              openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
+              error && h('p', { className: 'sl-error', role: 'alert' }, error),
+              notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
+              phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
+              phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
+                h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
+              list)
+            : settingsViewPanel()),
         dialogView(),
         batchDialog())
     }
