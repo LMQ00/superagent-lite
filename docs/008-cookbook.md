@@ -8,7 +8,7 @@
 | --- | --- |
 | Task | 工具只读当前 Task 记录，不写状态 |
 | Worker Session | 工具在 `index.js` 为该 Task 注册，并用闭包里的 `agent` 校验调用者 |
-| Worktree | 可用性沿用 `canUseMemory`：Worker 必须先进入 Worktree，且未冻结 |
+| Worktree | 可用性沿用 `activeWorker`：Worker 必须先进入 Worktree，且未冻结 |
 | Review / Reviewer | Reviewer 继承 Worker 工具集，但 helper 守卫只放行审查白名单；`read_task` 不在白名单内 |
 | Panel | 不新增端点，面板不感知这个工具 |
 | 工具命名 | `read_task`，小写下划线，与现有工具命名一致 |
@@ -71,17 +71,17 @@ export function createReadTaskTool(agent, taskId, read = taskForSession) {
 import { createReadTaskTool } from './src/read-task.js'
 ```
 
-在 `canUseMemory` 定义之后、消息工具注册之前加入：
+在 `activeWorker` 定义之后、消息工具注册之前加入：
 
 ```js
 const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
-  when: ({ agent: candidate }) => canUseMemory(candidate),
+  when: ({ agent: candidate }) => activeWorker(candidate),
 })
 ```
 
 把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:92`）。
 
-- **`when` 用 `canUseMemory`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:73-77`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
+- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:73-77`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
 - **注册位置在 `agent/created` 内。** 该回调已经完成 Task 归属核对；不要把工具注册到 `router.js`。
 - **不要另建全局工具。** 工具只能看到闭包绑定的那个 Task，避免 `read_task` 变成跨 Task 读取入口。
 
@@ -158,7 +158,7 @@ npm test
 ## 5. 检查清单
 
 1. `src/read-task.js` 只读 Task，不写记录。
-2. `index.js` 在 `agent/created` 内注册，`when` 使用 `canUseMemory`。
+2. `index.js` 在 `agent/created` 内注册，`when` 使用 `activeWorker`。
 3. `readTask` 已加入 dispose 列表。
 4. 没有新增包导出、bundle 配置或 helper 白名单。
 5. 测试覆盖身份、状态、缺失 Task 和字段范围。

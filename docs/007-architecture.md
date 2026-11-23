@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期和面板路由；Router 插件 `router.js` 注册路由工具和 Router 记忆工具。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:13-183`、`router.js:1-13`）。
+Host 插件 `index.js` 管理 Worker 生命周期和面板路由；Router 插件 `router.js` 注册路由工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:13-183`、`router.js:1-13`）。
 
 ```mermaid
 flowchart TB
@@ -27,27 +27,28 @@ flowchart TB
   T --> B[src/board.js]
   B --> C[client.js 面板]
   C -->|merge、publish、review、delete-branch、delete-task| B
-  MP[src/memory-panel.js] --> C
   R --> TG[src/turn-guard.js]
   W -->|每轮 turn/end| RA[(原始归档)]
   W -->|最终报告| ME[记忆对话]
-  ME -.->|读取对话| W
+  ME -.->|读取原始会话| W
   ME --> MS[src/memory.js]
-  W --> MS
-  MS --> MF[(Memory 文件)]
+  MS --> MF[(全局 + 项目记忆)]
+  MS -.->|项目 + 全局注入| W
+  MS -.->|审查时注入| RV
+  MS -.->|全局注入| R
 ```
 
 ## 核心模块
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、记忆、提取、消息和报告工具（`index.js:45-119`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/memory` 三个路由，并在启动时以及每个 Worker 创建前刷新 profile（`index.js:19`、`index.js:117`、`index.js:22-33`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:45-124`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git` 两个路由，并在 Worker 创建时把项目 + 全局记忆注册为必需的运行时上下文（`index.js:20-30`、`index.js:116-124`）。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:143-183`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:136-141`）。它不决定路由，也不编辑项目文件。
 
 ### `router.js`
 
-装载时先刷新 profile，再注册 `dispatch_worker`、`continue_worker` 和 Router 的 `superagent_memory`，并注册 profile 运行时上下文（`router.js:7-13`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`，并启动一个新的 merge worker（`src/dispatch.js:13-131`）。它不持有 Task 记录。
+装载时先读取全局记忆，再注册 `dispatch_worker`、`continue_worker` 和全局记忆运行时上下文（`router.js:7-12`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`，并启动一个新的 merge worker（`src/dispatch.js:13-131`）。它不持有 Task 记录。
 
 ### `src/task-store.js`
 
@@ -93,19 +94,11 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory.js`
 
-构建 `superagent_memory`、记忆对话输入、面板 facade、profile 上下文和轮次归档。它把 Session 角色映射为可访问分类，给每次写入记录来源事件，profile 写入后刷新注入；记忆对话读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript，插件负责把四类结果写回（`src/memory.js:1-248`）。
-
-### `src/memory-extractor.js`
-
-只定义记忆对话角色：标签、60,000 字符对话总长、4,000 字符单条消息、500 字符凭证参数、500 字符单条事实、四类数量上限、输出 schema 和提示词（`src/memory-extractor.js:1-45`）。
-
-### `src/memory-panel.js`
-
-提供 `GET` / `POST /superagent-lite/memory`。只允许 owner，校验 action、category、记录 ID 和字段；body 上限 32 KB；把缺失记录映射为 `404`，存储拒绝映射为 `400` 或 `409`（`src/memory-panel.js:1-94`）。
+定义全局和项目记忆的字段与注入文本，构建记忆对话输入，负责 Transcript、提取结果校验、差异写入和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。记忆对话读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript（`src/memory.js:1-200`）。
 
 ### `src/memory-store.js`
 
-保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、按规范化文本相似度去重与覆盖、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-440`）。
+保存全局记忆、项目记忆和原始归档。全局记忆是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；原始归档按 Session 与序号哈希保存（`src/memory-store.js:1-190`）。
 
 ### `src/delivery.js`
 
@@ -133,7 +126,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/board.js`
 
-提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；同时导出记忆端点复用的 body reader（`src/board.js:1-148`）。
+提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；并提供 JSON body 读取工具（`src/board.js:1-148`）。
 
 ### `src/report-tool.js`
 
@@ -145,7 +138,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务和记忆，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务或记忆后批量删除。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。记忆按分类和文本过滤，编辑或删除需 owner 点击（`client.js:1-1044`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。面板不显示或编辑记忆（`client.js:1-700`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
@@ -154,9 +147,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 - 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`（`index.js:13`、`router.js:5`）。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
-- `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:435-439`）。
-- `src/memory-panel.js` 是唯一记忆面板端点；它复用 `src/board.js` 的 `readJsonBody`，不从请求读路径（`src/memory-panel.js:1-2`）。
-- `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-45`）。
+- `src/memory-store.js` 是唯一记忆与归档存储模块；`src/memory.js` 的注入、提取和归档都经过它的 facade（`src/memory-store.js:113-168`）。
+- `src/memory.js` 只持有字段定义、提示词、注入文本和提取流程，不提供模型侧记忆工具（`src/memory.js:1-200`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
 - `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-133`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
 - `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
@@ -202,10 +194,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
-| `src/memory.js` | 注册记忆工具、profile 上下文、记忆对话输入、面板 facade 和轮次归档。 |
-| `src/memory-extractor.js` | 定义记忆对话的角色提示词、标签、对话与事实上限和输出 schema。 |
-| `src/memory-panel.js` | 提供 owner-only 记忆列表、编辑和删除 HTTP 端点。 |
-| `src/memory-store.js` | 保存 Memory 记录和原始归档，执行分类、scope、密钥检查以及写入去重/纠错。 |
+| `src/memory.js` | 定义记忆字段、注入文本、记忆对话提示词与提取流程，并负责轮次归档。 |
+| `src/memory-store.js` | 保存全局记忆、项目记忆和原始归档，执行字段校验与原子写入。 |
 | `src/merge.js` | 实现本地 `--no-ff` 合并和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
@@ -224,7 +214,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | 测试 | 覆盖什么 |
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务与记忆的批量删除、记忆搜索与编辑删除和错误。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除和错误。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -238,11 +228,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/land-all.test.js` | 双方纯新增时保留两边、同一行改写与 add/add 冲突时停下、按计划顺序合并和测试失败即停。 |
 | `test/landing.test.js` | 未授权与授权后的 push/PR/merge 检查、分支与 reviewed HEAD 范围、跨任务授权和伪造授权。 |
 | `test/landing-wiring.test.js` | Worker shell guard 的安装、真实拒绝与放行、跨任务隔离。 |
-| `test/memory-extractor.test.js` | 记忆角色提示词、四类提取、重复提取复用记录、空结果、超限事实和面板编辑删除。 |
-| `test/memory-panel.test.js` | owner 准入、记忆投影、更新/删除路径、body 校验和状态码映射。 |
-| `test/memory-store.test.js` | 分类、team scope、private 引用、面板 team scope、归档不可变、符号链接和并发更新。 |
-| `test/memory-write-rules.test.js` | 相同写入不新增、等价改写不新增、错误记忆覆盖更新、新内容新增、并发相同写入，以及分类和 scope 隔离。 |
-| `test/memory-wiring.test.js` | 最终报告触发提取并带上 Worker 对话、不再注册 `extract_memory`、提取失败不影响报告。 |
+| `test/memory.test.js` | 记忆角色提示词、全局 + 项目提取、纠正覆盖、空结果、Transcript 上限和注入文本。 |
+| `test/memory-store.test.js` | 全局和项目记忆读写、字段校验、按项目隔离、归档和损坏文件拒绝。 |
+| `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、不再注册记忆工具、提取失败不影响报告。 |
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
 | `test/prompt-config.test.js` | Router 提示词的回复、合并授权，以及提示词与文档的一致性。 |
@@ -259,20 +247,18 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ## 持久化
 
-Task 与 Memory 记录在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
+Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 
 | 记录 | 路径 | 写者 |
 | --- | --- | --- |
 | Task | `tasks/<id>.json` | `src/task-store.js` |
 | Worker Session 映射 | `tasks/sessions/<sha256(sessionId)>.json` | `src/dispatch.js` 通过 `linkWorkerSession` |
-| private 记忆 | `memory/private/<uuid>.json` | `src/memory-store.js` |
-| public 记忆 | `memory/public/<uuid>.json` | `src/memory-store.js` |
-| profile 记忆 | `memory/profile/<uuid>.json` | `src/memory-store.js` |
-| team 记忆 | `memory/team/<hash>/<uuid>.json` | `src/memory-store.js` |
-| 原始轮次归档 | `memory/archive/<hash>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
+| 全局记忆 | `memory/global.json` | `src/memory-store.js` |
+| 项目记忆 | `memory/projects/<sha256(projectRoot)>.json` | `src/memory-store.js` |
+| 原始轮次归档 | `memory/archive/<hash(sessionId, seq)>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 
-team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，记录以 `0600` 写入（`src/memory-store.js:247-253`、`src/task-store.js:34-57`、`src/memory-store.js:405-433`）。
+项目记忆哈希覆盖规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，文件以 `0600` 写入（`src/memory-store.js:64-80`、`src/task-store.js:34-57`、`src/memory-store.js:150-168`）。
 
 ## 对外接口
 
@@ -280,7 +266,6 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | --- | --- | --- |
 | `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report`/`merge` 启动 Worker |
 | `continue_worker` | Router | 给同一 Task 发 follow-up |
-| `superagent_memory` | Router、Worker | 按分类读写记忆 |
 | `create_worktree` | change worker | 创建或进入 Task 的 Worktree |
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
@@ -293,7 +278,6 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | `/superagent-lite/tasks` | `DELETE` | 删除一个已结束 Task 的记录和 worker 会话映射 |
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
-| `/superagent-lite/memory` | `GET`、`POST` | 列出记忆，或执行 `update` / `delete` |
 
 | 接口 | 值 |
 | --- | --- |
@@ -310,12 +294,11 @@ team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆
 | --- | --- |
 | `cordis.patch.yml` | 下一次 bundle 加载 |
 | `src/` 里的工具文字 | bundle 加载后的下一次拼装回合 |
-| `src/memory-extractor.js` 角色文字 | 下一次记忆提取启动 |
+| `src/memory.js` 角色文字 | 下一次记忆提取启动 |
 | `client.js` 字典 | 下一次客户端 bundle 加载 |
-| profile 记忆写入 | 立即刷新注入的 profile 上下文；Router 装载和 Worker 创建前也会刷新 |
-| Task 或 Memory 记录 | 下一次面板加载或工具调用；面板会修正已审查的 HEAD 并采纳同一 commit 的审查 |
-| 记忆写入 | 立即写入磁盘；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖匹配记录 |
-| 面板记忆编辑或删除 | 立即写入磁盘和面板；下一次工具调用读到新记录 |
+| 全局记忆写入 | 刷新 Router 的模块缓存；下一次 Worker 和 Reviewer 读取新文件 |
+| Task 记录 | 下一次面板加载；面板会修正已审查的 HEAD 并采纳同一 commit 的审查 |
+| 项目记忆写入 | 立即写入磁盘；下一次 Worker 创建和 Reviewer 审查读取新文件 |
 | GitHub remote 与 PR 事实 | PR 事实缓存 30 秒；面板刷新在缓存过期后重新读取 |
 
-profile 上下文以 order `170` 注册并标记为 `required`，在 Host 组装模型调用的运行时上下文时读取；关闭可选运行时上下文时仍然注入（`src/memory.js:20-22`）。
+记忆上下文以 order `170` 注册并标记为 `required`，在 Host 组装模型调用的运行时上下文时读取；关闭可选运行时上下文时仍然注入（`src/memory.js:53-68`）。

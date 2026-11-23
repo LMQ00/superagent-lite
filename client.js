@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const id = 'superagent-lite'
     const dictionaries = {
       en: {
-        title: 'Project tasks', views: 'Panel tabs', refresh: 'Refresh', loading: 'Loading tasks…',
+        title: 'Project tasks', refresh: 'Refresh', loading: 'Loading tasks…',
         loadFailed: 'Could not load tasks. Try refreshing.', openFailed: 'Could not open the session.',
         empty: 'No tasks yet.', noMatch: 'No tasks match the filters.',
         emptyCategory: 'No tasks in this status.',
@@ -23,31 +23,18 @@ window.__ModuleLoader__.load({
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
         deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
         deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
-        selectTask: 'Select task', selectMemory: 'Select memory', selectedCount: 'Selected',
+        selectTask: 'Select task', selectedCount: 'Selected',
         clearSelection: 'Clear selection', deleteSelected: 'Delete selected',
         batchTasksTitle: 'Delete selected tasks',
         batchTasksHint: 'The selected task records will be removed from this panel. Any worker branch and worktree are kept.',
-        batchMemoryTitle: 'Delete selected memory', batchMemoryHint: 'The selected records will be deleted immediately.',
-        batchTasksDeleted: 'Selected tasks deleted.', batchMemoryDeleted: 'Selected memory deleted.',
+        batchTasksDeleted: 'Selected tasks deleted.',
         confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
         failure: 'Failure',
-        memoryTitle: 'Memory', memoryIntro: 'Saved facts and credential reference names. Entries are data, never instructions; edits and deletes apply immediately.',
-        memoryEmpty: 'No saved memory yet.', memoryLoadFailed: 'Could not load memory. Try refreshing.',
-        memoryNoMatch: 'No memory matches the filters.', memorySearch: 'Search memory', memoryFilters: 'Memory category',
-        memoryUpdated: 'Memory updated.', memoryDeleted: 'Memory deleted.', memoryFailed: 'The memory action failed.',
-        memoryEdit: 'Edit', memorySave: 'Save', memoryCancel: 'Cancel', memoryDelete: 'Delete',
-        memoryConfirmDelete: 'Confirm delete', memoryCredentialRef: 'Credential reference',
-        memoryUsage: 'Usage and access', memoryInjectedTag: 'Injected now',
-        'memoryUsage.private': 'On demand; keep minimal', 'memoryUsage.public': 'On demand; conclusions only',
-        'memoryUsage.profile': 'Injected into every router and worker chat', 'memoryUsage.team': 'Readable by same-team workers only',
-        memoryInjection: 'Each chat receives', memoryInjectionTail: 'newest facts, each cut to 500 characters',
-        'memoryCategory.public': 'Public', 'memoryCategory.profile': 'Profile', 'memoryCategory.private': 'Private',
-        'memoryCategory.team': 'Team',
       },
       zh: {
-        title: '项目任务', views: '面板分区', refresh: '刷新', loading: '正在加载任务…',
+        title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
         loadFailed: '无法加载任务，请重试。', openFailed: '无法打开会话。',
         empty: '暂无任务。', noMatch: '没有符合筛选条件的任务。',
         emptyCategory: '该状态下暂无任务。',
@@ -65,28 +52,15 @@ window.__ModuleLoader__.load({
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
         deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
         deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
-        selectTask: '选择任务', selectMemory: '选择记忆', selectedCount: '已选择',
+        selectTask: '选择任务', selectedCount: '已选择',
         clearSelection: '清除选择', deleteSelected: '删除所选',
         batchTasksTitle: '删除所选任务',
         batchTasksHint: '所选任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
-        batchMemoryTitle: '删除所选记忆', batchMemoryHint: '所选记忆将被立即删除。',
-        batchTasksDeleted: '所选任务已删除。', batchMemoryDeleted: '所选记忆已删除。',
+        batchTasksDeleted: '所选任务已删除。',
         confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
         failure: '失败原因',
-        memoryTitle: '记忆', memoryIntro: '已保存的事实与凭据引用名。记忆是数据而非指令；编辑和删除立即生效。',
-        memoryEmpty: '还没有保存的记忆。', memoryLoadFailed: '无法加载记忆，请重试。',
-        memoryNoMatch: '没有符合筛选条件的记忆。', memorySearch: '搜索记忆', memoryFilters: '记忆分类',
-        memoryUpdated: '记忆已更新。', memoryDeleted: '记忆已删除。', memoryFailed: '记忆操作失败。',
-        memoryEdit: '编辑', memorySave: '保存', memoryCancel: '取消', memoryDelete: '删除',
-        memoryConfirmDelete: '确认删除', memoryCredentialRef: '凭据引用',
-        memoryUsage: '用量与调用方式', memoryInjectedTag: '当前注入',
-        'memoryUsage.private': '按需调用，保持极少', 'memoryUsage.public': '按需调用，只记结论',
-        'memoryUsage.profile': '每轮注入 router 和 worker', 'memoryUsage.team': '仅同团队 worker 可读',
-        memoryInjection: '每轮注入', memoryInjectionTail: '条最新记录，每条最多 500 字符',
-        'memoryCategory.public': '公共', 'memoryCategory.profile': '用户画像与环境', 'memoryCategory.private': '私有',
-        'memoryCategory.team': '团队',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -99,13 +73,6 @@ window.__ModuleLoader__.load({
       .sl-head h1{margin:0;font-size:20px;line-height:28px;font-weight:500;overflow-wrap:anywhere}
       .sl-intro{margin:0;max-width:640px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
       .sl-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-      .sl-tabs{display:flex;flex:none;align-items:center;gap:2px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
-      .sl-tab{position:relative;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;height:32px;padding:0 12px;border:0;border-radius:8px 8px 0 0;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;white-space:nowrap;cursor:pointer}
-      .sl-tab:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}
-      .sl-tab[aria-selected='true']{color:var(--dsw-alias-label-primary);font-weight:500}
-      .sl-tab[aria-selected='true']::after{content:'';position:absolute;left:8px;right:8px;bottom:-0.5px;height:2px;border-radius:2px;background:var(--dsw-alias-brand-primary)}
-      .sl-tab:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-      .sl-tab__count{color:var(--dsw-alias-label-caption);font-size:12px;line-height:18px;font-weight:400;font-variant-numeric:tabular-nums}
       .sl-body{display:flex;flex:1;flex-direction:column;gap:12px;min-height:0}
       .sl-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:40px}
       .sl-filters{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
@@ -171,24 +138,11 @@ window.__ModuleLoader__.load({
       .sl-code{font-family:var(--dsw-font-mono,monospace);font-size:12px;color:var(--dsw-alias-label-tertiary)}
       .sl-link{color:var(--dsw-alias-brand-primary);text-decoration:none}
       .sl-link:hover{text-decoration:underline}
-      .sl-memory-usage{display:flex;flex:none;align-items:center;flex-wrap:wrap;gap:4px 14px;min-width:0;padding:8px 0;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
-      .sl-memory-tools{display:flex;flex:none;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
-      .sl-memory-filters{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
-      .sl-input{box-sizing:border-box;height:28px;min-width:180px;max-width:100%;padding:0 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}
-      .sl-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
-      .sl-memory{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px 8px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
-      .sl-memory__head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-width:0}
-      .sl-memory__head .sl-check{align-self:flex-start;margin-top:2px}
       .sl-check{flex:none;width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
       .sl-check:disabled{cursor:not-allowed}
       .sl-task__title .sl-check{margin-top:3px}
       .sl-batch{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
       .sl-batch .sl-hint{flex:1 1 auto}
-      .sl-memory__content{margin:0;font-size:13px;line-height:20px;overflow-wrap:anywhere;white-space:pre-wrap}
-      .sl-memory__content[data-empty='true']{color:var(--dsw-alias-label-caption)}
-      .sl-memory__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:28px}
-      .sl-textarea{box-sizing:border-box;display:block;width:100%;min-height:72px;padding:8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;resize:vertical}
-      .sl-textarea:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
       .sl-modal-backdrop{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:24px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 30%,transparent)}
       .sl-modal{box-sizing:border-box;width:min(420px,100%);display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:14px;background:var(--dsw-alias-bg-base);box-shadow:0 12px 40px color-mix(in srgb,var(--dsw-alias-label-primary) 24%,transparent)}
       .sl-modal h2{margin:0;font-size:16px;line-height:24px;font-weight:500}
@@ -202,8 +156,7 @@ window.__ModuleLoader__.load({
         .sl-board{padding-top:20px}
         html[data-platform='darwin'] .sl-board{padding-top:calc(20px + var(--dsh-frame-top-clearance,0px))}
         .sl-select{min-width:0;flex:1 1 140px}
-        .sl-input{min-width:0;flex:1 1 180px}
-        .sl-filters,.sl-scope,.sl-memory-tools{width:100%}
+        .sl-filters,.sl-scope{width:100%}
         .sl-scope{margin-inline-start:0}
       }
       @media (prefers-reduced-motion:reduce){
@@ -212,7 +165,6 @@ window.__ModuleLoader__.load({
     `
 
     const CATEGORY_ORDER = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
-    const MEMORY_CATEGORIES = ['private', 'public', 'profile', 'team']
     const TONE = {
       unmerged: 'warning', running: 'ongoing', unreviewed: 'warning',
       completed: 'done', failed: 'error', answer: 'done',
@@ -275,7 +227,6 @@ window.__ModuleLoader__.load({
       const [team, setTeam] = useState('')
       const [project, setProject] = useState('')
       const [category, setCategory] = useState('')
-      const [tab, setTab] = useState('tasks')
       const [openFailed, setOpenFailed] = useState(false)
       const [pending, setPending] = useState('')
       const [error, setError] = useState('')
@@ -284,44 +235,17 @@ window.__ModuleLoader__.load({
       const [dialogData, setDialogData] = useState({ phase: 'loading' })
       const [dialogChoice, setDialogChoice] = useState('')
       const [dialogError, setDialogError] = useState('')
-      const [memories, setMemories] = useState([])
-      const [memoryInjection, setMemoryInjection] = useState(undefined)
-      const [memoryPhase, setMemoryPhase] = useState('loading')
-      const [memoryCategory, setMemoryCategory] = useState('')
-      const [memorySearch, setMemorySearch] = useState('')
-      const [memoryPending, setMemoryPending] = useState('')
-      const [memoryError, setMemoryError] = useState('')
-      const [memoryNotice, setMemoryNotice] = useState('')
-      const [memoryEditing, setMemoryEditing] = useState('')
-      const [memoryText, setMemoryText] = useState('')
-      const [memoryConfirm, setMemoryConfirm] = useState('')
       const [selectedTasks, setSelectedTasks] = useState([])
-      const [selectedMemory, setSelectedMemory] = useState([])
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
       const [batchError, setBatchError] = useState('')
       const active = useRef(null)
       const headingId = useId()
 
-      const readMemoryView = async signal => {
-        const response = await fetch('/superagent-lite/memory', {
-          method: 'GET', credentials: 'same-origin', cache: 'no-store', signal,
-        })
-        if (!response.ok) throw new Error('Memory unavailable')
-        const value = await response.json()
-        if (!Array.isArray(value?.records)) throw new Error('Invalid memory list')
-        return {
-          records: value.records.filter(record => record?.id && MEMORY_CATEGORIES.includes(record.category)),
-          injection: value.injection?.profile && Array.isArray(value.injection.profile.recordIds)
-            ? value.injection.profile : undefined,
-        }
-      }
-
       useEffect(() => {
         const controller = new AbortController()
         active.current = controller
         setPhase('loading')
-        setMemoryPhase('loading')
         async function load() {
           try {
             const response = await fetch('/superagent-lite/tasks', {
@@ -343,23 +267,7 @@ window.__ModuleLoader__.load({
             }
           }
         }
-        async function loadMemory() {
-          try {
-            const view = await readMemoryView(controller.signal)
-            if (controller.signal.aborted) return
-            setMemories(view.records)
-            setMemoryInjection(view.injection)
-            setMemoryPhase('ready')
-          } catch {
-            if (!controller.signal.aborted) {
-              setMemories([])
-              setMemoryInjection(undefined)
-              setMemoryPhase('error')
-            }
-          }
-        }
         void load()
-        void loadMemory()
         return () => controller.abort()
       }, [revision])
 
@@ -376,39 +284,16 @@ window.__ModuleLoader__.load({
         .map(key => ({ key, tasks: shown.filter(task => task.status === key) }))
         .filter(group => group.tasks.length > 0)
 
-      const memoryKey = record => `${record.category}:${record.id}`
-      const memoryValue = record => record.category === 'private'
-        ? (record.credentialRef ?? '') : (record.content ?? '')
-      const memoryCounts = MEMORY_CATEGORIES.reduce((counts, key) => {
-        counts[key] = memories.filter(record => record.category === key).length
-        return counts
-      }, {})
-      const injectedProfileIds = new Set(memoryInjection?.recordIds ?? [])
-      const memoryTerm = memorySearch.trim().toLowerCase()
-      const shownMemory = memories
-        .filter(record => !memoryCategory || record.category === memoryCategory)
-        .filter(record => !memoryTerm || [
-          record.content, record.credentialRef, record.id, record.teamId, record.projectRoot,
-          t(`memoryCategory.${record.category}`),
-        ].some(value => typeof value === 'string' && value.toLowerCase().includes(memoryTerm)))
       const deletableTask = task => task.status !== 'running' || task.unconfirmed === true
       const selectedTaskRows = tasks.filter(task => selectedTasks.includes(task.id) && deletableTask(task))
-      const selectedMemoryRows = memories.filter(record => selectedMemory.includes(memoryKey(record)))
 
       const refresh = () => {
         active.current?.abort()
         setPhase('loading')
-        setMemoryPhase('loading')
         setOpenFailed(false)
         setError('')
         setNotice('')
-        setMemoryEditing('')
-        setMemoryConfirm('')
-        setMemoryPending('')
-        setMemoryError('')
-        setMemoryNotice('')
         setSelectedTasks([])
-        setSelectedMemory([])
         setBatch('')
         setBatchError('')
         setBatchPending(false)
@@ -419,83 +304,15 @@ window.__ModuleLoader__.load({
         h('select', { className: 'sl-select', value, onChange: event => set(event.target.value) },
           h('option', { value: '' }, t(empty)),
           ...optionsFor(key).map(option => h('option', { key: option, value: option }, option))))
-      const beginMemoryEdit = record => {
-        setMemoryEditing(memoryKey(record))
-        setMemoryText(memoryValue(record))
-        setMemoryConfirm('')
-        setMemoryError('')
-        setMemoryNotice('')
-        setSelectedMemory(current => current.filter(value => value !== memoryKey(record)))
-      }
-      const cancelMemoryEdit = () => {
-        setMemoryEditing('')
-        setMemoryText('')
-      }
       const toggleTaskSelection = taskId => setSelectedTasks(current => current.includes(taskId)
         ? current.filter(value => value !== taskId) : [...current, taskId])
-      const toggleMemorySelection = key => setSelectedMemory(current => current.includes(key)
-        ? current.filter(value => value !== key) : [...current, key])
       const clearSelection = () => {
         setSelectedTasks([])
-        setSelectedMemory([])
       }
       const openBatch = kind => {
         setBatch(kind)
         setBatchError('')
         setDialog(null)
-      }
-      const memoryRequest = async (record, action, extra = {}) => {
-        const body = { action, category: record.category, id: record.id, ...extra }
-        if (record.category === 'team') {
-          body.teamId = record.teamId
-          body.projectRoot = record.projectRoot
-        }
-        const response = await fetch('/superagent-lite/memory', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        let value
-        try {
-          value = await response.json()
-        } catch {
-          value = undefined
-        }
-        if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('memoryFailed'))
-        return value
-      }
-      const memoryAction = async (record, action) => {
-        const key = memoryKey(record)
-        setMemoryPending(key)
-        setMemoryError('')
-        setMemoryNotice('')
-        try {
-          const extra = action === 'update'
-            ? { [record.category === 'private' ? 'credentialRef' : 'content']: memoryText } : {}
-          const value = await memoryRequest(record, action, extra)
-          if (action === 'update') {
-            const saved = value?.record
-            if (!saved || typeof saved !== 'object') throw new Error(t('memoryFailed'))
-            setMemories(current => current.map(item => memoryKey(item) === key ? { ...item, ...saved } : item))
-            setMemoryNotice(t('memoryUpdated'))
-          } else {
-            setMemories(current => current.filter(item => memoryKey(item) !== key))
-            setMemoryNotice(t('memoryDeleted'))
-          }
-          setMemoryEditing('')
-          setMemoryText('')
-          setMemoryConfirm('')
-          if (record.category === 'profile') {
-            await readMemoryView().then(view => {
-              setMemories(view.records)
-              setMemoryInjection(view.injection)
-            }).catch(() => {})
-          }
-        } catch (error) {
-          setMemoryError(typeof error?.message === 'string' && error.message ? error.message : t('memoryFailed'))
-        } finally {
-          setMemoryPending('')
-        }
       }
       const statusLabel = status => t(Object.hasOwn(dictionaries.en, `status.${status}`) ? `status.${status}` : 'status.failed')
       const statusMark = status => {
@@ -585,45 +402,6 @@ window.__ModuleLoader__.load({
           setBatchPending(false)
           return
         }
-        if (batch !== 'memory') {
-          setBatchPending(false)
-          return
-        }
-        setMemoryError('')
-        const removed = []
-        const failed = []
-        for (const record of selectedMemoryRows) {
-          try {
-            await memoryRequest(record, 'delete')
-            removed.push(record)
-          } catch (error) {
-            failed.push({ record, message: typeof error?.message === 'string' && error.message ? error.message : t('memoryFailed') })
-          }
-        }
-        const removedKeys = new Set(removed.map(memoryKey))
-        if (removed.length > 0) {
-          setMemories(current => current.filter(record => !removedKeys.has(memoryKey(record))))
-          setMemoryInjection(current => current ? {
-            ...current,
-            recordIds: current.recordIds.filter(id => !removed.some(record => record.category === 'profile' && record.id === id)),
-          } : current)
-          setMemoryNotice(t('batchMemoryDeleted'))
-        }
-        setSelectedMemory(failed.map(item => memoryKey(item.record)))
-        if (failed.length > 0) {
-          const message = [...new Set(failed.map(item => item.message))].join('; ')
-          setMemoryError(message)
-          setBatchError(message)
-        } else {
-          setBatch('')
-        }
-        if (removed.some(record => record.category === 'profile')) {
-          await readMemoryView().then(view => {
-            setMemories(view.records)
-            setMemoryInjection(view.injection)
-          }).catch(() => {})
-        }
-        setBatchPending(false)
       }
       const reviewTask = async task => {
         setPending(`${task.id}:review`)
@@ -821,92 +599,13 @@ window.__ModuleLoader__.load({
                 onClick: () => void confirmDialog(),
               }, confirm))))
       }
-      const memoryRow = record => {
-        const key = memoryKey(record)
-        const editing = memoryEditing === key
-        const confirming = memoryConfirm === key
-        const pending = memoryPending === key
-        const updated = displayTime(record.updatedAt)
-        const value = memoryValue(record)
-        const fieldLabel = record.category === 'private' ? t('memoryCredentialRef') : t('memoryEdit')
-        return h('li', { key, className: 'sl-memory' },
-          h('div', { className: 'sl-memory__head' },
-            h('input', {
-              key: 'select', className: 'sl-check', type: 'checkbox',
-              checked: selectedMemory.includes(key),
-              disabled: pending || editing,
-              'aria-label': `${t('selectMemory')}: ${value || record.id}`,
-              onChange: () => toggleMemorySelection(key),
-            }),
-            h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t(`memoryCategory.${record.category}`)),
-            record.category === 'profile' && injectedProfileIds.has(record.id) &&
-              h('span', { className: 'sl-tag', 'data-tone': 'success' }, t('memoryInjectedTag')),
-            h('code', { className: 'sl-code', title: record.id }, record.id),
-            updated && h('span', { className: 'sl-lv' },
-              h('span', { className: 'sl-lv__label' }, t('updated')),
-              h('span', { className: 'sl-lv__value' }, updated)),
-            record.category === 'team' && chip('team', record.teamId),
-            record.category === 'team' && chip('project', record.projectRoot)),
-          editing
-            ? h('textarea', {
-              className: 'sl-textarea', value: memoryText, 'aria-label': fieldLabel,
-              maxLength: record.category === 'private' ? 128 : 16000,
-              onChange: event => setMemoryText(event.target.value),
-            })
-            : h('p', { className: 'sl-memory__content', 'data-empty': value ? undefined : 'true' },
-              record.category === 'private'
-                ? `${t('memoryCredentialRef')}: ${value || '—'}`
-                : (value || '—')),
-          h('div', { className: 'sl-memory__actions' },
-            ...(editing
-              ? [
-                h('button', {
-                  key: 'save', type: 'button', className: 'sl-btn sl-btn--outline',
-                  disabled: pending || !memoryText.trim(),
-                  onClick: () => void memoryAction(record, 'update'),
-                }, t('memorySave')),
-                h('button', {
-                  key: 'cancel', type: 'button', className: 'sl-btn',
-                  disabled: pending, onClick: cancelMemoryEdit,
-                }, t('memoryCancel')),
-              ]
-              : [
-                h('button', {
-                  key: 'edit', type: 'button', className: 'sl-btn sl-btn--outline',
-                  disabled: pending || confirming, onClick: () => beginMemoryEdit(record),
-                }, t('memoryEdit')),
-                confirming
-                  ? h('button', {
-                    key: 'confirm', type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
-                    disabled: pending, onClick: () => void memoryAction(record, 'delete'),
-                  }, t('memoryConfirmDelete'))
-                  : h('button', {
-                    key: 'delete', type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
-                    disabled: pending || editing,
-                    onClick: () => {
-                      setMemoryConfirm(key)
-                      setMemoryEditing('')
-                      setMemoryError('')
-                      setMemoryNotice('')
-                    },
-                  }, icon('trash'), t('memoryDelete')),
-                confirming && h('button', {
-                  key: 'cancel-delete', type: 'button', className: 'sl-btn',
-                  disabled: pending, onClick: () => setMemoryConfirm(''),
-                }, t('memoryCancel')),
-              ]),
-            pending && h('span', { key: 'pending', className: 'sl-hint' }, t('working'))))
-      }
-
       const batchDialog = () => {
         if (!batch) return null
-        const memory = batch === 'memory'
-        const count = memory ? selectedMemoryRows.length : selectedTaskRows.length
-        const title = memory ? t('batchMemoryTitle') : t('batchTasksTitle')
+        const count = selectedTaskRows.length
         return h('div', { className: 'sl-modal-backdrop' },
-          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-            h('h2', null, title),
-            h('p', null, memory ? t('batchMemoryHint') : t('batchTasksHint')),
+          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('batchTasksTitle') },
+            h('h2', null, t('batchTasksTitle')),
+            h('p', null, t('batchTasksHint')),
             h('p', { className: 'sl-hint' }, `${t('selectedCount')} ${count}`),
             batchError && h('p', { role: 'alert', className: 'sl-error' }, batchError),
             h('div', { className: 'sl-modal__actions' },
@@ -923,115 +622,60 @@ window.__ModuleLoader__.load({
               }, t('confirmDelete')))))
       }
 
-      const taskView = tab !== 'memory'
-      const tasksTabId = `${headingId}-tasks-tab`
-      const memoryTabId = `${headingId}-memory-tab`
+      const filters = tasks.length > 0 && h('div', { className: 'sl-filters' },
+        h('div', { className: 'sl-filter-group', role: 'group', 'aria-label': t('taskFilters') },
+          h('button', {
+            type: 'button', className: 'sl-filter', 'aria-pressed': category === '',
+            onClick: () => setCategory(''),
+          }, t('all'), h('span', { className: 'sl-filter__count' }, String(scoped.length))),
+          ...CATEGORY_ORDER.map(key => h('button', {
+            key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
+            onClick: () => setCategory(key),
+          }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
+        h('div', { className: 'sl-scope' },
+          filter('team', 'allTeams', 'teamId', team, setTeam),
+          filter('project', 'allProjects', 'projectRoot', project, setProject)))
+      const selection = selectedTaskRows.length > 0 && h('div', { className: 'sl-batch' },
+        h('span', { className: 'sl-hint' }, `${t('selectedCount')} ${selectedTaskRows.length}`),
+        h('button', {
+          type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: batchPending,
+          onClick: () => openBatch('tasks'),
+        }, icon('trash'), t('deleteSelected')),
+        h('button', {
+          type: 'button', className: 'sl-btn', disabled: batchPending, onClick: clearSelection,
+        }, t('clearSelection')))
+      const list = shown.length > 0 && h('div', { className: 'sl-scroll' },
+        h('div', { className: 'sl-groups' },
+          ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
+            h('h2', { className: 'sl-group__title' },
+              statusLabel(group.key),
+              h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
+            h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow))))))
+
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
-              h('h1', { id: headingId }, t(taskView ? 'title' : 'memoryTitle')),
-              h('p', { className: 'sl-intro' }, t(taskView ? 'intro' : 'memoryIntro'))),
+              h('h1', { id: headingId }, t('title')),
+              h('p', { className: 'sl-intro' }, t('intro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
-                onClick: refresh, disabled: taskView ? phase === 'loading' : memoryPhase === 'loading',
+                onClick: refresh, disabled: phase === 'loading',
               }, icon('refresh'), t('refresh')))),
-          h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
-            h('button', {
-              id: tasksTabId, type: 'button', role: 'tab', className: 'sl-tab',
-              'aria-selected': taskView,
-              onClick: () => setTab('tasks'),
-            }, t('title')),
-            h('button', {
-              id: memoryTabId, type: 'button', role: 'tab', className: 'sl-tab',
-              'aria-selected': !taskView,
-              onClick: () => setTab('memory'),
-            }, t('memoryTitle'),
-            memories.length > 0 && h('span', { className: 'sl-tab__count' }, String(memories.length)))),
-          taskView
-            ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
-              tasks.length > 0 && h('div', { className: 'sl-filters' },
-                h('div', { className: 'sl-filter-group', role: 'group', 'aria-label': t('taskFilters') },
-                  h('button', {
-                    type: 'button', className: 'sl-filter', 'aria-pressed': category === '',
-                    onClick: () => setCategory(''),
-                  }, t('all'), h('span', { className: 'sl-filter__count' }, String(scoped.length))),
-                  ...CATEGORY_ORDER.map(key => h('button', {
-                    key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
-                    onClick: () => setCategory(key),
-                  }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
-                h('div', { className: 'sl-scope' },
-                  filter('team', 'allTeams', 'teamId', team, setTeam),
-                  filter('project', 'allProjects', 'projectRoot', project, setProject))),
-              selectedTaskRows.length > 0 && h('div', { className: 'sl-batch' },
-                h('span', { className: 'sl-hint' }, `${t('selectedCount')} ${selectedTaskRows.length}`),
-                h('button', {
-                  type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: batchPending,
-                  onClick: () => openBatch('tasks'),
-                }, icon('trash'), t('deleteSelected')),
-                h('button', {
-                  type: 'button', className: 'sl-btn', disabled: batchPending, onClick: clearSelection,
-                }, t('clearSelection'))),
-              phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
-              phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
-              openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
-              error && h('p', { className: 'sl-error', role: 'alert' }, error),
-              notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
-              phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
-              phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
-                h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
-              shown.length > 0 && h('div', { className: 'sl-scroll' },
-                h('div', { className: 'sl-groups' },
-                  ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
-                    h('h2', { className: 'sl-group__title' },
-                      statusLabel(group.key),
-                      h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
-                    h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow)))))))
-            : h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
-              memoryPhase === 'ready' && h('div', { className: 'sl-memory-usage', 'aria-label': t('memoryUsage') },
-                ...MEMORY_CATEGORIES.map(key => h('span', { key, className: 'sl-lv' },
-                  h('span', { className: 'sl-lv__label' }, t(`memoryUsage.${key}`)),
-                  h('span', { className: 'sl-lv__value' }, String(memoryCounts[key]))))),
-              memoryInjection && h('p', { className: 'sl-hint' },
-                `${t('memoryInjection')} ${memoryInjection.recordIds.length}/${memoryInjection.limit} ${t('memoryInjectionTail')}`),
-              memoryPhase === 'ready' && memories.length > 0 && h('div', { className: 'sl-memory-tools' },
-                h('div', { className: 'sl-memory-filters', role: 'group', 'aria-label': t('memoryFilters') },
-                  h('button', {
-                    type: 'button', className: 'sl-filter', 'aria-pressed': memoryCategory === '',
-                    onClick: () => setMemoryCategory(''),
-                  }, t('all'), h('span', { className: 'sl-filter__count' }, String(memories.length))),
-                  ...MEMORY_CATEGORIES.map(key => h('button', {
-                    key, type: 'button', className: 'sl-filter', 'aria-pressed': memoryCategory === key,
-                    onClick: () => setMemoryCategory(key),
-                  }, t(`memoryCategory.${key}`),
-                  h('span', { className: 'sl-filter__count' }, String(memoryCounts[key]))))),
-                h('input', {
-                  className: 'sl-input', type: 'search', value: memorySearch,
-                  placeholder: t('memorySearch'), 'aria-label': t('memorySearch'),
-                  onChange: event => setMemorySearch(event.target.value),
-                })),
-              selectedMemoryRows.length > 0 && h('div', { className: 'sl-batch' },
-                h('span', { className: 'sl-hint' }, `${t('selectedCount')} ${selectedMemoryRows.length}`),
-                h('button', {
-                  type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: batchPending,
-                  onClick: () => openBatch('memory'),
-                }, icon('trash'), t('deleteSelected')),
-                h('button', {
-                  type: 'button', className: 'sl-btn', disabled: batchPending, onClick: clearSelection,
-                }, t('clearSelection'))),
-              memoryError && h('p', { role: 'alert', className: 'sl-error' }, memoryError),
-              memoryNotice && h('p', { role: 'status', className: 'sl-notice' }, memoryNotice),
-              memoryPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
-              memoryPhase === 'error' && h('p', { role: 'alert', className: 'sl-error' }, t('memoryLoadFailed')),
-              memoryPhase === 'ready' && memories.length === 0 &&
-                h('p', { role: 'status', className: 'sl-hint' }, t('memoryEmpty')),
-              memoryPhase === 'ready' && memories.length > 0 && shownMemory.length === 0 &&
-                h('p', { className: 'sl-hint', role: 'status' }, t('memoryNoMatch')),
-              shownMemory.length > 0 && h('div', { className: 'sl-scroll' },
-                h('ul', { className: 'sl-list' }, ...shownMemory.map(memoryRow))))
-        ),
+          h('div', { className: 'sl-body' },
+            filters,
+            selection,
+            phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+            phase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('loadFailed')),
+            openFailed && h('p', { className: 'sl-error', role: 'alert' }, t('openFailed')),
+            error && h('p', { className: 'sl-error', role: 'alert' }, error),
+            notice && h('p', { className: 'sl-notice', role: 'status' }, notice),
+            phase === 'ready' && tasks.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('empty')),
+            phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
+              h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
+            list)),
         dialogView(),
         batchDialog())
     }
