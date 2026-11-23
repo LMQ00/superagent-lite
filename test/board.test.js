@@ -40,7 +40,10 @@ test('board refuses unauthenticated and non-owner readers without reading disk',
 })
 
 test('board lists only its public view fields to the owner and flags unrecovered tasks', async () => {
-  const rows = [{ id: 'a', task: 'private details', mode: 'report', teamId: 'a', status: 'running', workerSessionId: 'w1' }, { id: 'b', status: 'running', workerSessionId: 'w2' }]
+  const rows = [
+    { id: 'a', task: 'private details', mode: 'report', teamId: 'a', status: 'running', workerSessionId: 'w1', land: true, landAuthorizedAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'b', status: 'running', workerSessionId: 'w2' },
+  ]
   const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, { get: id => id === 'w1' }, () => rows)
   assert.equal((await request(handler, 'POST')).status, 405)
   assert.equal((await request(handler, 'POST')).headers.allow, 'GET, DELETE')
@@ -50,6 +53,9 @@ test('board lists only its public view fields to the owner and flags unrecovered
   assert.deepEqual(tasks.map(row => [row.id, row.mode, row.status, row.task]),
     [['a', 'report', 'running', undefined], ['b', undefined, 'running', undefined]])
   assert.deepEqual(tasks.map(row => row.unconfirmed), [undefined, true])
+  assert.deepEqual(tasks.map(row => row.land), [true, false])
+  assert.equal(tasks[0].landAuthorizedAt, '2026-01-01T00:00:00.000Z')
+  assert.equal(tasks[1].landAuthorizedAt, undefined)
 })
 
 test('board overlays the panel status from the Git branch view', async () => {

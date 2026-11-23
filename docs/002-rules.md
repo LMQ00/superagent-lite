@@ -28,6 +28,7 @@
 - Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:68-81`）。
 - Worker 空闲时，发送完整任务消息加 `Resume` 段；Task 处于 `awaiting-merge`、`review-required` 或 `failed` 且已有 Worktree 时，先标为 `resuming` 并清空旧 Review（`src/continue.js:82-104`）。
 - follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败到已结束的 Task 时标为 `failed`；发送失败到运行中的 Task 保持 `running`（`src/continue.js:29-46`、`src/continue.js:91-103`）。
+- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；发送失败时回滚这次新增的授权（`src/continue.js:28-48`、`src/continue.js:94-139`）。
 - 已发布的 Task 不继续；发布后的下一个输入是新工作。
 
 ### 不交叉
@@ -45,6 +46,7 @@
 | 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
 | 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
+| 落地 | 派发或续派发时携带 `land=true` | Worker 可推送指派分支、开 PR、合并本任务的已审提交；只限指派分支与 reviewed HEAD | 否；未携带时 Worker 不推送、不开 PR、不合并 |
 | 合并 | 用户直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` | 在用户明确授权后把 reviewed HEAD 本地合入所选分支（`/merge-worker` 用 base branch），不需要 `gh` | 否；需要明确授权、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要 `gh` 账号、GitHub remote、审查通过的 HEAD 和 full access |
 | 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
@@ -77,6 +79,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - `create_worktree` 向 worktree 服务请求名字 `sl-<team slug>-<taskId>` 的 Worktree；Team slug 是小写 Team 名，把连续非字母数字替换为 `-`，去掉首尾 `-`，截到 32 字符（`src/worktree-tool.js:39-40`）。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:42-49`）。
 - 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
 - Worker 的 subagent 结束时冻结，之后不能用任何工具，包括记忆和消息工具（`index.js:114-116`、`index.js:58-59`）。
+- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR（`index.js:62-87`、`src/landing.js`）。
 - `review_worker_commit`、记忆、提取和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`report_task` 只对活跃的 report 任务可用（`index.js:67-90`）。
 - report worker 在项目 checkout 中只能使用 `read`、`glob`、`grep`、`read_image`、`bash`、`todo_write`，并以 `report_task` 结束；其他工具被拒绝（`index.js:57-66`）。
 - `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:21-31`）。
@@ -122,7 +125,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## Git 操作规则
 
-合并只在用户明确授权后执行：直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` 命令。没有授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit，不推送也不合并（`cordis.patch.yml:43`、`src/worker-prompt.js:57`）。
+合并只在用户明确授权后执行：直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` 命令。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并指派分支上的已审提交。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:44`、`src/worker-prompt.js:57`、`src/landing.js`）。
 
 ### 共同前提
 

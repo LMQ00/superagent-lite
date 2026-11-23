@@ -43,6 +43,78 @@ function context(sends, workerStatus, onSend) {
   }
 }
 
+test('continue_worker records an explicit landing authorization on the task', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask } = await import('../src/task-store.js')
+  const id = '5555555555555555'
+  await taskFixture(id)
+  const sends = []
+  const tool = createContinueTool(context(sends, 'running'))
+  await tool.execute({ taskId: id, task: 'Now land it', land: true }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(sends[0].text, /Landing is authorized for this task/)
+  assert.match(sends[0].text, /push the assigned branch, open a pull request, and merge only this task's reviewed commit into main/)
+  const task = await readTask(id)
+  assert.equal(task.land, true)
+  assert.equal(task.landAuthorizedVia, 'continue')
+  assert.equal(typeof task.landAuthorizedAt, 'string')
+})
+
+test('continue_worker rejects a landing flag that is not boolean', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const id = '6666666666666666'
+  await taskFixture(id)
+  const tool = createContinueTool(context([], 'running'))
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'Land it', land: 'yes' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /land must be true or false/,
+  )
+})
+
+test('a failed steering delivery rolls back a new landing authorization', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask } = await import('../src/task-store.js')
+  const id = '7777777777777777'
+  await taskFixture(id)
+  const tool = createContinueTool({ agents: { get: () => ({ status: 'running' }) }, subagents: { async sendMessage() { throw new Error('worker is gone') } } })
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'Land it', land: true }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /worker is gone/,
+  )
+  const task = await readTask(id)
+  assert.equal(task.land, false)
+  assert.equal(task.landAuthorizedVia, undefined)
+})
+
+test('a failed resume delivery rolls back a new landing authorization', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '8888888888888888'
+  await taskFixture(id)
+  await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const tool = createContinueTool({ subagents: { async sendMessage() { throw new Error('worker is gone') } } })
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'Land it', land: true }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /worker is gone/,
+  )
+  const task = await readTask(id)
+  assert.equal(task.status, 'failed')
+  assert.equal(task.land, false)
+  assert.equal(task.landAuthorizedVia, undefined)
+})
+
+test('continue_worker keeps a settled task unauthorized when no landing flag is carried', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '9999999999999999'
+  await taskFixture(id)
+  await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const sends = []
+  const tool = createContinueTool(context(sends))
+  await tool.execute({ taskId: id, task: 'Another change' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(sends[0].text, /Landing is not authorized for this task/)
+  assert.equal((await readTask(id)).land, undefined)
+})
+
 async function followUpTexts(id) {
   const { readTask } = await import('../src/task-store.js')
   return ((await readTask(id)).followUps ?? []).map(item => item.text)
@@ -108,7 +180,8 @@ test('continue_worker resumes a settled worker with the dispatch task message', 
   assert.match(sends[0].text, /Requirements:\nImplement it\.\n\nAcceptance: tests pass\./)
   assert.match(sends[0].text, /Follow-up:\nNew requirement/)
   assert.match(sends[0].text, /Do not redo completed work or repeat the dispatch setup phases\./)
-  assert.match(sends[0].text, /Do not push; merge only after the user explicitly authorizes it/)
+  assert.match(sends[0].text, /Landing is not authorized for this task: do not push, open a pull request, or merge/)
+  assert.doesNotMatch(sends[0].text, /Landing is authorized for this task/)
   assertSectionOrder(sends[0].text, continuationSections)
   assert.equal((await readTask(id)).status, 'resuming')
   assert.equal((await readTask(id)).task, originalTask)

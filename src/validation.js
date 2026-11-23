@@ -16,7 +16,14 @@ export function validateDispatchArguments(args) {
   if (!task || task.length > 20000) throw new RangeError('task must be 1-20000 characters')
   const mode = args.mode ?? 'change'
   if (mode !== 'change' && mode !== 'report') throw new TypeError('mode must be change or report')
-  return { delegate: true, title, teamId: args.teamId, task, mode }
+  const land = validateLandFlag(args.land)
+  if (mode === 'report' && land) throw new TypeError('report-only tasks cannot be authorized to land')
+  return { delegate: true, title, teamId: args.teamId, task, mode, land }
+}
+
+export function validateLandFlag(value) {
+  if (value !== undefined && typeof value !== 'boolean') throw new TypeError('land must be true or false')
+  return value === true
 }
 
 export function validTeamId(value) {

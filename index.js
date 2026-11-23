@@ -1,4 +1,6 @@
+import { resolve } from 'node:path'
 import { taskForSession, updateTask } from './src/task-store.js'
+import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
@@ -49,6 +51,7 @@ export async function apply(ctx) {
     }
     const task = await taskForSession(undefined, agent.id)
     if (!task || task.parentSessionId !== agent.session.header.parentSession) return
+    if (!landingState(task.id)) initLanding(task)
     const active = ['starting', 'resuming', 'running'].includes(task.status)
     if (task.status === 'starting' || task.status === 'resuming') await updateTask(task.id, { status: 'running' })
     const state = { frozen: !active, path: task.worktree?.path }
@@ -56,14 +59,32 @@ export async function apply(ctx) {
     const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
     const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
     const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write'])
-    const guard = agent.ctx.tools.guard(({ name }) => {
+    const landingDenial = input => {
+      if (typeof input?.command !== 'string') return undefined
+      const sessionCwd = ctx.workingDirectory.get(agent.session)
+      const workdir = typeof input.workdir === 'string' && typeof sessionCwd === 'string'
+        ? resolve(sessionCwd, input.workdir)
+        : sessionCwd
+      return checkLandingCommand(input.command, landingState(task.id), workdir)
+    }
+    const guard = agent.ctx.tools.guard(({ name, arguments: input }) => {
       if (state.frozen) return 'This worker is frozen.'
       if (reportOnly) {
+        if (name === 'bash' || name === 'pwsh') {
+          const denial = landingDenial(input)
+          if (denial) return denial
+        }
         if (name === 'report_task' || (inspectingProject() && inspectionTools.has(name))) return
         return 'Report-only tasks inspect the project checkout read-only and end with report_task.'
       }
-      if (name === 'create_worktree' || inCheckout()) return
-      return 'Create the assigned project worktree before using any other tool.'
+      if (name !== 'create_worktree' && !inCheckout()) {
+        return 'Create the assigned project worktree before using any other tool.'
+      }
+      if (name === 'bash' || name === 'pwsh') {
+        const denial = landingDenial(input)
+        if (denial) return denial
+      }
+      return
     })
     const checkout = agent.ctx.tools.register(createWorktreeTool(ctx, agent, task.id, path => { state.path = path }), {
       when: () => !state.frozen && !reportOnly,
@@ -90,12 +111,14 @@ export async function apply(ctx) {
       when: () => reportOnly && !state.frozen,
     })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { state, session: agent.session, dispose: () => { profile?.(); report(); message(); extract(); memory(); review(); checkout(); guard() } })
+    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); extract(); memory(); review(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
-    workers.get(agent.id)?.dispose()
+    const worker = workers.get(agent.id)
+    worker?.dispose()
     workers.delete(agent.id)
+    if (worker) forgetLanding(worker.taskId)
     dispatchGuard.dispose(agent.session.id)
   })
 

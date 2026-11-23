@@ -4,7 +4,7 @@
 
 - router 收到输入后调用 `dispatch_worker` 派工，或调用 `continue_worker` 追加要求；不需要项目工作时直接回答并写明理由。
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。
-- 审查通过的分支经你明确授权后合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
+- 审查通过的分支默认停在 reviewed commit；派发或续派发携带 `land=true` 时 worker 才可推送指派分支、开 PR 或合并该 reviewed commit。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 
 ## 安装
@@ -64,7 +64,7 @@ worker 的每一轮对话历史按轮次完整归档在 `~/.dsh/superagent-lite/
 ## 当前限制
 
 - 绑定 DSH `0.2.2-rc.3`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。
-- router 与 worker 默认不推送、不合并；合并必须获得你的明确授权（直接指示、面板合并动作或 `/merge-worker`），未授权时 router 和 worker 都不会合并。
+- router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并指派分支上的已审提交，且必须由用户在派发或续派发时明确给出。合并也可以由你的直接指示、面板合并动作或 `/merge-worker` 触发。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 插件自身没有暂停、队列或任务数上限；每个任务一个 Worktree，多个任务可以同时跑。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
