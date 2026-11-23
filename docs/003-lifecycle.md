@@ -99,7 +99,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 | `references` | 按事件顺序编号的 `reference`（从 1 开始）、Session `seq` 和事件类型 |
 | `events` | 完整事件快照 |
 
-归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源重复写入相同数据是幂等的，不同数据会报错（`src/memory-store.js:436-464`）。归档只由 Host 写入，模型工具没有读取入口。
+归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源重复写入相同数据是幂等的，不同数据会报错（`src/memory-store.js:405-433`）。归档只由 Host 写入，模型工具没有读取入口。
 
 ## 并发
 

@@ -97,7 +97,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory-store.js`
 
-保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、按规范化文本相似度去重与覆盖、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-471`）。
+保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、按规范化文本相似度去重与覆盖、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-440`）。
 
 ### `src/merge.js`
 
@@ -138,7 +138,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 - 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`、`commands`（`index.js:13`、`router.js:6`）。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
-- `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:466-470`）。
+- `src/memory-store.js` 是唯一 Memory 与归档存储模块；模型工具、记忆对话和面板都经过它的 facade（`src/memory-store.js:435-439`）。
 - `src/memory-panel.js` 是唯一记忆面板端点；它复用 `src/board.js` 的 `readJsonBody`，不从请求读路径（`src/memory-panel.js:1-2`）。
 - `src/memory-extractor.js` 只持有提示词和上限，不拥有 store 或 Session（`src/memory-extractor.js:1-41`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
@@ -248,7 +248,7 @@ Task 与 Memory 记录在 `~/.dsh/superagent-lite/`，Worktree 在各项目下�
 | 原始轮次归档 | `memory/archive/<hash>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 
-team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，记录以 `0600` 写入（`src/memory-store.js:174-183`、`src/task-store.js:34-57`、`src/memory-store.js:436-464`）。
+team 分区哈希覆盖 Team ID 和规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，记录以 `0600` 写入（`src/memory-store.js:247-253`、`src/task-store.js:34-57`、`src/memory-store.js:405-433`）。
 
 ## 对外接口
 

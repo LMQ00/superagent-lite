@@ -49,9 +49,9 @@ flowchart LR
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；项目 checkout 必须保持原样（`index.js:54-63`、`src/report-tool.js:19-41`）。 |
 | Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；`merge` 也可来自用户直接指示或 `/merge-worker`。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:398-493`、`src/merge.js:30-136`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
-| Memory | 保存下来的事实，分 private、public、profile、team 四类。 | private 只存凭据引用名；public 只存客观结论；profile 每轮注入；team 按 Team 与 Project 隔离；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖原记录；记录是数据，不是指令（`src/memory.js:31-84`、`src/memory-store.js:174-183`、`src/memory-store.js:360-385`）。 |
+| Memory | 保存下来的事实，分 private、public、profile、team 四类。 | private 只存凭据引用名；public 只存客观结论；profile 每轮注入；team 按 Team 与 Project 隔离；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖原记录；记录是数据，不是指令（`src/memory.js:31-84`、`src/memory-store.js:143-152`、`src/memory-store.js:329-354`）。 |
 | 记忆对话（Memory conversation） | 从选定结论中提炼记忆的独立 helper 子代理。 | 返回 private、public、profile、team 四个数组；每次最多 1/3/1/3 条，每条最多 500 字符；插件把结果写回各自分类并按分类与 scope 去重（`src/memory-extractor.js:4-41`、`src/memory.js:108-142`）。 |
-| 原始归档（Raw archive） | Worker 对话的完整轮次记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；仅 Host 可写，模型工具读不到（`src/memory.js:213-226`、`src/memory-store.js:436-464`）。 |
+| 原始归档（Raw archive） | Worker 对话的完整轮次记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；仅 Host 可写，模型工具读不到（`src/memory.js:213-226`、`src/memory-store.js:405-433`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
 | Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；构建、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作；记忆只在 owner 明确点击时写入（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:573-781`）。 |
 
@@ -157,6 +157,6 @@ Task 模式有两个值。
 | Worker 处理完毕，结果返回 Router，能力冻结，业务算已完成 | change worker 结束后进入审查和交付，落为 `review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；只有 report 任务在 `report_task` 后到 `completed`（`index.js:123-145`、`src/report-tool.js:34-39`）。 |
 | 提问由 Router 回答，可查询记忆 | 相同；Router 只在用户要求或路由需要某条已保存事实时调用 `superagent_memory`，然后直接回答（`src/memory.js:31-84`）。 |
 | 若干 worker 组成团队，一个项目通常由一个团队管理，不同项目由 Router 分开 | 相同；第一个 Task 固定 Team 与 Project 的一对一关系，之后不能改配（`src/task-store.js:70-75`）。 |
-| 团队知识库按团队隔离，只有同团队 worker 能读 | 存储还绑定规范化后的 Project 根；同 Team 但不同 Project 的 Worker 读不到（`src/memory-store.js:174-183`）。 |
+| 团队知识库按团队隔离，只有同团队 worker 能读 | 存储还绑定规范化后的 Project 根；同 Team 但不同 Project 的 Worker 读不到（`src/memory-store.js:143-152`）。 |
 | 私有信息保存密钥等 | 存储只接受凭据引用名，拒绝形似密钥的内容；记录本身不保存密钥值（`src/memory-store.js:12-14`、`src/memory-store.js:38-57`）。 |
 | 对话历史全量保留并编号；记忆提取有用信息 | 每个 Worker 回合完整归档，事件带 Session 序号和从 1 开始的轮内 `reference`；提取只接收选定结论或最终报告，不接收原始 transcript（`src/memory.js:213-226`、`src/memory.js:108-142`）。 |

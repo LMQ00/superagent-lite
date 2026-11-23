@@ -186,12 +186,13 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 - Worker 的 `superagent_memory` 分类枚举只有 `public`、`profile`、`team`；Router 的是 `public`、`profile`、`private`（`src/memory.js:32`）。
 - `profile` 和 `private` 的写操作只有 Router 能做；Worker 只能读 `profile`（`src/memory.js:55-57`）。
 - `private` 记录只接受 `credentialRef`，传 `content` 会被拒绝（`src/memory.js:58`、`src/memory-store.js:38-57`）。
-- `team` 调用者必须是 Worker，且同时提供 Team 和绝对 Project 根；存储分区使用两者的哈希（`src/memory-store.js:174-183`、`src/memory-store.js:278-284`）。
+- `team` 调用者必须是 Worker，且同时提供 Team 和绝对 Project 根；存储分区使用两者的哈希（`src/memory-store.js:143-152`、`src/memory-store.js:247-253`）。
 - 内容 1–16,000 字符；疑似密钥的字符串被拒绝；凭据引用名匹配 `[A-Za-z_][A-Za-z0-9_]{0,127}`（`src/memory-store.js:12,14,52-55`）。
-- 写入前在同一分类、同一 scope 内比对已有记录。文本先做 NFKC、大小写、空白和标点规范化：规范化后完全相同直接复用原记录，不更新 `source` 和 `updatedAt`（`src/memory-store.js:63-69`、`src/memory-store.js:360-369`）。
-- 同一事实的相似度取字符编辑距离、token Dice 和公共前后缀相似度三者的最大值；达到 `0.55` 视为同一事实。相似但不相等的记录被覆盖而不是追加：保留 `id` 和 `createdAt`，用新内容、新 `source` 和新的 `updatedAt` 重写（`src/memory-store.js:15-19`、`src/memory-store.js:125-163`）。
-- 相似度低于 `0.55` 才新增记录；`private` 的 `credentialRef` 只按引用名完全相同去重，不做模糊匹配；不同分类、不同 Team 或不同 Project 的记录永不合并（`src/memory-store.js:147-163`、`src/memory-store.js:360-385`）。
-- 匹配是词面启发式，不含语义：表述完全不同但语义相同或冲突的事实不会命中，需要显式 `update` 指定 `id` 或由面板修正。
+- 写入前在同一分类、同一 scope 内比对已有记录。文本先做 NFKC、大小写、空白和标点规范化：规范化后完全相同直接复用原记录，不更新 `source` 和 `updatedAt`（`src/memory-store.js:64-70`、`src/memory-store.js:329-338`）。
+- 只有两种非完全相同文本算同一事实：较短文本完整包含在较长文本里（增加或去掉限定语），或字符编辑相似度达到 `0.8`。判定故意不使用 token 重叠和公共前后缀相似度，避免同模板但取值不同的事实互相覆盖（`src/memory-store.js:15-20`、`src/memory-store.js:96-109`）。
+- 被判定为同一事实但文本不同的记录被覆盖而不是追加：保留 `id` 和 `createdAt`，用新内容、新 `source` 和新的 `updatedAt` 重写；低于阈值且无包含关系的文本才新增记录（`src/memory-store.js:116-132`、`src/memory-store.js:329-354`）。
+- `private` 的 `credentialRef` 只按引用名完全相同去重，不做模糊匹配；不同分类、不同 Team 或不同 Project 的记录永不合并。
+- 匹配是词面启发式，不含语义：表述完全不同但语义相同或冲突的事实不会命中，需要显式 `update` 指定 `id` 或由面板修正；同模板但取值不同的新事实会保留为两条。
 - `list` 最多返回 8 条，每条预览最多 240 字符（`src/memory.js:59-65`）。面板列出全部记录。
 - `profile` 注入取最近更新的 6 条，每条截到 500 字符；写入后立即刷新（`src/memory.js:10-18`、`src/memory.js:80`）。
 - 面板不是 Session：public、profile、private 使用 Host 专用 operator 角色，team 的编辑和删除必须带记录自己的 Team 与 Project（`src/memory.js:173-211`）。
@@ -207,7 +208,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 - 自动触发只发生在 change 任务、Worker 位于 Worktree 且未冻结时；每个 Worker Session 最多一次（`index.js:74-87`）。
 - 插件负责写入：private、public、profile 使用 Host 的 `memory` 角色，team 使用 Worker 的 Team 与规范化后的 Project 根。每条记录保存触发事件的 Session ID 和序号作为 `source`；同一次提取里落到同一记录的多个事实按记录 ID 去重后再返回（`src/memory.js:129-141`、`src/memory.js:24-29`）。
 - 提取失败不阻塞最终报告；自动触发只记录警告，报告照常送达。显式 `extract_memory` 会把错误返回给 Worker（`index.js:80-86`）。
-- 原始归档不是记忆分类，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:436-464`）。
+- 原始归档不是记忆分类，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:405-433`）。
 
 ## 版本
 

@@ -66,19 +66,37 @@ test('an incorrect memory is overwritten in place rather than appended', async t
   assert.deepEqual(await memory.list(router, 'public'), [corrected])
 })
 
-test('genuinely new content creates a second record and leaves the first intact', async t => {
+test('genuinely new content creates more records and leaves earlier ones intact', async t => {
   const memory = await fixture(t)
-  const deploy = await memory.create(router, {
-    category: 'public', content: 'Deploy with npm run deploy', source: origin,
-  })
-  const testCommand = await memory.create(router, {
-    category: 'public', content: 'Test command: npm test', source: nextOrigin,
-  })
-  assert.notEqual(testCommand.id, deploy.id)
+  const created = []
+  for (const content of [
+    'Deploy with npm run deploy',
+    'Test with npm run test',
+    'Test command: npm test',
+  ]) {
+    created.push(await memory.create(router, { category: 'public', content, source: nextOrigin }))
+  }
+  assert.equal(new Set(created.map(record => record.id)).size, 3)
   const records = await memory.list(router, 'public')
   assert.deepEqual(records.map(record => record.content).sort(), [
     'Deploy with npm run deploy',
     'Test command: npm test',
+    'Test with npm run test',
+  ])
+})
+
+test('same-template facts with different values are kept as separate records', async t => {
+  const memory = await fixture(t)
+  await memory.create(router, { category: 'public', content: '项目使用 pnpm', source: origin })
+  await memory.create(router, { category: 'public', content: '项目使用 TypeScript', source: nextOrigin })
+  await memory.create(router, { category: 'public', content: '接口文档位于 docs/api', source: origin })
+  await memory.create(router, { category: 'public', content: '接口定义位于 src/api', source: nextOrigin })
+  const contents = (await memory.list(router, 'public')).map(record => record.content).sort()
+  assert.deepEqual(contents, [
+    '接口定义位于 src/api',
+    '接口文档位于 docs/api',
+    '项目使用 TypeScript',
+    '项目使用 pnpm',
   ])
 })
 

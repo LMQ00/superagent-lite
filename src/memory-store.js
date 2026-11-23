@@ -12,10 +12,11 @@ const ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
 const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
 const TEAM_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const SECRET_PATTERN = /-----BEGIN [^-\r\n]*PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{16,}|(?:AKIA|ASIA)[A-Z0-9]{16})\b|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:api[-_ ]?key|password|secret|token)\s*[:=]\s*\S+/i
-// A new fact at or above this lexical similarity is the same fact: identical or
-// an equivalent rewrite reuses the record, and a conflicting restatement
-// overwrites it instead of appending a second copy.
-const SAME_MEMORY_SIMILARITY = 0.55
+// Only a containment or a small edit is treated as the same fact. A shared
+// template with a different value is a new fact and must not overwrite the old
+// record, so token overlap and prefix/suffix similarity are deliberately unused.
+const SAME_MEMORY_SIMILARITY = 0.8
+const MIN_CONTAINMENT_LENGTH = 4
 const MAX_EDIT_COMPARISON = 2000
 
 function object(value, allowed) {
@@ -72,36 +73,6 @@ function compactText(value) {
   return normalizedText(value).replace(/ /g, '')
 }
 
-function memoryTokens(value) {
-  return normalizedText(value).match(/[a-z0-9]+|[\u3400-\u9fff]/g) ?? []
-}
-
-function dice(left, right) {
-  if (left.length === 0 || right.length === 0) return 0
-  const counts = new Map()
-  for (const token of left) counts.set(token, (counts.get(token) ?? 0) + 1)
-  let shared = 0
-  for (const token of right) {
-    const remaining = counts.get(token) ?? 0
-    if (remaining === 0) continue
-    counts.set(token, remaining - 1)
-    ++shared
-  }
-  return 2 * shared / (left.length + right.length)
-}
-
-function commonPrefixLength(left, right) {
-  let index = 0
-  while (index < left.length && index < right.length && left[index] === right[index]) ++index
-  return index
-}
-
-function commonSuffixLength(left, right) {
-  let index = 0
-  while (index < left.length && index < right.length && left[left.length - 1 - index] === right[right.length - 1 - index]) ++index
-  return index
-}
-
 function editDistance(left, right) {
   let previous = new Uint32Array(right.length + 1)
   let current = new Uint32Array(right.length + 1)
@@ -126,17 +97,15 @@ function textSimilarity(left, right) {
   const a = compactText(left)
   const b = compactText(right)
   if (a === b) return 1
-  if (a.length === 0 || b.length === 0) return 0
-  const longest = Math.max(a.length, b.length)
-  const prefix = commonPrefixLength(a, b) / longest
-  const suffix = commonSuffixLength(a, b) / longest
-  const overlap = dice(memoryTokens(left), memoryTokens(right))
+  const shorter = Math.min(a.length, b.length)
+  const longer = Math.max(a.length, b.length)
+  if (longer === 0) return 0
+  // An added or dropped qualifier keeps the same subject and fact.
+  if (shorter >= MIN_CONTAINMENT_LENGTH && (a.includes(b) || b.includes(a))) return 1
   // Edit distance is quadratic. Skip it for long facts and for pairs whose
-  // length gap already puts them below the threshold; overlap still applies.
-  const edit = longest > MAX_EDIT_COMPARISON || Math.abs(a.length - b.length) / longest > 1 - SAME_MEMORY_SIMILARITY
-    ? 0
-    : 1 - editDistance(a, b) / longest
-  return Math.max(prefix, suffix, overlap, edit)
+  // length gap already puts them below the threshold.
+  if (longer > MAX_EDIT_COMPARISON || (longer - shorter) / longer > 1 - SAME_MEMORY_SIMILARITY) return 0
+  return 1 - editDistance(a, b) / longer
 }
 
 function samePayload(record, facts) {
