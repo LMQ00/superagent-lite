@@ -191,7 +191,8 @@ test('continue_worker resumes a settled worker with the compact follow-up messag
   const { readTask, updateTask } = await import('../src/task-store.js')
   const id = 'cccccccccccccccc'
   await taskFixture(id)
-  await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const review = { head: 'abc', reviewerSessionId: 'reviewer', approved: true }
+  await updateTask(id, { status: 'awaiting-merge', review, worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
   const sends = []
   const tool = createContinueTool(context(sends))
   const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
@@ -213,6 +214,7 @@ test('continue_worker resumes a settled worker with the compact follow-up messag
   assertSectionOrder(sends[0].text, resumeSections)
   assert.equal((await readTask(id)).status, 'resuming')
   assert.equal((await readTask(id)).task, originalTask)
+  assert.deepEqual((await readTask(id)).review, review)
   assert.deepEqual(await followUpTexts(id), ['New requirement'])
 })
 
@@ -374,7 +376,8 @@ test('a failed resume delivery marks the settled task failed', async () => {
   const { readTask, updateTask } = await import('../src/task-store.js')
   const id = '2222222222222222'
   await taskFixture(id)
-  await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const review = { head: 'abc', reviewerSessionId: 'reviewer', approved: true }
+  await updateTask(id, { status: 'awaiting-merge', review, worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
   const tool = createContinueTool({ subagents: { async sendMessage() { throw new Error('worker is gone') } } })
   await assert.rejects(
     tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
@@ -382,6 +385,7 @@ test('a failed resume delivery marks the settled task failed', async () => {
   )
   const task = await readTask(id)
   assert.equal(task.status, 'failed')
+  assert.deepEqual(task.review, review)
   assert.deepEqual(task.followUps ?? [], [])
 })
 

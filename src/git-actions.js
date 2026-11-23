@@ -3,6 +3,7 @@ import { runCommand, runProcess } from './process.js'
 import { githubRepository, publishGithub, pullRequestUrl } from './github.js'
 import { deleteWorkerBranch, mergeWorkerBranch } from './merge.js'
 import { setLandingPullRequest, setLandingReview } from './landing.js'
+import { assertStillDeliverable, deliverableHead } from './delivery.js'
 import { runReview, worktreeHead } from './review.js'
 import { panelStatus, reviewIndex, reviewKey } from './status.js'
 
@@ -144,19 +145,6 @@ export function createGitManager(ctx, dependencies = {}) {
   async function settle(task, changes) {
     if (task.status === changes.status && Object.keys(changes).length === 1) return task
     return store.updateTask(task.id, changes)
-  }
-
-  async function reviewedHead(task, signal) {
-    if (!task.worktree?.branch) throw new Error('This task has no worker branch')
-    if (task.review?.approved !== true) throw new Error('The review has not approved this branch')
-    let head
-    try {
-      head = await checkedHead(task, signal)
-    } catch (error) {
-      throw new Error(`The worker worktree is unavailable: ${error.message}`)
-    }
-    if (head !== task.review.head) throw new Error('The worker branch no longer matches its reviewed commit')
-    return head
   }
 
   async function syncPullRequest(task, signal) {
@@ -444,11 +432,16 @@ export function createGitManager(ctx, dependencies = {}) {
   async function publishAction(task, remoteName, signal) {
     if (typeof remoteName !== 'string' || !remoteName) throw new Error('A remote is required to send a pull request')
     requireFullAccess(task)
-    const head = await reviewedHead(task, signal)
+    const head = await deliverableHead(ctx, task, signal, (task, signal) => checkedHead(task, signal))
     const remotes = await remotesFor(task.projectRoot, signal)
     const remote = remotes.find(candidate => candidate.name === remoteName)
     if (!remote) throw new Error('The selected remote is not configured for this project')
     if (!remote.repository) throw new Error('The selected remote is not a single GitHub fetch/push repository')
+    // Publishing is the only delivery that needs GitHub: the account must be
+    // authenticated and the remote must name a GitHub repo. Write access is
+    // proven by the push, which runs only after the shared checks above.
+    const auth = await ghStatus(task.projectRoot, signal)
+    if (!auth.ok) throw new Error(`GitHub authentication is required to publish: ${auth.error}`)
     if (task.prUrl) {
       const pr = await syncPullRequest(task, signal)
       if (pr?.exact && pr.state === 'OPEN') {
@@ -462,7 +455,7 @@ export function createGitManager(ctx, dependencies = {}) {
     }
     await store.updateTask(task.id, latest => {
       if (latest.status === 'merged') throw new Error('This branch is already merged')
-      if (latest.review?.approved !== true || latest.review?.head !== head) throw new Error('The review changed during publication')
+      assertStillDeliverable(latest, head)
       return { status: 'publishing', failure: undefined }
     })
     try {

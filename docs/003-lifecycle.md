@@ -122,9 +122,11 @@ change 任务的 Worker 回合按以下顺序落定（`index.js:114-146`）：
 | Review 通过且 HEAD 仍匹配 | `awaiting-merge` |
 | 结束后的 HEAD 检查抛错 | `delivery-blocked` |
 
+续派发不清空 Review：`continue_worker` 只把状态改为 `resuming`，保留 `review` 记录；Worker 回合结束时再按上表比较 `review.head` 与当前 HEAD，HEAD 变化则旧批准自动失效，HEAD 未变则旧批准仍然有效。
+
 `awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。Task 到 `merged` 的路径有三种：
 
-- 用户明确授权后由面板行内合并或 `/merge-worker` 执行本地 `git merge --no-ff`（`src/merge.js:30-103`、`src/git-actions.js:421-437`）。
+- 用户明确授权后由面板行内合并或 `/merge-worker` 执行本地 `git merge --no-ff`（`src/merge.js:30-100`、`src/git-actions.js:409-425`）。
 - 精确匹配的 PR 在 GitHub 上被合并，面板读取时同步为 `merged`（`src/git-actions.js:190-194`、`src/git-actions.js:309-317`）。
 - 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`）。没有自有提交的分支不算合并。
 
@@ -144,7 +146,7 @@ report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调�
 
 ### 审查未通过
 
-Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker 修完问题、再次提交并再次调用审查工具。`continue_worker` 会把 Task 改为 `resuming`，清空旧 Review，再发送精简续派发消息：任务标识、不可变规则和唯一权威的 follow-up；只有检测到上下文被压缩时才回放原需求（`src/continue.js:126-148`、`src/continue.js:12-68`）。
+Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker 修完问题、再次提交并再次调用审查工具。`continue_worker` 会把 Task 改为 `resuming`，保留旧 Review 记录，再发送精简续派发消息：任务标识、不可变规则和唯一权威的 follow-up；只有检测到上下文被压缩时才回放原需求。之后 HEAD 是否仍等于 `review.head` 决定旧批准是否有效，HEAD 变化时旧批准自动失效（`src/continue.js:126-148`、`src/continue.js:12-68`）。
 
 ### Host 重启或插件重载
 
@@ -154,13 +156,13 @@ Task 和 Memory 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在�
 
 ### GitHub 交付失败
 
-发送 PR 失败时，Task 标为 `delivery-blocked`，错误写入 `failure`；已创建的 PR 保留链接。精确匹配的 PR 在交付状态中被关闭时也落为 `delivery-blocked`；精确 PR 已合并时落为 `merged`（`src/git-actions.js:195-205`、`src/git-actions.js:476-479`）。
+发送 PR 失败时，Task 标为 `delivery-blocked`，错误写入 `failure`；已创建的 PR 保留链接。精确匹配的 PR 在交付状态中被关闭时也落为 `delivery-blocked`；精确 PR 已合并时落为 `merged`（`src/git-actions.js:149-199`、`src/git-actions.js:469-472`）。发送 PR 与合并共用同一套状态、审查和 HEAD 前置校验，唯一额外条件是 `gh` 登录和 GitHub remote（`src/delivery.js:7-19`）。
 
 GitHub 写入不自动重试。PR 尚未创建时的发送失败可以从 `delivery-blocked` 重试；一旦 `prUrl` 已存在，再次发送会复用同一 HEAD 的 PR（`src/github.js:83-95`）。
 
 ### 本地合并失败
 
-预检失败时 Task 仍是 `awaiting-merge`，用户可以修正目标 checkout 后重试。`git merge` 已经执行但失败时，Task 标为 `delivery-blocked`，并提示检查目标；之后不再是 `awaiting-merge`，面板合并会拒绝，直到用户处理目标并开始新的工作（`src/merge.js:52-103`）。
+预检失败时 Task 仍是 `awaiting-merge`，用户可以修正目标 checkout 后重试。`git merge` 已经执行但失败时，Task 标为 `delivery-blocked`，并提示检查目标；之后不再是 `awaiting-merge`，面板合并会拒绝，直到用户处理目标并开始新的工作（`src/merge.js:49-99`）。
 
 ### follow-up 发送失败
 

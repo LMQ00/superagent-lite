@@ -58,7 +58,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/continue.js`
 
-把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming` 并清空旧 Review；follow-up 先记录，发送失败回滚（`src/continue.js:1-153`）。
+把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming`，保留旧 Review 记录；follow-up 先记录，发送失败回滚（`src/continue.js:1-192`）。
 
 压缩检测读取 Worker Session 的推导消息，找 `compact-checkpoint` 来源；活着的 Worker 直接读 Session，未加载的 Worker 通过 `ctx.sessionQuery.inspectSession` 读取持久化会话，不重新挂载。两个入口都不可用时保守地不回放原需求。
 
@@ -106,13 +106,17 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 保存 Memory 记录和原始归档。负责分类与 scope 校验、team 分区哈希、按规范化文本相似度去重与覆盖、`0600` 原子写、更新串行、拒绝符号链接、按 Session 与序号保存不可变归档；`panel.teams()` 只供 owner 面板列出 team 分区（`src/memory-store.js:1-440`）。
 
+### `src/delivery.js`
+
+合并与发送 PR 共用的交付前置校验。`deliverableHead` 要求 Task 已结束 Worker 工作（`awaiting-merge` 或 `awaiting-ci`）、有 worker 分支和 Worktree、`review.approved === true` 且当前 HEAD 等于 `review.head`；`assertStillDeliverable` 在准备阶段复核状态与 Review，防止续派发或新提交从准备窗口混入。发送 PR 额外的 GitHub 账号与 remote 校验留在 `src/git-actions.js`（`src/delivery.js:1-19`）。
+
 ### `src/merge.js`
 
-实现本地合并、分支删除和 `/merge-worker`。`mergeWorkerBranch` 检查 reviewed HEAD、目标分支、干净 checkout 和 `merge-tree` 预检，切到所选目标，执行 `git merge --no-ff`，复核目标后切回，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:30-103`）。同一 Project 根的合并和删除在此排队，面板与 `/merge-worker` 不会同时切换共享 checkout；`deleteWorkerBranch` 移除已合并的 Worktree 并删除分支（`src/merge.js:14-26`、`src/merge.js:107-136`）。`/merge-worker` 用同一合并逻辑处理 Task 的 base branch（`src/merge.js:138-163`）。
+实现本地合并、分支删除和 `/merge-worker`。`mergeWorkerBranch` 先用共用的 `deliverableHead` 校验交付前提，再检查目标分支、干净 checkout 和 `merge-tree` 预检，切到所选目标，执行 `git merge --no-ff`，复核目标后切回，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:30-100`）。同一 Project 根的合并和删除在此排队，面板与 `/merge-worker` 不会同时切换共享 checkout；`deleteWorkerBranch` 移除已合并的 Worktree 并删除分支（`src/merge.js:14-26`、`src/merge.js:104-133`）。`/merge-worker` 用同一合并逻辑处理 Task 的 base branch（`src/merge.js:135-158`）。
 
 ### `src/git-actions.js`
 
-推导每个 Task 的六个面板状态，采纳同一 commit 由另一个 Task 记录的通过审查，读取本地分支、remote 和 `gh` 账号，并执行面板的 `merge`、`publish`、`review` 和 `delete-branch`。它缓存 PR 事实 30 秒，把精确 PR 状态同步进 Task，检查 reviewed HEAD、目标和 remote，按 Task 串行化动作；状态推导和审查索引在 `src/status.js`（`src/git-actions.js:66-550`）。
+推导每个 Task 的六个面板状态，采纳同一 commit 由另一个 Task 记录的通过审查，读取本地分支、remote 和 `gh` 账号，并执行面板的 `merge`、`publish`、`review` 和 `delete-branch`。它缓存 PR 事实 30 秒，把精确 PR 状态同步进 Task，用共用的 `deliverableHead` 检查状态、审查和 HEAD，再检查目标或 remote，按 Task 串行化动作；发送 PR 额外检查 `gh` 账号；状态推导和审查索引在 `src/status.js`（`src/git-actions.js:66-543`）。
 
 ### `src/github.js`
 
@@ -187,6 +191,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 | `src/board.js` | 提供 owner-only 任务列表、任务删除与 Git 动作 HTTP 端点，并投影面板视图。 |
 | `src/status.js` | 推导六个面板状态，并按 Project 与 commit 索引通过的审查。 |
 | `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
+| `src/delivery.js` | 合并与发送 PR 共用的状态、审查和 HEAD 前置校验。 |
 | `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session。 |
 | `src/git-actions.js` | 构建面板视图，执行合并、发送 PR、审查和删除分支动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |

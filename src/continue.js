@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readTask, updateTask } from './task-store.js'
-import { clearLandingReview, grantLanding, landingAuthorizationRule, landingRule, revokeLanding } from './landing.js'
+import { grantLanding, landingAuthorizationRule, landingRule, revokeLanding } from './landing.js'
 import { validateLandFlag } from './validation.js'
 
 function hasCompactionCheckpoint(session) {
@@ -164,9 +164,8 @@ ${text}`,
           if (!current.worktree || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
             throw new Error('Only settled, unpublished worktrees can be resumed')
           }
-          return { status: 'resuming', review: undefined, ...(granted ? landingGrantFields() : {}) }
+          return { status: 'resuming', ...(granted ? landingGrantFields() : {}) }
         })
-        clearLandingReview(taskId)
         if (granted) grantLanding(taskId)
       } else if (granted) {
         await grantTaskLanding(taskId)

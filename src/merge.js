@@ -1,6 +1,6 @@
 import { readTask, updateTask } from './task-store.js'
 import { runCommand } from './process.js'
-import { worktreeHead } from './review.js'
+import { assertStillDeliverable, deliverableHead } from './delivery.js'
 
 function dirtyTargetLine(line) {
   return line && line !== '?? .agents/worktrees/.gitignore'
@@ -31,14 +31,11 @@ export async function mergeWorkerBranch(ctx, task, target, signal, update = upda
   if (task.status === 'merged') {
     return { head: task.review?.head, target, baseHead: undefined, alreadyMerged: true }
   }
-  if (!task.worktree?.branch || !task.worktree.path) throw new Error('This task has no worker branch')
-  if (task.review?.approved !== true) throw new Error('No reviewed local commit is ready for merge')
+  const head = await deliverableHead(ctx, task, signal)
   if (typeof target !== 'string' || !/^[A-Za-z0-9._\/-]{1,200}$/.test(target)) throw new Error('A merge target branch is required')
   const branch = task.worktree.branch
   if (target === branch) throw new Error('The merge target cannot be the worker branch')
   const root = task.projectRoot
-  const head = await worktreeHead(ctx, task, signal)
-  if (head !== task.review.head) throw new Error('The worker branch no longer matches its reviewed commit')
   return serializeByRoot(root, async () => {
     const git = args => runCommand(ctx, args, root, signal)
     try {
@@ -66,7 +63,7 @@ export async function mergeWorkerBranch(ctx, task, target, signal, update = upda
       if (dirtyNow.split('\n').some(dirtyTargetLine)) throw new Error('The project checkout has uncommitted changes')
       await update(task.id, latest => {
         if (latest.status === 'merged') throw new Error('This branch is already merged')
-        if (latest.review?.approved !== true || latest.review?.head !== head) throw new Error('The review changed during merge')
+        assertStillDeliverable(latest, head)
         return { status: 'merging' }
       })
       try {
@@ -151,9 +148,6 @@ export function mergeCommand(ctx) {
       try {
         const current = await readTask(id)
         if (current.status === 'merged') return { kind: 'success', text: `${id} is already merged.` }
-        if (current.status !== 'awaiting-merge' || !current.review?.approved || !current.worktree) {
-          throw new Error('No reviewed local commit is ready for merge')
-        }
         const merged = await mergeWorkerBranch(ctx, current, current.baseBranch, signal)
         return { kind: 'success', text: `Merged ${id} into ${merged.target}.` }
       } catch (error) {

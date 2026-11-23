@@ -63,13 +63,13 @@
 
 ### 合并
 
-打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:525-556`、`src/merge.js:30-103`）。
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:525-556`、`src/merge.js:30-101`）。
 
-按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏或 HEAD 移动都会带原因拒绝（`src/git-actions.js:320-328`）。
+按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏、HEAD 移动或任务已离开可交付状态都会带原因拒绝（`src/git-actions.js:308-316`、`src/delivery.js:7-19`）。
 
 ### 提交 PR
 
-打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:525-556`、`src/git-actions.js:439-480`）。
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:525-556`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
 
 当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
@@ -79,7 +79,7 @@
 
 ### 删除分支
 
-只在已完成的 Task 且 worker 分支仍存在时出现。打开确认弹窗；若 Worktree 已登记且干净，先移除 Worktree，再删除分支。已合并的 PR 即使其 commit 不是本地 base 分支的祖先也算已合并。删除后 Task 仍是已完成，按钮消失（`src/merge.js:107-136`）。
+只在已完成的 Task 且 worker 分支仍存在时出现。打开确认弹窗；若 Worktree 已登记且干净，先移除 Worktree，再删除分支。已合并的 PR 即使其 commit 不是本地 base 分支的祖先也算已合并。删除后 Task 仍是已完成，按钮消失（`src/merge.js:104-133`）。
 
 ### 删除任务
 
