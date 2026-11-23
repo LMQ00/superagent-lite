@@ -2,9 +2,9 @@
 
 一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在独立 Worktree 中执行、提交并接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
-- router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 让新派发的 merge worker 合并已交付分支；同一未发布任务的补充用 `continue_worker`。
+- router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 合并已交付分支：没有正在运行的 merge worker 时派发新的，有则把请求追加给同一个 worker；同一未发布任务的补充用 `continue_worker`。
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
-- 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发新的 merge worker：它先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
+- 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 
 ## 安装
@@ -31,7 +31,7 @@ npm test
 
 - 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。
 - 只读的诊断、分析、查找直接问；router 用 report 模式派工，任务结束后不留分支和提交。
-- 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也派新的 merge worker，不续派该任务原来的 worker。
+- 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
 - 合并与发送 PR 需要动作执行时 Session 具有完整文件访问权限；本地合并还需要 router 会话仍在运行。
 
 ## 面板
@@ -58,7 +58,7 @@ npm test
 ## 当前限制
 
 - 绑定 DSH `0.2.2-rc.3`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。
-- router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由新派发的 merge worker 执行；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
+- router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由 merge worker 执行：没有正在运行的 merge worker 时新派发一个，已有则追加给它；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，review 不占并发名额。每个任务一个 Worktree，并行工作的 worker 各自使用独立检出。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。

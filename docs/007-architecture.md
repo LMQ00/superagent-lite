@@ -40,7 +40,7 @@ Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `
 
 ### `router.js`
 
-装载时注册 `dispatch_worker` 和 `continue_worker`（`router.js:7-9`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`，并启动一个新的 merge worker（`src/dispatch.js:13-131`）。它不持有 Task 记录。
+装载时注册 `dispatch_worker` 和 `continue_worker`（`router.js:7-9`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:13-131`）。它不持有 Task 记录。
 
 ### `src/task-store.js`
 
@@ -48,7 +48,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/dispatch.js`
 
-校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `queued` 记录，建立 Session 映射，交给启动队列在名额内启动。启动失败把 Task 标为 `failed`（`src/dispatch.js:44-115`、`src/launch-queue.js`）。
+校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根、base commit、base branch 和工作区状态，写 `queued` 记录，建立 Session 映射，交给启动队列在名额内启动。启动失败把 Task 标为 `failed`。`mode=merge` 先按 Router 和 Project 串行，找到有活 Worker Session 的运行中 merge Task 时把目标追加到 `mergeBranches`、把请求记入 `followUps` 并发送 follow-up；没有才创建新 Task（`src/dispatch.js:44-115`、`src/launch-queue.js`）。
 
 ### `src/continue.js`
 
@@ -171,7 +171,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/status.js` | 推导六个面板状态，并按 Project 与 commit 索引通过的审查。 |
 | `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
 | `src/delivery.js` | 合并与发送 PR 共用的状态、审查和 HEAD 前置校验。 |
-| `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session。 |
+| `src/dispatch.js` | 校验派发；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session；`mode=merge` 把新请求追加给运行中的 merge worker，没有才新派发。 |
 | `src/git-actions.js` | 构建面板视图，执行合并、发送 PR、审查和删除分支动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
@@ -206,7 +206,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
-| `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验。 |
+| `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
 | `test/merge-tool.test.js` | merge worker 的目标分支合并、冲突保留和 worktree 状态限制。 |
 | `test/land-all.test.js` | 双方纯新增时保留两边、同一行改写与 add/add 冲突时停下、按计划顺序合并和测试失败即停。 |
 | `test/landing.test.js` | 未授权与授权后的 push/PR/merge 检查、分支与 reviewed HEAD 范围、跨任务授权和伪造授权。 |
