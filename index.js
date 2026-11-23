@@ -6,8 +6,7 @@ import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
 import { createMergeTool } from './src/merge-tool.js'
 import { createGitManager } from './src/git-actions.js'
-import { archiveWorkerTurn, createMemoryTool, originFor, refreshProfile, registerProfileContext, runMemoryExtraction } from './src/memory.js'
-import { createMemoryPanelHandler } from './src/memory-panel.js'
+import { archiveWorkerTurn, registerMemoryContext, runMemoryExtraction } from './src/memory.js'
 import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
@@ -16,7 +15,6 @@ import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
-  await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
   const gitManager = createGitManager(ctx)
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
@@ -26,10 +24,6 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
       handler: createGitActionHandler(web.connection, gitManager),
-    }))
-    web.effect(() => web.webServer.register({
-      kind: 'exact', path: '/superagent-lite/memory',
-      handler: createMemoryPanelHandler(web.connection),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -97,26 +91,29 @@ export async function apply(ctx) {
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
       when: () => !state.frozen && !reportOnly && inCheckout(),
     })
-    const caller = { role: 'worker', teamId: task.teamId, projectRoot: task.projectRoot }
-    const canUseMemory = candidate => candidate === agent && !state.frozen && inCheckout()
-    const memory = agent.ctx.tools.register(createMemoryTool(caller, canUseMemory), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    const caller = { projectRoot: task.projectRoot }
+    const activeWorker = candidate => candidate === agent && !state.frozen && inCheckout()
     let memoryAttempted = false
     const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
       if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
       memoryAttempted = true
       try {
-        return await runMemoryExtraction(ctx, agent, caller, originFor(exec), exec.signal)
+        return await runMemoryExtraction(ctx, agent, caller, exec.signal)
       } catch (error) {
         ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
         return undefined
       }
-    }), { when: ({ agent: candidate }) => canUseMemory(candidate) })
+    }), { when: ({ agent: candidate }) => activeWorker(candidate) })
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
-    if (!state.frozen) await refreshProfile().catch(error => ctx.logger.warn(`superagent-lite profile: ${error.message}`))
-    const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); memory(); review(); merge(); checkout(); guard() } })
+    const memory = !state.frozen
+      ? await registerMemoryContext(agent.ctx, task.projectRoot).catch(error => {
+        ctx.logger.warn(`superagent-lite memory context: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      })
+      : undefined
+    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { memory?.(); report(); message(); review(); merge(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {

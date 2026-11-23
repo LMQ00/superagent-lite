@@ -1,46 +1,61 @@
 # Diagram 003: memory system
 
-Raw reference diagram supplied by the user. It is preserved here as the source for the memory design; [001 Domain model](../001-domain.md), [002 Rules](../002-rules.md), [003 Lifecycle](../003-lifecycle.md), [005 Panel](../005-panel.md) and [007 Architecture](../007-architecture.md) implement and explain it.
+Raw reference diagram supplied by the user (`tmp/新记忆模块.png`). It is preserved here as the source for the memory design; [001 Domain model](../001-domain.md), [002 Rules](../002-rules.md), [003 Lifecycle](../003-lifecycle.md), [006 Deployment](../006-deployment.md) and [007 Architecture](../007-architecture.md) implement and explain it.
 
 ```mermaid
-flowchart LR
-  H["worker 对话历史记录<br/>对话时全量留存"] --> A["原始参照分支<br/>全量保留 · 会话序号 + 轮内编号"]
-  H --> M["memory 对话<br/>提取有用的信息"]
-  M --> P["私有信息<br/>密钥等凭据引用 · 极少 · 按需调用"]
-  M --> K["公共知识库<br/>只提取客观知识结论 · 按需调用"]
-  M --> U["用户画像与环境<br/>每轮注入 router 和 worker · 极少量"]
-  M --> T["团队知识库<br/>按团队隔离 · 同团队 worker 读取"]
+flowchart TB
+  U["用户需求"] --> R["router 发布任务"]
+  R --> G["全局<br/>共享 skill · 用户画像"]
+  G --> P1["项目 1<br/>职责 · 定位 · 场景 · 项目 skill"]
+  G --> P2["项目 2<br/>职责 · 定位 · 场景 · 项目 skill"]
+  P1 -->|注入项目 + 全局| W1["worker 角色"]
+  P1 -->|审查时注入项目 + 全局| V1["review 角色"]
+  P2 -->|注入项目 + 全局| W2["worker 角色"]
+  P2 -->|审查时注入项目 + 全局| V2["review 角色"]
+  W1 -->|审查| V1
+  W2 -->|审查| V2
+  W1 --> A1["worker 原始会话记录"]
+  W2 --> A2["worker 原始会话记录"]
+  A1 -->|读取| M1["memory 角色"]
+  A2 -->|读取| M2["memory 角色"]
+  M1 -->|总结| P1
+  M2 -->|总结| P2
+  A1 --> AR1["归档处"]
+  A2 --> AR2["归档处"]
 ```
 
 ## Rules carried by the diagram
 
-| Branch | Meaning |
+| Part | Meaning |
 | --- | --- |
-| Raw reference | The worker conversation is retained in full, with the Session sequence and a per-turn reference number for later consultation. |
-| Main line | The memory conversation extracts only useful information and writes it into the memory system. |
-| Private | Credential references, never secret values; extremely rare and read on demand. |
-| Public | Objective knowledge and conclusions only; read on demand. |
-| User profile and environment | Injected as context into every router and worker chat; extremely small. |
-| Team | Isolated by team and project; only a worker of the same team and project reads it. |
+| Global layer | Shared by every project: `sharedSkill` and `userProfile`. |
+| Project layer | Separate for each project: `responsibilities`, `positioning`, `scenarios` and a `skill` summarized for the project and its responsibilities. |
+| Prompt injection | A worker and a reviewer both receive the project layer plus the global layer. |
+| Raw conversation | The worker's original conversation is retained and archived. |
+| Memory role | The `memory` role reads the raw worker conversation and summarizes the result back into the project layer. |
 
 ## Implementation mapping
 
 | Diagram part | Code |
 | --- | --- |
-| Raw reference | `archiveWorkerTurn` in `src/memory.js`, records under `memory/archive/`, with an event sequence and per-turn `reference` numbers |
-| Memory conversation | `src/memory-extractor.js`, role label `Distill memory`; reads the worker Session transcript through `workerConversation` in `src/memory.js` |
-| Four categories | `memoryExtractorPrompt` and `memoryFacts` in `src/memory.js`; records in `private`, `public`, `profile`, `team` |
-| On-demand reads | `superagent_memory` with `action=list/read`, one call at a time |
-| Write rules | `create` in `src/memory-store.js` compares normalized text; identical or equivalent facts reuse the record and corrected facts overwrite it instead of appending |
-| Every-chat injection | `refreshProfile` and `registerProfileContext`, runtime context order `170`, newest 6 facts cut to 500 characters |
-| Team isolation | `scopeOf` in `src/memory-store.js`; team callers need both Team and Project |
+| Global memory | `memory/global.json`, fields `userProfile` and `sharedSkill` (`src/memory-store.js`) |
+| Project memory | `memory/projects/<sha256(projectRoot)>.json`, fields `responsibilities`, `positioning`, `scenarios`, `skill` (`src/memory-store.js`) |
+| Worker injection | `registerMemoryContext` reads project + global memory at Worker creation, order `170`, required context (`src/memory.js`, `index.js`) |
+| Reviewer injection | `memoryPromptForProject` is added to the review prompt on every review (`src/review.js`) |
+| Router injection | `registerGlobalMemoryContext` injects only the global layer (`router.js`) |
+| Raw conversation | `workerConversation` builds the transcript from the worker Session (`src/memory.js`) |
+| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper (`src/memory.js`) |
+| Summary write | `runMemoryExtraction` writes only non-empty changed fields (`src/memory.js`) |
+| Archive | `archiveWorkerTurn` writes each turn under `memory/archive/` (`src/memory.js`, `src/memory-store.js`) |
 
 ## Raw description (as supplied)
 
-> 流程：worker 对话历史记录 → 一条分支「全量保留，作为原始参照物，做好编号标记」；主线是「memory 提取其中有用的信息」→ 写入「记忆系统」。
+> 用户需求 → router 发布任务 → 全局（共享 skill、用户画像）→ 项目 1 / 项目 2。
 >
-> 记忆系统分四类，各自约束：
-> 1. 私有信息：如密钥等，应该极少，按需调用。
-> 2. 公共知识库：只提取客观意义上的知识，应该只记结论，按需调用。
-> 3. 用户画像与环境：每次聊天都作为上下文注入给 router 和 worker，也属于极少量范围。
-> 4. 团队知识库：按团队隔离，只有同团队的 worker 才能读取。
+> 项目级的记忆分开，全局的记忆共享；提示词注入时应该为项目级 + 全局都注入。
+>
+> 项目记忆包含职责、定位、场景，以及总结出来、适用于当前项目与职责的 skill。
+>
+> worker 角色和 review 角色都注入职责、定位、场景、skill 的 description；review 由 worker 触发审查。
+>
+> worker 原始会话记录同时进入归档处和 memory 角色；memory 角色总结后写回项目记忆。

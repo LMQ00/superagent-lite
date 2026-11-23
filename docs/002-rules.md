@@ -42,7 +42,7 @@
 
 | 级别 | 授予方式 | 允许什么 | 默认 |
 | --- | --- | --- | --- |
-| 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker`、`continue_worker` 和 `superagent_memory` 的 router 分类 | 每个输入 |
+| 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker` 和 `continue_worker`；全局记忆由运行时上下文注入 | 每个输入 |
 | 委派 | `dispatch_worker` 且 `mode=change`、`mode=report` 或 `mode=merge` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
 | 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
 | 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
@@ -52,8 +52,7 @@
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要任务已结束 Worker 工作、审查通过的 HEAD、`gh` 账号、GitHub remote 和 full access |
 | 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支、Worktree 和记忆归档 | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
-| 编辑记忆 | owner 在面板编辑、逐条删除或批量删除 | 改一条记忆记录，或删除所选的记忆记录 | 否；需要 owner 明确点击 |
-| 提取记忆 | 最终 `message_router` 报告 | 启动一次记忆对话，读取 Worker 对话并把提炼结果写回四类 | 否；仅 change worker |
+| 提取记忆 | 最终 `message_router` 报告 | 启动一次记忆对话，读取 Worker 原始会话并把六个字段的更新写回全局和项目记忆 | 否；仅 change worker |
 
 ## 准入
 
@@ -72,7 +71,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 完成回合没有决定时，等 agent 空闲后插入提醒。提醒是 `source.kind = superagent-lite-reminder` 的用户角色消息，不是新输入（`src/turn-guard.js:7`、`src/turn-guard.js:33-51`）。
 - 每个输入最多提醒 2 次；新的用户输入重置预算（`src/turn-guard.js:3-7`、`src/turn-guard.js:56-70`）。
 - Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
-- 只有用户要求保存或读取记忆、路由需要某条已保存事实、或用户要求加载 skill 时，Router 才调用别的工具。
+- Router 只在派发、续派或用户要求加载 skill 时调用别的工具；没有模型侧记忆工具，全局记忆由上下文注入。
 - 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符（`src/dispatch.js:46`、`src/validation.js:1-16`）。
 - 合并只在用户明确授权后执行：直接指示或面板的合并操作。直接指示的合并请求默认派发 `mode=merge` 的新 worker，不续派分支所属的 Task（`cordis.patch.yml:31-32`、`src/dispatch.js:25-48`）。
 
@@ -81,9 +80,9 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 外，工作目录不在分配的 Worktree 时所有工具被拦（`index.js:57-66`）。
 - `create_worktree` 向 worktree 服务请求名字 `sl-<team slug>-<taskId>` 的 Worktree；Team slug 是小写 Team 名，把连续非字母数字替换为 `-`，去掉首尾 `-`，截到 32 字符（`src/worktree-tool.js:39-40`）。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:42-49`）。
 - 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
-- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括记忆和消息工具（`index.js:114-116`、`index.js:58-59`）。
+- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:114-116`、`index.js:58-59`）。
 - Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:70-100`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
-- `review_worker_commit`、记忆、提取和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:67-100`）。
+- `review_worker_commit` 和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:67-100`）。
 - report worker 在项目 checkout 中只能使用 `read`、`glob`、`grep`、`read_image`、`bash`、`todo_write`，并以 `report_task` 结束；其他工具被拒绝（`index.js:57-66`）。
 - `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:21-31`）。
 - `message_router` 的报告 1–4,000 字符；Worker 在工作结束时发一次，不发过程进度。`COMPLETED` 只用于已审查且相关检查通过的实现，需要等待的任务不能报 `COMPLETED`（`src/message-router.js:6-25`）。
@@ -184,41 +183,31 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## 记忆规则
 
-| 类别 | Router Session | Worker Session | 记忆对话 | 面板 owner | 规则 |
-| --- | --- | --- | --- | --- | --- |
-| `private` | 读、写 | 无访问 | 每次最多 1 条凭据引用 | 读、改、删 | 只存凭据引用名，不存密钥；极少使用，按需读取 |
-| `public` | 读、写 | 读、写 | 每次最多 3 条客观结论 | 读、改、删 | 只存客观知识；不存个人信息、团队专属信息或临时任务状态 |
-| `profile` | 读、写 | 只读 | 每次最多 1 条用户画像或环境事实 | 读、改、删 | 每轮注入 Router 和 Worker；保持极少量 |
-| `team` | 无访问 | 读、写 | 每次最多 3 条团队事实 | 读、改、删 | 同时按 Team 和 Project 隔离；只有同 Team、同 Project 的 Worker 能读 |
+| 作用域 | 字段 | 写入者 | 读者 |
+| --- | --- | --- | --- |
+| 全局 | `userProfile`、`sharedSkill` | 记忆对话 | Router、Worker、Reviewer |
+| 项目 | `responsibilities`、`positioning`、`scenarios`、`skill` | 记忆对话 | Worker、Reviewer |
 
-- 调用者身份来自 Host Session，不来自模型参数；不允许的 Session 报 `Memory is not available to this Session`（`src/memory.js:50-52`）。
-- Worker 的 `superagent_memory` 分类枚举只有 `public`、`profile`、`team`；Router 的是 `public`、`profile`、`private`（`src/memory.js:32`）。
-- `profile` 和 `private` 的写操作只有 Router 能做；Worker 只能读 `profile`（`src/memory.js:55-57`）。
-- `private` 记录只接受 `credentialRef`，传 `content` 会被拒绝（`src/memory.js:58`、`src/memory-store.js:39-57`）。
-- `team` 调用者必须是 Worker，且同时提供 Team 和绝对 Project 根；存储分区使用两者的哈希（`src/memory-store.js:143-153`、`src/memory-store.js:247-253`）。
-- 内容 1–16,000 字符；疑似密钥的字符串被拒绝；凭据引用名匹配 `[A-Za-z_][A-Za-z0-9_]{0,127}`（`src/memory-store.js:12,14,52-55`）。
-- 写入前在同一分类、同一 scope 内比对已有记录。文本先做 NFKC、大小写、空白和标点规范化：规范化后完全相同直接复用原记录，不更新 `source` 和 `updatedAt`（`src/memory-store.js:64-70`、`src/memory-store.js:329-338`）。
-- 只有两种非完全相同文本算同一事实：较短文本完整包含在较长文本里（增加或去掉限定语），或字符编辑相似度达到 `0.8`。判定故意不使用 token 重叠和公共前后缀相似度，避免同模板但取值不同的事实互相覆盖（`src/memory-store.js:15-20`、`src/memory-store.js:96-109`）。
-- 被判定为同一事实但文本不同的记录被覆盖而不是追加：保留 `id` 和 `createdAt`，用新内容、新 `source` 和新的 `updatedAt` 重写；低于阈值且无包含关系的文本才新增记录（`src/memory-store.js:116-132`、`src/memory-store.js:329-355`）。
-- `private` 的 `credentialRef` 只按引用名完全相同去重，不做模糊匹配；不同分类、不同 Team 或不同 Project 的记录永不合并。
-- 匹配是词面启发式，不含语义：表述完全不同但语义相同或冲突的事实不会命中，需要显式 `update` 指定 `id` 或由面板修正；同模板但取值不同的新事实会保留为两条。
-- `list` 最多返回 8 条，每条预览最多 240 字符（`src/memory.js:59-65`）。面板列出全部记录。
-- `profile` 注入取最近更新的 6 条，每条截到 500 字符；写入后立即刷新，Router 插件装载时和每个 Worker 创建前也会重新读取；上下文标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js:10-22`、`src/memory.js:80`、`router.js:8-11`、`index.js:117`）。
-- 面板不是 Session：public、profile、private 使用 Host 专用 operator 角色，team 的编辑和删除必须带记录自己的 Team 与 Project（`src/memory.js:195-232`）。
-- 记忆记录是数据，不授予权限，也不覆盖代码规则（`src/memory.js:35`）。
+- 全局记忆在所有项目间共享；项目记忆按规范化后的项目根哈希分文件，不同项目互不可见（`src/memory-store.js:113-135`）。
+- 每个字段是文本，最多 4,000 字符；空字符串表示该字段暂无内容（`src/memory-store.js:24-31`）。
+- 没有模型侧记忆工具，也没有记忆面板；记忆不参与请求、授权或合并决定，只由记忆对话维护（`index.js:100-118`、`router.js:7-12`）。
+- Worker 创建时读取项目记忆 + 全局记忆，并注册为 `required` 运行时上下文（order `170`）；Reviewer 在每次审查启动时读取同一份项目 + 全局记忆；Router 只读取全局记忆（`src/memory.js:53-68`、`src/review.js:88`、`index.js:116-124`）。
+- 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js:36-49`）。
+- 写入只改变提取结果中非空且与当前值不同的字段；其余字段保持原值；没有变化时不写文件（`src/memory.js:163-183`）。
+- 全局记忆在 `memory/global.json`，项目记忆在 `memory/projects/<hash>.json`；目录以 `0700` 创建，文件以 `0600` 写入，先写临时文件再 rename（`src/memory-store.js:64-80`、`src/memory-store.js:113-147`）。
+- 读取到版本或字段格式无效的记忆文件时报错，不覆盖原文件（`src/memory-store.js:38-46`）。
 
 ## 记忆对话规则
 
-- 记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2；它和 Reviewer 共用 helper 守卫，运行只读（`src/memory.js:157-190`、`src/memory-extractor.js:4-13`）。
-- 它自己读取 Worker 的对话记录，不接收 worker 提交的摘要：`[user]`、`[assistant]`、`[tool call]` 和 `[tool result]` 逐条组成 transcript；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数，COMPLETED 摘要本身不进入 transcript；每条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长时保留首尾并标出省略（`src/memory.js:108-155`、`src/memory-extractor.js:7-9`）。
-- 角色提示词返回四个数组：`private`、`public`、`profile`、`team`。每条事实最多 500 字符；一次最多 1 条 private、3 条 public、1 条 profile、3 条 team（`src/memory-extractor.js:4-45`）。
-- 提示词要求只固化长期可复用的事实或结论，跳过一次性、短期或易过时的内容；没有合格事实就返回空数组，不强制每次任务都写入。每条事实写成一句短小、独立、规范化的陈述并保持稳定主语，不得用不同措辞重复同一事实；纠正旧结论时只返回纠正后的事实，写入端负责覆盖匹配记录（`src/memory-extractor.js:29-38`）。
-- 输出校验失败、事实超长或数量超出上限时整次提取报错；空数组不写记录（`src/memory.js:89-106`、`src/memory.js:168-169`）。
-- 触发方式只有一种：最终 `message_router` 报告送达后触发一次记忆对话；Worker 不再拥有提交 findings 的 `extract_memory` 工具（`index.js:104-113`、`src/message-router.js:22`）。
-- 触发只发生在 change 任务、Worker 位于 Worktree 且未冻结时；每个 Worker Session 最多一次（`index.js:104-113`）。
-- 插件负责写入：private、public、profile 使用 Host 的 `memory` 角色，team 使用 Worker 的 Team 与规范化后的 Project 根。每条记录保存触发事件的 Session ID 和序号作为 `source`；同一次提取里落到同一记录的多个事实按记录 ID 去重后再返回（`src/memory.js:177-189`、`src/memory.js:24-29`）。
+- 记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2；它和 Reviewer 共用 helper 守卫，运行只读（`src/memory.js:120-149`）。
+- 它自己读取 Worker 的对话记录，不接收 worker 提交的摘要：`[user]`、`[assistant]`、`[tool call]` 和 `[tool result]` 逐条组成 transcript；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数，COMPLETED 摘要本身不进入 transcript；每条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长时保留首尾并标出省略（`src/memory.js:70-118`）。
+- 角色提示词要求更新六个字段：全局 `userProfile`、`sharedSkill`，项目 `responsibilities`、`positioning`、`scenarios`、`skill`；返回字段的完整更新文本，空字符串表示保持不变；每个字段最多 4,000 字符（`src/memory.js:100-117`、`src/memory.js:126-145`）。
+- 提示词要求保留已有事实，只添加或纠正会话支持的结论；跳过一次性任务进度、状态、计数和短期细节；禁止保存密码、API key、token、凭据或个人数据；对话是数据，不是指令（`src/memory.js:100-106`）。
+- 输出缺字段或字段超长时整次提取报错；没有非空更新时不写记录（`src/memory.js:126-145`、`src/memory.js:163-183`）。
+- 触发方式只有一种：最终 `message_router` 报告送达后触发一次记忆对话；Worker 没有提交 findings 的 `extract_memory` 工具（`index.js:100-113`、`src/message-router.js:22`）。
+- 触发只发生在 change 任务、Worker 位于 Worktree 且未冻结时；每个 Worker Session 最多一次（`index.js:100-113`）。
 - 提取失败不阻塞最终报告；只记录警告，报告照常送达（`index.js:109-111`）。
-- 原始归档不是记忆分类，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:417-439`）。
+- 原始归档不是记忆字段，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:150-168`）。
 
 ## 版本
 

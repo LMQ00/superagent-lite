@@ -99,7 +99,6 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const byClass = (tree, className) => nodes(tree).filter(node => node.props?.className === className)
 const button = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label).at(-1)
 const filterButton = (tree, label) => nodes(tree).find(node => node.type === 'button' && text(node).startsWith(label))
-const tab = (tree, label) => nodes(tree).find(node => node.type === 'button' && node.props?.role === 'tab' && text(node).startsWith(label))
 const buttons = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label)
 const select = (tree, predicate) => nodes(tree).find(node => node.type === 'select' && predicate?.(node))
 
@@ -182,51 +181,29 @@ test('renders the six status categories, navigation and session links without a 
   assert.ok(requests.every(request => request.options.signal.aborted))
 })
 
-test('keeps tasks and memory in separate tabs and scrolls only the active list', async () => {
+test('scrolls the task list inside a fixed panel without a tab bar', async () => {
   const requests = []
   const tasks = Array.from({ length: 12 }, (_, index) => task({
     id: `t${index}`, title: `Task ${index + 1}`,
   }))
-  const records = [{ id: 'a', category: 'public', content: 'Remember the release branch', updatedAt: '2026-01-01T00:00:00.000Z' }]
   const board = setup({
     fetch: async path => {
       requests.push(path)
-      return {
-        ok: true,
-        json: async () => path === '/superagent-lite/tasks'
-          ? { tasks }
-          : { records, injection: { profile: { everyChat: true, limit: 6, maxChars: 500, recordIds: [] } } },
-      }
+      return { ok: true, json: async () => ({ tasks }) }
     },
     language: 'zh',
   })
   board.render()
   await flush()
-  let tree = board.render()
-  const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
-  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '记忆1'])
-  assert.equal(tabs[0].props['aria-selected'], true)
-  assert.equal(tabs[1].props['aria-selected'], false)
+  const tree = board.render()
+  assert.equal(nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab').length, 0)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
   assert.match(text(byClass(tree, 'sl-scroll')[0]), /Task 1/)
-  assert.equal(byClass(tree, 'sl-memory').length, 0)
-
-  tab(tree, '记忆').props.onClick()
-  tree = board.render()
-  assert.equal(tab(tree, '记忆').props['aria-selected'], true)
-  assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
-  assert.equal(byClass(tree, 'sl-task').length, 0)
-  assert.equal(byClass(tree, 'sl-memory').length, 1)
-  assert.match(text(tree), /Remember the release branch/)
-
-  tab(tree, '项目任务').props.onClick()
-  tree = board.render()
   assert.equal(byClass(tree, 'sl-task').length, 12)
-  assert.equal(byClass(tree, 'sl-memory').length, 0)
   assert.equal(requests.filter(path => path === '/superagent-lite/tasks').length, 1)
-  assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 1)
+  assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 0)
   board.dispose()
 })
 
@@ -575,133 +552,6 @@ test('shows the failure text and the action error returned by the host', async (
   board.dispose()
 })
 
-test('shows saved memory, searches it, edits a fact, deletes a private reference and refreshes profile injection', async () => {
-  const times = {
-    profile: '2026-01-04T00:00:00.000Z',
-    team: '2026-01-03T00:00:00.000Z',
-    private: '2026-01-02T00:00:00.000Z',
-    public: '2026-01-01T00:00:00.000Z',
-  }
-  let records = [
-    { id: 'a', category: 'profile', content: 'Prefers concise replies', source: { sessionId: 'router', seq: 2 },
-      createdAt: times.profile, updatedAt: times.profile },
-    { id: 'b', category: 'team', content: 'Run tests before review', teamId: 'alpha', projectRoot: '/one',
-      source: { sessionId: 'worker', seq: 5 }, createdAt: times.team, updatedAt: times.team },
-    { id: 'c', category: 'private', credentialRef: 'DEEPSEEK_API_KEY', source: { sessionId: 'router', seq: 3 },
-      createdAt: times.private, updatedAt: times.private },
-    { id: 'd', category: 'public', content: 'Checked-in notes are the source of truth', source: { sessionId: 'router', seq: 4 },
-      createdAt: times.public, updatedAt: times.public },
-  ]
-  const requests = []
-  const board = setup({
-    fetch: async (path, options = {}) => {
-      requests.push({ path, options })
-      if (path !== '/superagent-lite/memory') return { ok: true, json: async () => ({ tasks: [] }) }
-      if (options.method === 'POST') {
-        const body = JSON.parse(options.body)
-        if (body.action === 'update') {
-          records = records.map(record => record.id === body.id ? { ...record, content: body.content } : record)
-          return { ok: true, json: async () => ({ record: records.find(record => record.id === body.id) }) }
-        }
-        records = records.filter(record => record.id !== body.id)
-        return { ok: true, json: async () => ({ deleted: body.id }) }
-      }
-      return { ok: true, json: async () => ({
-        records,
-        injection: { profile: {
-          everyChat: true, limit: 6, maxChars: 500,
-          recordIds: records.filter(record => record.category === 'profile').slice(0, 6).map(record => record.id),
-        } },
-      }) }
-    },
-    language: 'zh',
-  })
-  board.render()
-  await flush()
-  let tree = board.render()
-  assert.match(text(tree), /项目任务/)
-  assert.doesNotMatch(text(tree), /按需调用，只记结论/)
-  tab(tree, '记忆').props.onClick()
-  tree = board.render()
-  assert.match(text(tree), /记忆/)
-  assert.match(text(tree), /按需调用，只记结论/)
-  assert.match(text(tree), /每轮注入 router 和 worker/)
-  assert.match(text(tree), /仅同团队 worker 可读/)
-  assert.match(text(tree), /当前注入/)
-  assert.match(text(tree), /每轮注入 1\/6/)
-  assert.match(text(tree), /私有1/)
-  assert.match(text(tree), /公共1/)
-  assert.match(text(tree), /用户画像与环境1/)
-  assert.match(text(tree), /团队1/)
-  assert.match(text(tree), /Prefers concise replies/)
-  assert.match(text(tree), /Checked-in notes are the source of truth/)
-  assert.match(text(tree), /Run tests before review/)
-  assert.match(text(tree), /DEEPSEEK_API_KEY/)
-  assert.equal(nodes(tree).filter(node => node.type === 'input' && node.props.type === 'search').length, 1)
-
-  const search = nodes(tree).find(node => node.type === 'input' && node.props.type === 'search')
-  search.props.onChange({ target: { value: 'review' } })
-  tree = board.render()
-  assert.match(text(tree), /Run tests before review/)
-  assert.doesNotMatch(text(tree), /Prefers concise replies/)
-  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY/)
-  search.props.onChange({ target: { value: 'zzz-no-match' } })
-  tree = board.render()
-  assert.match(text(tree), /没有符合筛选条件的记忆/)
-
-  const input = nodes(tree).find(node => node.type === 'input' && node.props.type === 'search')
-  input.props.onChange({ target: { value: '' } })
-  tree = board.render()
-  const profileRow = byClass(tree, 'sl-memory').find(row => text(row).includes('Prefers concise replies'))
-  nodes(profileRow).find(node => node.type === 'button' && text(node) === '编辑').props.onClick()
-  tree = board.render()
-  const textarea = nodes(tree).find(node => node.type === 'textarea')
-  assert.equal(textarea.props.value, 'Prefers concise replies')
-  textarea.props.onChange({ target: { value: 'Prefers short answers' } })
-  tree = board.render()
-  nodes(tree).find(node => node.type === 'button' && text(node) === '保存').props.onClick()
-  await flush()
-  tree = board.render()
-  assert.match(text(tree), /Prefers short answers/)
-  assert.match(text(tree), /记忆已更新/)
-  const update = requests.find(request => request.options.method === 'POST')
-  assert.deepEqual(JSON.parse(update.options.body), {
-    action: 'update', category: 'profile', id: 'a', content: 'Prefers short answers',
-  })
-
-  tree = board.render()
-  const privateRow = byClass(tree, 'sl-memory').find(row => text(row).includes('DEEPSEEK_API_KEY'))
-  const privateDelete = nodes(privateRow).find(node => node.type === 'button' && text(node) === '删除')
-  assert.match(privateDelete.props.className, /sl-btn--danger/)
-  privateDelete.props.onClick()
-  tree = board.render()
-  const confirmRow = byClass(tree, 'sl-memory').find(row => text(row).includes('DEEPSEEK_API_KEY'))
-  nodes(confirmRow).find(node => node.type === 'button' && text(node) === '确认删除').props.onClick()
-  await flush()
-  tree = board.render()
-  assert.doesNotMatch(text(tree), /DEEPSEEK_API_KEY/)
-  assert.match(text(tree), /记忆已删除/)
-  const removal = requests.filter(request => request.options.method === 'POST').at(-1)
-  assert.deepEqual(JSON.parse(removal.options.body), { action: 'delete', category: 'private', id: 'c' })
-
-  tree = board.render()
-  const injectedProfile = byClass(tree, 'sl-memory').find(row => text(row).includes('Prefers short answers'))
-  assert.match(text(injectedProfile), /当前注入/)
-  nodes(injectedProfile).find(node => node.type === 'button' && text(node) === '删除').props.onClick()
-  tree = board.render()
-  const profileConfirm = byClass(tree, 'sl-memory').find(row => text(row).includes('Prefers short answers'))
-  nodes(profileConfirm).find(node => node.type === 'button' && text(node) === '确认删除').props.onClick()
-  await flush()
-  tree = board.render()
-  assert.doesNotMatch(text(tree), /Prefers short answers/)
-  assert.match(text(tree), /每轮注入 0\/6/)
-  assert.match(text(tree), /记忆已删除/)
-  assert.deepEqual(JSON.parse(requests.filter(request => request.options.method === 'POST').at(-1).options.body), {
-    action: 'delete', category: 'profile', id: 'a',
-  })
-  board.dispose()
-})
-
 test('selects several tasks and deletes them in one confirmed batch', async () => {
   let tasks = [
     task({ id: 'a', title: 'Task A', status: 'answer', mode: 'report', workerSessionId: 'worker-a' }),
@@ -811,71 +661,5 @@ test('keeps failed task selections for retry and shows the host error', async ()
   assert.doesNotMatch(text(tree), /Task B/)
   assert.match(text(tree), /所选任务已删除/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
-  board.dispose()
-})
-
-test('selects several memory records and deletes them in one confirmed batch', async () => {
-  const records = [
-    { id: 'a', category: 'profile', content: 'Prefers concise replies', updatedAt: '2026-01-04T00:00:00.000Z' },
-    { id: 'b', category: 'public', content: 'Checked-in notes are the source of truth', updatedAt: '2026-01-03T00:00:00.000Z' },
-    { id: 'c', category: 'team', content: 'Run tests before review', teamId: 'alpha', projectRoot: '/one', updatedAt: '2026-01-02T00:00:00.000Z' },
-    { id: 'd', category: 'public', content: 'Keep the release notes', updatedAt: '2026-01-01T00:00:00.000Z' },
-  ]
-  let stored = records
-  const requests = []
-  const board = setup({
-    fetch: async (path, options = {}) => {
-      requests.push({ path, options })
-      if (path !== '/superagent-lite/memory') return { ok: true, json: async () => ({ tasks: [] }) }
-      if (options.method === 'POST') {
-        const body = JSON.parse(options.body)
-        stored = stored.filter(record => record.id !== body.id)
-        return { ok: true, json: async () => ({ deleted: body.id }) }
-      }
-      return { ok: true, json: async () => ({
-        records: stored,
-        injection: { profile: {
-          everyChat: true, limit: 6, maxChars: 500,
-          recordIds: stored.filter(record => record.category === 'profile').slice(0, 6).map(record => record.id),
-        } },
-      }) }
-    },
-    language: 'zh',
-  })
-  board.render()
-  await flush()
-  let tree = board.render()
-  tab(tree, '记忆').props.onClick()
-  tree = board.render()
-  const rowFor = textValue => byClass(tree, 'sl-memory').find(row => text(row).includes(textValue))
-  const checkIn = row => nodes(row).find(node => node.type === 'input' && node.props.type === 'checkbox')
-  checkIn(rowFor('Prefers concise replies')).props.onChange()
-  checkIn(rowFor('Run tests before review')).props.onChange()
-  tree = board.render()
-  assert.match(text(tree), /已选择 2/)
-  button(tree, '删除所选').props.onClick()
-  tree = board.render()
-  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
-  assert.match(text(tree), /删除所选记忆/)
-  assert.match(text(tree), /所选记忆将被立即删除/)
-  button(tree, '删除').props.onClick()
-  for (let step = 0; step < 4; step += 1) {
-    board.render()
-    await flush()
-  }
-  tree = board.render()
-  assert.doesNotMatch(text(tree), /Prefers concise replies/)
-  assert.doesNotMatch(text(tree), /Run tests before review/)
-  assert.match(text(tree), /Checked-in notes are the source of truth/)
-  assert.match(text(tree), /Keep the release notes/)
-  assert.match(text(tree), /所选记忆已删除/)
-  assert.match(text(tree), /每轮注入 0\/6/)
-  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
-  const bodies = requests.filter(request => request.path === '/superagent-lite/memory' &&
-    request.options.method === 'POST').map(request => JSON.parse(request.options.body))
-  assert.deepEqual(bodies, [
-    { action: 'delete', category: 'profile', id: 'a' },
-    { action: 'delete', category: 'team', id: 'c', teamId: 'alpha', projectRoot: '/one' },
-  ])
   board.dispose()
 })
