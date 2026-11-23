@@ -4,6 +4,7 @@ import { checkLandingCommand, forgetLanding, initLanding, landingState } from '.
 import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
 import { createReviewTool, createReviewResultTool, worktreeHead } from './src/review.js'
+import { createMergeTool } from './src/merge-tool.js'
 import { createGitManager } from './src/git-actions.js'
 import { archiveWorkerTurn, createMemoryTool, originFor, refreshProfile, registerProfileContext, runMemoryExtraction } from './src/memory.js'
 import { createMemoryPanelHandler } from './src/memory-panel.js'
@@ -56,6 +57,7 @@ export async function apply(ctx) {
     if (task.status === 'starting' || task.status === 'resuming') await updateTask(task.id, { status: 'running' })
     const state = { frozen: !active, path: task.worktree?.path }
     const reportOnly = task.mode === 'report'
+    const mergeMode = task.mode === 'merge'
     const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
     const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
     const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write'])
@@ -89,6 +91,9 @@ export async function apply(ctx) {
     const checkout = agent.ctx.tools.register(createWorktreeTool(ctx, agent, task.id, path => { state.path = path }), {
       when: () => !state.frozen && !reportOnly,
     })
+    const merge = agent.ctx.tools.register(createMergeTool(ctx, agent, task.id), {
+      when: ({ agent: candidate }) => candidate === agent && !state.frozen && mergeMode && inCheckout(),
+    })
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
       when: () => !state.frozen && !reportOnly && inCheckout(),
     })
@@ -110,7 +115,7 @@ export async function apply(ctx) {
       when: () => reportOnly && !state.frozen,
     })
     const profile = !state.frozen ? registerProfileContext(agent.ctx) : undefined
-    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); memory(); review(); checkout(); guard() } })
+    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { profile?.(); report(); message(); memory(); review(); merge(); checkout(); guard() } })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {

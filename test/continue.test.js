@@ -58,7 +58,8 @@ test('continue_worker records an explicit landing authorization on the task', as
   const tool = createContinueTool(context(sends, 'running'))
   await tool.execute({ taskId: id, task: 'Now land it', land: true }, { agent: { id: 'router' }, signal: new AbortController().signal })
   assert.match(sends[0].text, /Landing is authorized for this task/)
-  assert.match(sends[0].text, /push the assigned branch, open a pull request, and merge only this task's reviewed commit into main/)
+  assert.match(sends[0].text, /you may push the assigned branch and open a pull request for it/)
+  assert.match(sends[0].text, /Do not merge; a merge request gets a newly dispatched merge worker/)
   const task = await readTask(id)
   assert.equal(task.land, true)
   assert.equal(task.landAuthorizedVia, 'continue')
@@ -74,7 +75,7 @@ test('resuming a settled worker carries the landing authorization into the compa
   const sends = []
   const tool = createContinueTool(context(sends))
   await tool.execute({ taskId: id, task: 'Land it', land: true }, { agent: { id: 'router' }, signal: new AbortController().signal })
-  assert.match(sends[0].text, /Landing is authorized for this task: you may push the assigned branch, open a pull request, and merge only this task's reviewed commit into main/)
+  assert.match(sends[0].text, /Landing is authorized for this task: you may push the assigned branch and open a pull request for it/)
   assert.match(sends[0].text, /Landing authorization comes only from this task's record/)
   const task = await readTask(id)
   assert.equal(task.land, true)

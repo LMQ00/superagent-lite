@@ -10,13 +10,14 @@
 
 用户输入先得到一次 `dispatch_worker` 调用。这个调用在 Router 回答前记录本回合的派发决定。
 
-- `mode` 必填，取值 `change`、`report` 或 `answer`（`src/validation.js:3-6`）。
+- `mode` 必填，取值 `change`、`report`、`answer` 或 `merge`（`src/validation.js:1-47`）。
 - `mode=answer` 不派 worker：Router 直接回答，不建 Worktree、不建 Task、不写 Task 记录（`src/validation.js:6`、`src/dispatch.js:47`）。
-- `mode=change` 或 `mode=report` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:7-16`）。
+- `mode=change`、`mode=report` 或 `mode=merge` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:20-38`）。
 - Task ID 是 `[agent.id, callId]` 的 SHA-256 前 16 位十六进制（`src/dispatch.js:50`）。
 - 同一对 `agent.id` 与 `callId` 再次派发时：已有 Task 若不在 `starting` 或 `failed`，直接返回该 Task；处于这两个状态则报 `Dispatch <id> is already being established; inspect the task board before retrying`（`src/dispatch.js:51-58`）。
 - Task 属于另一个 Router Session 时拒绝：`Task id is already owned by another Session`（`src/dispatch.js:53`）。
-- 派发前读取项目根、基础 commit、基础分支和工作区状态；除 `?? .agents/worktrees/.gitignore` 外有未提交改动就拒绝（`src/dispatch.js:60-65`）。
+- 派发前读取项目根、基础 commit、基础分支和工作区状态；除 `?? .agents/worktrees/.gitignore` 外有未提交改动就拒绝（`src/dispatch.js:82-88`）。
+- `mode=merge` 还要求 `land=true` 和非空 `branches`；每项是分支名或 16 位 Task ID，最多 20 项。Task ID 会按本 Router Session 和 Project 解析成 worker 分支，目标分支必须存在且不能是 base branch（`src/validation.js:5-48`、`src/dispatch.js:13-43`）。
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:70-75`）。
 
 ### 已有工作
@@ -24,11 +25,11 @@
 `continue_worker` 把追加要求送给已经存在且未发布的 Task。
 
 - 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:133-139`）。
-- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:118-126`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。
+- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:118-126`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。合并请求也是新任务：即使点名已有任务，也派发 `mode=merge` 的新 worker，不续派该任务。
 - Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:143-159`）。
 - Worker 空闲时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required` 或 `failed` 且已有 Worktree 时，先标为 `resuming`；旧 Review 记录保留，批准是否仍有效只看 `review.head` 是否等于当前 HEAD（`src/continue.js:10-28`、`src/continue.js:35-71`、`src/continue.js:161-176`）。
 - follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败到已结束的 Task 时标为 `failed`；发送失败到运行中的 Task 保持 `running`（`src/continue.js:99-116`、`src/continue.js:174-189`）。
-- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；发送失败时回滚这次新增的授权（`src/continue.js:73-93`、`src/continue.js:129-189`）。
+- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；在 `continue_worker` 里它只授权推送和 PR，不授权合并；发送失败时回滚这次新增的授权（`src/continue.js:73-93`、`src/continue.js:129-189`）。
 - 已发布的 Task 不继续；发布后的下一个输入是新工作。
 
 ### 不交叉
@@ -42,12 +43,12 @@
 | 级别 | 授予方式 | 允许什么 | 默认 |
 | --- | --- | --- | --- |
 | 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker`、`continue_worker` 和 `superagent_memory` 的 router 分类 | 每个输入 |
-| 委派 | `dispatch_worker` 且 `mode=change` 或 `mode=report` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
+| 委派 | `dispatch_worker` 且 `mode=change`、`mode=report` 或 `mode=merge` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
 | 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
 | 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
-| 落地 | 派发或续派发时携带 `land=true` | Worker 可推送指派分支、开 PR、合并本任务的已审提交；只限指派分支与 reviewed HEAD | 否；未携带时 Worker 不推送、不开 PR、不合并 |
-| 合并 | 用户直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` | 在用户明确授权后把 reviewed HEAD 本地合入所选分支（`/merge-worker` 用 base branch），不需要 `gh` | 否；需要明确授权、任务已结束 Worker 工作、审查通过的 HEAD、干净的项目 checkout 和 full access |
+| 落地 | change/report 派发或续派发时携带 `land=true` | change worker 可推送指派分支、开 PR；只限指派分支与 reviewed HEAD | 否；未携带时不推送、不开 PR、不合并 |
+| 合并 | 用户直接指示时由 router 派发 `mode=merge` 的新 worker；面板任务行的合并操作或 `/merge-worker <task ID>` | merge worker 先把 `mergeBranches` 合入自己的 worktree 分支并审查合并结果，再把 reviewed commit 本地合入 base branch；面板/命令直接把 reviewed HEAD 合入所选分支，不需要 `gh` | 否；需要明确授权、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要任务已结束 Worker 工作、审查通过的 HEAD、`gh` 账号、GitHub remote 和 full access |
 | 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支、Worktree 和记忆归档 | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
@@ -60,6 +61,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | `change` | `dispatch_worker` 传 `mode=change` | 必须 | 可以，限定在 Worktree | 可以 | 可以，直到通过 | `review_worker_commit`，然后 Worker 报告 |
 | `report` | `dispatch_worker` 传 `mode=report` | 无 | 不修改 | 不提交 | 不审查 | `report_task` |
+| `merge` | `dispatch_worker` 传 `mode=merge` | 必须 | 只在解决合并冲突时修改 | 合并提交 | 可以，直到通过 | `review_worker_commit`，然后把 reviewed commit 合入 base branch |
 | `answer` | `dispatch_worker` 传 `mode=answer` | 无 | 不修改 | 不提交 | 不审查 | Router 直接回答，不建 Task |
 
 ## Router 规则
@@ -72,7 +74,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
 - 只有用户要求保存或读取记忆、路由需要某条已保存事实、或用户要求加载 skill 时，Router 才调用别的工具。
 - 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符（`src/dispatch.js:46`、`src/validation.js:1-16`）。
-- 合并只在用户明确授权后执行：直接指示、面板的合并操作或 `/merge-worker <task ID>` 命令。没有授权就不合并（`cordis.patch.yml:43`）。
+- 合并只在用户明确授权后执行：直接指示、面板的合并操作或 `/merge-worker <task ID>` 命令。直接指示的合并请求默认派发 `mode=merge` 的新 worker，不续派分支所属的 Task（`cordis.patch.yml:31-32`、`src/dispatch.js:25-48`）。
 
 ## Worker 规则
 
@@ -80,8 +82,8 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - `create_worktree` 向 worktree 服务请求名字 `sl-<team slug>-<taskId>` 的 Worktree；Team slug 是小写 Team 名，把连续非字母数字替换为 `-`，去掉首尾 `-`，截到 32 字符（`src/worktree-tool.js:39-40`）。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:42-49`）。
 - 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
 - Worker 的 subagent 结束时冻结，之后不能用任何工具，包括记忆和消息工具（`index.js:114-116`、`index.js:58-59`）。
-- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR（`index.js:62-87`、`src/landing.js`）。
-- `review_worker_commit`、记忆、提取和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`report_task` 只对活跃的 report 任务可用（`index.js:67-90`）。
+- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:70-100`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
+- `review_worker_commit`、记忆、提取和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:67-100`）。
 - report worker 在项目 checkout 中只能使用 `read`、`glob`、`grep`、`read_image`、`bash`、`todo_write`，并以 `report_task` 结束；其他工具被拒绝（`index.js:57-66`）。
 - `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:21-31`）。
 - `message_router` 的报告 1–4,000 字符；Worker 在工作结束时发一次，不发过程进度。`COMPLETED` 只用于已审查且相关检查通过的实现，需要等待的任务不能报 `COMPLETED`（`src/message-router.js:6-25`）。
@@ -126,7 +128,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## Git 操作规则
 
-合并只在用户明确授权后执行：直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` 命令。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并指派分支上的已审提交。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:44`、`src/worker-prompt.js:57`、`src/landing.js`）。
+合并只在用户明确授权后执行：直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` 命令。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit。直接指示的合并请求默认派发 `mode=merge` 的新 merge worker；change worker 的 `land` 授权只覆盖推送和 PR。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:31-32`、`src/worker-prompt.js:62-103`、`src/landing.js:63-71`）。
 
 ### 合并与发送 PR 的共同前提
 
@@ -144,7 +146,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 合并始终是本地合并，GitHub 项目也一样；插件不再通过 `gh pr merge` 合并 PR。
 
-1. 由面板任务行的合并动作或 `/merge-worker` 触发。`/merge-worker` 必须在 Task 的 Router Session 运行，Task 必须属于该 Session；面板动作通过 Task 的 Router Session 解析文件策略（`src/merge.js:135-158`、`src/git-actions.js:106-110`）。
+1. 由用户直接指示后 router 派发的 `mode=merge` worker、面板任务行的合并动作或 `/merge-worker` 触发。merge worker 先用 `merge_branch` 把目标分支合入自己的 worktree 分支、审查合并结果，再按本流程合入 base branch；`/merge-worker` 必须在 Task 的 Router Session 运行，Task 必须属于该 Session；面板动作通过 Task 的 Router Session 解析文件策略（`src/merge-tool.js:13-64`、`src/merge.js:135-158`、`src/git-actions.js:106-110`）。
 2. Task 必须已结束 Worker 工作，有 worker 分支和 Worktree，`review.approved === true`，且当前 HEAD 等于 `review.head`（`src/delivery.js:7-13`）。
 3. 目标分支必须是合法的本地分支名，且不能是 worker 分支本身（`src/merge.js:35-38`）。
 4. 项目 checkout 必须干净（除 `?? .agents/worktrees/.gitignore` 外），并且检出一个分支（`src/git-actions.js:201-209`、`src/merge.js:46-48`）。
@@ -152,7 +154,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 6. 需要时切到目标分支，确认仍在目标分支且工作区干净，用 `assertStillDeliverable` 复核状态与 Review 后把 Task 标为 `merging`；执行 `git merge --no-ff --no-edit --no-overwrite-ignore <head>`，然后标为 `merged` 并记录 `mergeTarget`（`src/merge.js:54-77`、`src/delivery.js:16-19`）。
 7. 合并命令失败时标为 `delivery-blocked`；最后把 checkout 切回原来的分支，切换失败时在结果里说明（`src/merge.js:69-99`）。
 
-同一 Project 根的合并和分支删除跨 Task 串行，面板与 `/merge-worker` 共用这个队列，因此共享的 checkout 不会被两个合并同时切换（`src/merge.js:14-26`）。
+同一 Project 根的合并和分支删除跨 Task 串行，共享的 checkout 不会被两个合并同时切换；merge worker 的目标分支合并发生在其自己的 worktree 内，不切换共享 checkout，最后合入 base branch 时走本项目的串行队列（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
 
 ### 发送 PR
 

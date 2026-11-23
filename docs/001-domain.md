@@ -4,7 +4,7 @@
 
 ## 流程
 
-一条用户输入进入 Router Session。Router 先做一次派发决定：不需要项目工作就用 `dispatch_worker` 的 `mode=answer` 直接回答；需要查证就用 `mode=report` 让 worker 只读检查并交回结论；需要改动项目文件就用 `mode=change` 创建 Task 并启动一个 Worker Session。change worker 在分配的 Worktree 里修改文件、提交并请求独立 Review；report worker 在项目 checkout 里检查，用 `report_task` 交回结论。Worker 用 `message_router` 把最终结论送回 Router。审查通过的 HEAD 等待用户授权的 Git action：本地合并写回 Project checkout，或推送分支并打开 Pull request。Task 结束后，Worktree 和 worker 分支保留到下一次恢复或交付。记忆独立于 Task 存在：Worker 的每一轮历史按轮次归档，记忆对话直接读取 Worker 的对话并从中提取四类记录，profile 每轮注入 Router 和 Worker。
+一条用户输入进入 Router Session。Router 先做一次派发决定：不需要项目工作就用 `dispatch_worker` 的 `mode=answer` 直接回答；需要查证就用 `mode=report` 让 worker 只读检查并交回结论；需要改动项目文件就用 `mode=change` 创建 Task 并启动一个 Worker Session；用户明确授权合并已交付分支时用 `mode=merge` 启动一个新的 merge worker。change worker 在分配的 Worktree 里修改文件、提交并请求独立 Review；merge worker 先把目标分支合入自己的 Worktree 分支、提交并审查合并结果，再把 reviewed commit 本地合入 base branch；report worker 在项目 checkout 里检查，用 `report_task` 交回结论。Worker 用 `message_router` 把最终结论送回 Router。审查通过的 HEAD 等待用户授权的 Git action：本地合并写回 Project checkout，或推送分支并打开 Pull request。Task 结束后，Worktree 和 worker 分支保留到下一次恢复或交付。记忆独立于 Task 存在：Worker 的每一轮历史按轮次归档，记忆对话直接读取 Worker 的对话并从中提取四类记录，profile 每轮注入 Router 和 Worker。
 
 ```mermaid
 flowchart LR
@@ -35,7 +35,7 @@ flowchart LR
 | 概念 | 定义 | 守住的规则 |
 | --- | --- | --- |
 | 用户输入（Input） | 一条开启或继续回合的用户消息。 | 只有 `source.kind === 'user'` 的消息算输入；提醒使用 `superagent-lite-reminder` 来源，不算新输入；AGENTS.md 是仓库约定，不是任务；Worker 报告和环境事件是背景（`src/turn-guard.js:54-71`、`cordis.patch.yml:25-26`）。 |
-| Router Session | 运行 `superagent-lite` 预设的 DSH Session。 | 每个输入先做一次派发决定；不编辑项目文件；只有用户明确授权后才合并（`router.js:1-14`、`cordis.patch.yml:21-43`）。 |
+| Router Session | 运行 `superagent-lite` 预设的 DSH Session。 | 每个输入先做一次派发决定；不编辑项目文件；用户明确授权合并时派发新的 merge worker，而不是自己合并或续派原任务（`router.js:1-14`、`cordis.patch.yml:21-45`）。 |
 | 派发决定（Routing decision） | 当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。 | 一个输入一个决定；失败的工具结果不算；最多 2 次提醒重开完成回合（`src/turn-guard.js:73-108`）。 |
 | Task | 一次被委派的工作及其 JSON 记录。 | 只有 `dispatch_worker` 能创建；安装 owner 可从面板删除记录，删除不回收 worker 分支、Worktree 或记忆归档；ID 是 16 位小写十六进制；固定一个 Router Session、一个 Team、一个 Project 和一个 Worker Session（`src/dispatch.js:50`、`src/task-store.js:59-79`、`src/task-store.js:103-121`）。 |
 | Team | Task 归属的团队名。 | 一个 Team 只拥有一个 Project，首次写入后不得改配（`src/task-store.js:70-75`）。 |
@@ -48,7 +48,7 @@ flowchart LR
 | Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-25`、`index.js:114-146`）。 |
 | Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；发送失败时回滚记录（`src/continue.js:70-89`、`src/continue.js:92-151`）。 |
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；项目 checkout 必须保持原样（`index.js:54-63`、`src/report-tool.js:19-41`）。 |
-| Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；`merge` 也可来自用户直接指示或 `/merge-worker`。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-133`）。 |
+| Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行，`/merge-worker` 是命令入口。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-133`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
 | Memory | 保存下来的事实，分 private、public、profile、team 四类。 | private 只存凭据引用名；public 只存客观结论；profile 每轮注入；team 按 Team 与 Project 隔离；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖原记录；记录是数据，不是指令（`src/memory.js:31-87`、`src/memory-store.js:143-153`、`src/memory-store.js:329-355`）。 |
 | 记忆对话（Memory conversation） | 读取 Worker 对话并提炼记忆的独立 helper 子代理。 | 自己读取 Worker 的会话记录，不接收 worker 提交的摘要；返回 private、public、profile、team 四个数组；每次最多 1/3/1/3 条，每条最多 500 字符；插件把结果写回各自分类并按分类与 scope 去重（`src/memory-extractor.js:4-45`、`src/memory.js:108-184`）。 |
@@ -62,14 +62,14 @@ Task 是唯一聚合根。它持有：
 
 | 字段 | 内容 |
 | --- | --- |
-| `id`、`title`、`teamId`、`task`、`mode` | 标识、显示标题、Team、保存的需求文本、`change` 或 `report`（`answer` 不建 Task） |
+| `id`、`title`、`teamId`、`task`、`mode` | 标识、显示标题、Team、保存的需求文本、`change`、`report` 或 `merge`（`answer` 不建 Task） |
 | `parentSessionId` | 发起派发的 Router Session |
 | `projectRoot`、`baseCommit`、`baseBranch` | 项目根、worker 起点 commit、基础分支 |
 | `workerSessionId` | 唯一的 Worker Session |
 | `status` | 状态枚举中的一个值 |
 | `worktree` | `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch` |
 | `review` | `head`、`reviewerSessionId`、`approved` |
-| `mergeTarget`、`branchDeletedAt` | 本地合并的目标分支，以及 worker 分支被删除的时间 |
+| `mergeTarget`、`mergeBranches`、`branchDeletedAt` | 本地合并的目标分支、merge 任务要合入 worktree 分支的目标分支列表，以及 worker 分支被删除的时间 |
 | `followUps` | 追加要求条目，含 `id`、`text`、`at` |
 | `report` | 只报告任务的结论与时间 |
 | `prUrl`、`prState` | 已发布 Pull request 的地址与状态 |
@@ -116,8 +116,8 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 工作 | `running` | Worker 已创建或 Worktree 已保存，任务进行中（`index.js:51-52`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束的 Task 被 follow-up 重新打开（`src/continue.js:127-134`） |
 | 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:131-140`） |
-| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作（`index.js:141`、`src/git-actions.js:291-302`） |
-| 交付 | `merging` | 本地合并已开始（`src/merge.js:67-71`） |
+| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作（`index.js:149`、`src/git-actions.js:291-302`） |
+| 交付 | `merging` | 面板或命令触发的本地合并已开始（`src/merge.js:67-71`） |
 | 交付 | `publishing` | 发送 PR 的路径已开始（`src/git-actions.js:440-444`、`src/git-actions.js:476-478`） |
 | 交付 | `awaiting-ci` | reviewed HEAD 的 PR 已打开；面板读取时用 `gh` 同步 PR 状态（`src/github.js:92-109`、`src/git-actions.js:278-283`） |
 | 交付 | `merged` | 提交已进入基础分支：本地合并、外部合并 PR，或面板读取时确认已包含在基础分支（`src/merge.js:78-80`、`src/git-actions.js:309-317`） |

@@ -64,7 +64,7 @@
 
 ### 合并
 
-打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:642-673`、`src/merge.js:30-101`）。
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff`，不需要 `gh` 账号；完成后 checkout 回到原来的分支（`client.js:642-673`、`src/merge.js:30-101`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge` 的新 worker，合入的是该 worker 的 reviewed merge commit。
 
 按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏、HEAD 移动或任务已离开可交付状态都会带原因拒绝（`src/git-actions.js:308-316`、`src/delivery.js:7-19`）。
 

@@ -27,7 +27,7 @@ test('change tasks are told to work in a worktree, commit and request independen
   assert.match(text, /call message_router once with the final conclusion/)
 })
 
-test('an explicitly authorized task may land its reviewed commit only', () => {
+test('an explicitly authorized change task may push but must not merge', () => {
   const text = buildWorkerPrompt({
     title: 'Push the change',
     teamId: 'project-alpha',
@@ -37,10 +37,35 @@ test('an explicitly authorized task may land its reviewed commit only', () => {
   })
 
   assert.match(text, /Landing is authorized for this task/)
-  assert.match(text, /push the assigned branch, open a pull request, and merge only this task's reviewed commit into main/)
+  assert.match(text, /you may push the assigned branch and open a pull request for it/)
+  assert.match(text, /Do not merge; a merge request gets a newly dispatched merge worker/)
   assert.match(text, /another branch, another task's commit, or an unreviewed commit/)
   assert.match(text, /Commands outside that scope are refused/)
   assert.doesNotMatch(text, /Landing is not authorized/)
+})
+
+test('merge tasks get their targets, merge tool, review, and landing order', () => {
+  const text = buildWorkerPrompt({
+    title: 'Merge delivered branches',
+    teamId: 'project-alpha',
+    baseBranch: 'main',
+    task: 'Merge the delivered branches into master.',
+    mode: 'merge',
+    land: true,
+    branches: ['sl-one', 'sl-two'],
+  })
+
+  assert.match(text, /^Project team: project-alpha/)
+  assert.match(text, /Merge targets \(in this order\):\n- sl-one\n- sl-two/)
+  assert.match(text, /Mode: merge/)
+  assert.match(text, /call create_worktree once/)
+  assert.match(text, /call merge_branch with that branch/)
+  assert.match(text, /Do not merge the target branches into the base branch directly/)
+  assert.match(text, /commit the merged worktree, then call review_worker_commit/i)
+  assert.match(text, /merge only this task's reviewed merge commit into main/)
+  assert.match(text, /run the merge from the project checkout/)
+  assert.match(text, /call message_router once with the final conclusion/)
+  assert.doesNotMatch(text, /Mode: change/)
 })
 
 test('authorization language inside the requirements does not authorize landing', () => {

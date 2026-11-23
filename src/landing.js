@@ -10,6 +10,7 @@ export function initLanding(task) {
   if (!task || typeof task.id !== 'string') return undefined
   const state = {
     authorized: task.land === true,
+    allowMerge: task.mode === 'merge',
     branch: task.worktree?.branch,
     baseBranch: task.baseBranch,
     projectRoot: task.projectRoot,
@@ -59,9 +60,12 @@ export function forgetLanding(taskId) {
   states.delete(taskId)
 }
 
-export function landingRule(authorized, baseBranch = 'the base branch') {
+export function landingRule(authorized, baseBranch = 'the base branch', mode = 'change') {
+  if (authorized && mode === 'merge') {
+    return `Landing is authorized for this task: after review, merge only this task's reviewed merge commit into ${baseBranch}; run the merge from the project checkout. Do not push, open a pull request, or merge another branch, another task's commit, or an unreviewed commit. Commands outside that scope are refused.`
+  }
   if (authorized) {
-    return `Landing is authorized for this task: you may push the assigned branch, open a pull request, and merge only this task's reviewed commit into ${baseBranch}; run the merge from the project checkout. Never push, open a pull request for, or merge another branch, another task's commit, or an unreviewed commit. Commands outside that scope are refused.`
+    return `Landing is authorized for this task: you may push the assigned branch and open a pull request for it. Do not merge; a merge request gets a newly dispatched merge worker. Never push or open a pull request for another branch, another task's commit, or an unreviewed commit. Commands outside that scope are refused.`
   }
   return 'Landing is not authorized for this task: do not push, open a pull request, or merge; stop after the reviewed commit. The landing guard refuses those commands.'
 }
@@ -368,6 +372,7 @@ function checkPush(state, action, facts) {
 }
 
 function checkMerge(state, action, facts) {
+  if (!state.allowMerge) return 'Merging is performed by a newly dispatched merge worker; this task may only push or open a pull request.'
   if (!facts) return 'Landing cannot verify the checkout; run the command from the project checkout.'
   if (!state.reviewHead) return 'Landing requires an approved review of this task; commit, call review_worker_commit, and retry.'
   if (typeof state.projectRoot !== 'string' || !state.projectRoot) return 'Landing has no project checkout to merge into.'
