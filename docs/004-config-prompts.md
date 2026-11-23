@@ -9,7 +9,7 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」 | `cordis.patch.yml:21-45`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明，包括 `mode` 的四种取值、merge 目标与显式 `land` 授权 | `src/dispatch.js:39-59`、`src/continue.js:120-131` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权 | `src/dispatch.js:40-51`、`src/continue.js:120-131` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式、`land` 条件规则、`Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-119` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
 | 审查提示词、裁决工具与范围 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及 `base..head` / Worktree 范围、只读命令白名单和 workdir 围栏 | `src/review.js:12-34`、`src/review.js:54-67`、`src/review-scope.js:1-231` |

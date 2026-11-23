@@ -130,7 +130,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const sends = []
   ctx.subagents.sendMessage = async (sender, targetId, content) => sends.push({ sender: sender.id, targetId, text: content[0].text })
   const dispatch = createDispatchTool(ctx)
-  const args = { mode: 'change', title: 'Change notes', teamId: 'team', task: 'Update notes', land: true }
+  const args = { mode: 'change', title: 'Change notes', worktreeName: 'change-notes', teamId: 'team', task: 'Update notes', land: true }
   const exec = { agent: parent, signal, callId: 'call' }
   await assert.rejects(dispatch.execute({ ...args, teamId: '../bad' }, exec), /teamId/)
   await assert.rejects(dispatch.execute({ title: 'Missing mode' }, exec), /mode/)
@@ -142,6 +142,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const branch = 'sl-fixture'
   assert.equal(dispatched.workerSessionId, worker.id)
   assert.equal((await readTask(dispatched.taskId)).baseCommit, baseCommit)
+  assert.equal((await readTask(dispatched.taskId)).worktreeName, 'change-notes')
   assert.equal((await readTask(dispatched.taskId)).land, true)
   assert.equal((await readTask(dispatched.taskId)).landAuthorizedVia, 'dispatch')
   git(['worktree', 'add', '-b', branch, worktree])

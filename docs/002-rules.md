@@ -12,7 +12,8 @@
 
 - `mode` 必填，取值 `change`、`report`、`answer` 或 `merge`（`src/validation.js:1-47`）。
 - `mode=answer` 不派 worker：Router 直接回答，不建 Worktree、不建 Task、不写 Task 记录（`src/validation.js:6`、`src/dispatch.js:47`）。
-- `mode=change`、`mode=report` 或 `mode=merge` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:20-38`）。
+- `mode=change`、`mode=report` 或 `mode=merge` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:21-53`）。
+- `mode=change` 和 `mode=merge` 还要求 `worktreeName`：1–4 个英文小写 kebab-case 短词，最多 32 字符，如 `fix-plan-color`；中文标题要翻译成英文，不能用中文、拼音或通用名。它决定新 Task 的 Worktree 和 worker 分支名（`src/validation.js:9-16`、`src/worktree-tool.js:42-46`）。
 - Task ID 是 `[agent.id, callId]` 的 SHA-256 前 16 位十六进制（`src/dispatch.js:50`）。
 - 同一对 `agent.id` 与 `callId` 再次派发时：已有 Task 若不在 `starting` 或 `failed`，直接返回该 Task；处于这两个状态则报 `Dispatch <id> is already being established; inspect the task board before retrying`（`src/dispatch.js:51-58`）。
 - Task 属于另一个 Router Session 时拒绝：`Task id is already owned by another Session`（`src/dispatch.js:53`）。
@@ -72,13 +73,13 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 每个输入最多提醒 2 次；新的用户输入重置预算（`src/turn-guard.js:3-7`、`src/turn-guard.js:56-70`）。
 - Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
 - Router 只在派发、续派或用户要求加载 skill 时调用别的工具；没有模型侧记忆工具，全局记忆由上下文注入。
-- 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符（`src/dispatch.js:46`、`src/validation.js:1-16`）。
+- 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符；change 和 merge 还要求英文 `worktreeName`（`src/dispatch.js:44-50`、`src/validation.js:1-53`）。
 - 合并只在用户明确授权后执行：直接指示或面板的合并操作。直接指示的合并请求默认派发 `mode=merge` 的新 worker，不续派分支所属的 Task（`cordis.patch.yml:31-32`、`src/dispatch.js:25-48`）。
 
 ## Worker 规则
 
 - change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 外，工作目录不在分配的 Worktree 时所有工具被拦（`index.js:57-66`）。
-- `create_worktree` 向 worktree 服务请求名字 `sl-<team slug>-<taskId>` 的 Worktree；Team slug 是小写 Team 名，把连续非字母数字替换为 `-`，去掉首尾 `-`，截到 32 字符（`src/worktree-tool.js:39-40`）。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:42-49`）。
+- `create_worktree` 向 worktree 服务请求名字 `sl-<worktreeName>-<taskId 前 12 位>` 的 Worktree，目录和分支同名，例如 `sl-fix-plan-color-0123456789ab`（`src/worktree-tool.js:42-46`）。旧 Task 没有 `worktreeName` 时沿用原命名 `sl-<team slug>-<taskId>`。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:48-55`）。
 - 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
 - Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:114-116`、`index.js:58-59`）。
 - Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:70-100`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。

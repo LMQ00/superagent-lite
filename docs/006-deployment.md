@@ -46,7 +46,7 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 4. 在插件管理器里启用这个 bundle。
 5. 新建 Session，在预设里选择「Superagent 轻量版」或「Superagent 轻量版 worker」。
 
-安装成功的判据：预设列表出现两个预设，侧栏出现「项目任务」。Bundle 会插入自己的 worktree 服务，目录 `.agents/worktrees`，名字前缀 `sl-`，`retainOnArchive: true`（`cordis.patch.yml:1-7`）。
+安装成功的判据：预设列表出现两个预设，侧栏出现「项目任务」。Bundle 会插入自己的 worktree 服务，目录 `.agents/worktrees`，`retainOnArchive: true`；新任务的 Worktree 和分支名由 `sl-<worktreeName>-<Task ID 前 12 位>` 组成（`cordis.patch.yml:1-7`、`src/worktree-tool.js:42-46`）。
 
 ## 配置
 
@@ -55,7 +55,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；唯一�
 | 键 | 必填 | 含义 |
 | --- | --- | --- |
 | `worktree.directory` | 是，默认 `.agents/worktrees` | Worktree 在项目内的创建目录 |
-| `worktree.namePrefix` | 是，默认 `sl-` | Worktree 名字前缀 |
+| `worktree.namePrefix` | 是，默认 `sl-` | worktree 服务自动生成名字时的前缀；本插件为 Task 显式指定名字 |
 | `worktree.retainOnArchive` | 是，默认 `true` | Session 归档后保留 worker 分支和检出 |
 | Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |

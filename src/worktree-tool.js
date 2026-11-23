@@ -38,8 +38,12 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
         }
       }
 
+      // Tasks recorded before readable names were added keep their old name when a worktree is first created.
       const team = task.teamId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'project'
-      const worktree = await ctx.worktrees.create(agent, { name: `sl-${team}-${taskId}`, from: task.baseCommit }, exec.signal)
+      const name = task.worktreeName
+        ? `sl-${task.worktreeName}-${taskId.slice(0, 12)}`
+        : `sl-${team}-${taskId}`
+      const worktree = await ctx.worktrees.create(agent, { name, from: task.baseCommit }, exec.signal)
       try {
         const saved = {
           path: worktree.path,

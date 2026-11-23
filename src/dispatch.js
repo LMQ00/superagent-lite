@@ -43,6 +43,7 @@ export function createDispatchTool(ctx) {
       properties: {
         mode: { type: 'string', enum: ['change', 'report', 'answer', 'merge'], description: 'Required. change: project files must change; report: a worker verifies read-only and returns a conclusion; answer: answer directly without a worker or task; merge: a new worker merges delivered branches into the base branch.' },
         title: { type: 'string', description: 'For mode=change, report, or merge: short task title.' },
+        worktreeName: { type: 'string', description: 'For mode=change or merge, required: the worker branch and worktree name: 1–4 short English words in lowercase kebab-case, at most 32 characters, e.g. fix-plan-color. Translate Chinese titles into English; no Chinese, pinyin, or generic names.' },
         teamId: { type: 'string', description: 'For mode=change, report, or merge: the team that owns the project; one team owns one project.' },
         task: { type: 'string', description: 'For mode=change, report, or merge: the user\'s request and any acceptance criteria they stated, without omitting, rewriting or compressing its information; do not add a plan or requirements.' },
         branches: { type: 'array', items: { type: 'string' }, description: 'For mode=merge only: the branch names or 16-character task IDs named in the input, in merge order.' },
@@ -76,7 +77,7 @@ export function createDispatchTool(ctx) {
       if (!exec.agent) throw new Error('dispatch_worker requires an Agent session')
       const decision = validateDispatchArguments(args)
       if (!decision.delegate) return { delegated: false, mode: decision.mode }
-      const { title, teamId, task: taskText, mode, land, branches } = decision
+      const { title, worktreeName, teamId, task: taskText, mode, land, branches } = decision
 
       const id = createHash('sha256').update(JSON.stringify([exec.agent.id, exec.callId])).digest('hex').slice(0, 16)
       const existing = await readTask(id)
@@ -101,6 +102,7 @@ export function createDispatchTool(ctx) {
       const taskRecord = {
         id,
         title,
+        ...(worktreeName ? { worktreeName } : {}),
         teamId,
         task: taskText,
         mode,
