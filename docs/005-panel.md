@@ -105,7 +105,7 @@
 | 并发 worker 上限 | 1–16，默认 3；超出的新 Task 显示「排队中」，有空闲名额后按创建顺序启动；review 是 worker 的子代理，不占额外名额（`src/launch-queue.js`） |
 | 保存 | 只影响之后启动的 worker；已有 worker 保持原模型。失败原因显示在保存按钮上方 |
 
-bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里；设置页不编辑提示词。
+bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里；设置页不编辑提示词。记忆没有单独的面板或设置入口：全局/项目记忆、skill 和知识库只由 memory 角色维护，Worker 和 Reviewer 通过运行时上下文与 `knowledge_query` 读取。
 
 ## 设计原则
 

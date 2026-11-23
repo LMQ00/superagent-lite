@@ -13,6 +13,7 @@ const READ_ONLY_TOOLS = new Set([
   'x_search',
   'job_output',
   'job_list',
+  'knowledge_query',
 ])
 
 const SHELL_TOOLS = ['bash', 'pwsh']
@@ -20,20 +21,20 @@ const SHELL_TOOLS = ['bash', 'pwsh']
 // A reviewer gets no patch in its prompt; it must read base..head and the
 // worktree itself. Everything else the inherited read-only composition offers
 // is outside that scope. `submit_review` is how it records the verdict.
-const REVIEW_TOOLS = new Set(['submit_review', 'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh'])
+const REVIEW_TOOLS = new Set(['submit_review', 'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh', 'knowledge_query'])
 
-export function expectHelper(parentSessionId, reviewScope) {
+export function expectHelper(parentSessionId, reviewScope, kind = reviewScope ? 'review' : 'memory', context = {}) {
   const queue = pending.get(parentSessionId) ?? []
-  queue.push(reviewScope)
+  queue.push({ scope: reviewScope, kind, ...context })
   pending.set(parentSessionId, queue)
 }
 
 export function claimHelper(parentSessionId) {
   const queue = pending.get(parentSessionId)
   if (!queue || queue.length === 0) return false
-  const scope = queue.shift()
+  const helper = queue.shift()
   if (queue.length === 0) pending.delete(parentSessionId)
-  return { scope }
+  return helper
 }
 
 export function clearHelperExpectation(parentSessionId) {
@@ -70,8 +71,14 @@ export function takeHelperEvidence(sessionId) {
   return entry?.scope.hasEvidence() ?? false
 }
 
-export function registerReadOnlyGuard(agent, reviewScope) {
-  // index.js claims the child expected by review.js and installs this guard.
+export function registerReadOnlyGuard(agent, helper) {
+  // index.js claims the expected helper and installs this guard. A reviewer
+  // carries a review scope; the memory role has none and owns the only
+  // knowledge write tool.
+  const reviewScope = helper?.kind === undefined && helper?.scope === undefined
+    ? helper
+    : helper?.scope
+  const helperKind = helper?.kind ?? (reviewScope ? 'review' : 'memory')
   // The helper inherits the worker composition, so its shell could write; a
   // session-level override confines every shell call to read-only file effects.
   agent.session.append('sandbox/mode', { mode: 'read-only', source: 'delegation' })
@@ -80,6 +87,9 @@ export function registerReadOnlyGuard(agent, reviewScope) {
   const shellConfined = session => agent.ctx.get('shell')?.sandboxMode !== undefined &&
     agent.ctx.get('sandboxPolicy')?.resolve({ session })?.mode === 'read-only'
   agent.ctx.tools.guard(({ name, arguments: input, agent: caller }) => {
+    if (name === 'knowledge_write') {
+      return helperKind === 'memory' ? undefined : 'Only the memory role may write project knowledge.'
+    }
     if (reviewScope && !REVIEW_TOOLS.has(name)) {
       return `Review scope: the reviewer may only inspect the worker worktree and ${reviewScope.baseCommit}..${reviewScope.headCommit}; "${name}" is not available.`
     }
@@ -87,6 +97,7 @@ export function registerReadOnlyGuard(agent, reviewScope) {
       return reviewScope ? undefined : 'Read-only helpers cannot use "submit_review"; only a reviewer records a verdict.'
     }
     if (READ_ONLY_TOOLS.has(name)) {
+      if (name === 'knowledge_query') return undefined
       return reviewScope ? reviewScope.checkFileTool(name, input) : undefined
     }
     if (SHELL_TOOLS.includes(name)) {

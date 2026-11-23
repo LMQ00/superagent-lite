@@ -12,8 +12,12 @@ import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard } from './src/helper-guard.js'
+import {
+  archiveWorkerTurn, createKnowledgeQueryTool, createKnowledgeWriteTool, registerMemoryContext,
+  registerProjectSkillProvider, runMemoryExtraction,
+} from './src/memory.js'
 
-export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory']
+export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
   const gitManager = createGitManager(ctx)
@@ -50,8 +54,23 @@ export async function apply(ctx) {
     if (agent.session.header.origin !== 'subagent') return
     const helper = claimHelper(agent.session.header.parentSession)
     if (helper) {
-      registerReadOnlyGuard(agent, helper.scope)
+      registerReadOnlyGuard(agent, helper)
       if (helper.scope) agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
+      if (agent.ctx.tools.register) {
+        const projectRoot = helper.projectRoot
+          ?? (await taskForSession(undefined, agent.session.header.parentSession))?.projectRoot
+        if (projectRoot) {
+          try {
+            registerProjectSkillProvider(agent.ctx, projectRoot)
+          } catch (error) {
+            ctx.logger.warn(`superagent-lite project skill: ${error instanceof Error ? error.message : String(error)}`)
+          }
+          agent.ctx.tools.register(createKnowledgeQueryTool(projectRoot), { when: () => true })
+          if (helper.kind === 'memory') {
+            agent.ctx.tools.register(createKnowledgeWriteTool(projectRoot), { when: () => true })
+          }
+        }
+      }
       return
     }
     const task = await taskForSession(undefined, agent.id)
@@ -64,7 +83,7 @@ export async function apply(ctx) {
     const mergeMode = task.mode === 'merge'
     const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
     const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
-    const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write'])
+    const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write', 'knowledge_query', 'skill'])
     const landingDenial = input => {
       if (typeof input?.command !== 'string') return undefined
       const sessionCwd = ctx.workingDirectory.get(agent.session)
@@ -102,11 +121,41 @@ export async function apply(ctx) {
       when: () => !state.frozen && !reportOnly && inCheckout(),
     })
     const activeWorker = candidate => candidate === agent && !state.frozen && inCheckout()
-    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id), { when: ({ agent: candidate }) => activeWorker(candidate) })
+    const knowledge = agent.ctx.tools.register(createKnowledgeQueryTool(task.projectRoot), {
+      when: ({ agent: candidate }) => candidate === agent,
+    })
+    const projectSkill = (() => {
+      try {
+        return registerProjectSkillProvider(agent.ctx, task.projectRoot)
+      } catch (error) {
+        ctx.logger.warn(`superagent-lite project skill: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+    })()
+    let memoryAttempted = false
+    const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
+      if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
+      memoryAttempted = true
+      try {
+        return await runMemoryExtraction(ctx, agent, { projectRoot: task.projectRoot }, exec.signal)
+      } catch (error) {
+        ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+    }), { when: ({ agent: candidate }) => activeWorker(candidate) })
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
-    workers.set(agent.id, { taskId: task.id, state, session: agent.session, dispose: () => { report(); message(); review(); merge(); checkout(); guard() } })
+    const memory = !state.frozen
+      ? await registerMemoryContext(agent.ctx, task.projectRoot).catch(error => {
+        ctx.logger.warn(`superagent-lite memory context: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      })
+      : undefined
+    workers.set(agent.id, {
+      taskId: task.id, state, session: agent.session,
+      dispose: () => { memory?.(); projectSkill?.(); knowledge(); report(); message(); review(); merge(); checkout(); guard() },
+    })
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
@@ -126,6 +175,9 @@ export async function apply(ctx) {
 
   ctx.on('session/event', (session, event) => {
     dispatchGuard.onEvent(session, event)
+    if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {
+      track(archiveWorkerTurn(session, event))
+    }
   })
 
   ctx.on('subagent/end', (info) => {
