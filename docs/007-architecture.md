@@ -57,7 +57,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/continue.js`
 
-把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发完整任务消息加 `Resume` 段。已结束的 Task 先改 `resuming` 并清空旧 Review；follow-up 先记录，发送失败回滚（`src/continue.js:1-107`）。
+把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲时发完整任务消息加 `Resume` 段。已结束的 Task 先改 `resuming`，保留旧 Review 记录；follow-up 先记录，发送失败回滚（`src/continue.js:1-107`）。
 
 ### `src/worker-prompt.js`
 

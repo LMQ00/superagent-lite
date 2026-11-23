@@ -6,6 +6,7 @@ import test, { after } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { checksRollup, createGitManager, pullRequestUrl } from '../src/git-actions.js'
+import { mergeWorkerBranch } from '../src/merge.js'
 
 const run = promisify(execFile)
 const signal = new AbortController().signal
@@ -319,6 +320,66 @@ test('merge writes the reviewed head into the chosen local branch and returns to
   const stored = await store.readTask(taskId)
   assert.equal(stored.status, 'merged')
   assert.equal(stored.mergeTarget, 'release')
+})
+
+test('merge refuses a task that has not finished its worker turn', async () => {
+  const facts = await setupRepo()
+  for (const status of ['resuming', 'running', 'publishing', 'merging', 'failed', 'delivery-blocked']) {
+    const store = memoryStore([recordFor(facts, { status })])
+    await assert.rejects(
+      managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal),
+      /Only a task that finished its worker turn can be merged/,
+    )
+    assert.equal((await store.readTask(taskId)).status, status)
+  }
+  await assert.rejects(git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/release'], facts.repo))
+})
+
+test('a resumed task whose head did not move keeps its approval and can merge', async () => {
+  const facts = await setupRepo()
+  const store = memoryStore([recordFor(facts)])
+  await store.updateTask(taskId, { status: 'resuming' })
+  assert.equal((await store.readTask(taskId)).review.head, facts.workerHead)
+  await assert.rejects(
+    managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal),
+    /Only a task that finished its worker turn can be merged/,
+  )
+  // The worker turn ends without a new commit, so the saved review still covers HEAD.
+  await store.updateTask(taskId, { status: 'awaiting-merge' })
+  const result = await managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal)
+  assert.equal(result.status, 'merged')
+  const stored = await store.readTask(taskId)
+  assert.equal(stored.review.head, facts.workerHead)
+  assert.equal(await git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/release'], facts.repo), '')
+})
+
+test('a resumed task whose head moved keeps its review but cannot merge it', async () => {
+  const facts = await setupRepo()
+  const review = { head: facts.baseCommit, reviewerSessionId: 'reviewer', approved: true }
+  const store = memoryStore([recordFor(facts, { review })])
+  await store.updateTask(taskId, { status: 'resuming' })
+  assert.deepEqual((await store.readTask(taskId)).review, review)
+  // A stale settled record must not turn the old approval into a merge of the new HEAD.
+  await store.updateTask(taskId, { status: 'awaiting-merge' })
+  await assert.rejects(
+    managerFor(store).perform(taskId, 'merge', { target: 'release' }, signal),
+    /no longer matches its reviewed commit/,
+  )
+  assert.deepEqual((await store.readTask(taskId)).review, review)
+  await assert.rejects(git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/release'], facts.repo))
+})
+
+test('merge stops when the task leaves its mergeable state during preparation', async () => {
+  const facts = await setupRepo()
+  const store = memoryStore([recordFor(facts)])
+  const stale = await store.readTask(taskId)
+  await store.updateTask(taskId, { status: 'resuming' })
+  await assert.rejects(
+    mergeWorkerBranch(context(), stale, 'release', signal, store.updateTask),
+    /left its mergeable state during merge preparation/,
+  )
+  assert.equal(await git(['symbolic-ref', '--short', 'HEAD'], facts.repo), 'main')
+  await assert.rejects(git(['merge-base', '--is-ancestor', facts.workerHead, 'refs/heads/release'], facts.repo))
 })
 
 test('merge refuses an unknown target and a conflicting target', async () => {

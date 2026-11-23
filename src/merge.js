@@ -31,6 +31,7 @@ export async function mergeWorkerBranch(ctx, task, target, signal, update = upda
   if (task.status === 'merged') {
     return { head: task.review?.head, target, baseHead: undefined, alreadyMerged: true }
   }
+  if (!['awaiting-merge', 'awaiting-ci'].includes(task.status)) throw new Error('Only a task that finished its worker turn can be merged')
   if (!task.worktree?.branch || !task.worktree.path) throw new Error('This task has no worker branch')
   if (task.review?.approved !== true) throw new Error('No reviewed local commit is ready for merge')
   if (typeof target !== 'string' || !/^[A-Za-z0-9._\/-]{1,200}$/.test(target)) throw new Error('A merge target branch is required')
@@ -66,6 +67,7 @@ export async function mergeWorkerBranch(ctx, task, target, signal, update = upda
       if (dirtyNow.split('\n').some(dirtyTargetLine)) throw new Error('The project checkout has uncommitted changes')
       await update(task.id, latest => {
         if (latest.status === 'merged') throw new Error('This branch is already merged')
+        if (!['awaiting-merge', 'awaiting-ci'].includes(latest.status)) throw new Error('The task left its mergeable state during merge preparation')
         if (latest.review?.approved !== true || latest.review?.head !== head) throw new Error('The review changed during merge')
         return { status: 'merging' }
       })

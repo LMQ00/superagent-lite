@@ -85,7 +85,7 @@ export function createContinueTool(ctx) {
           if (!current.worktree || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
             throw new Error('Only settled, unpublished worktrees can be resumed')
           }
-          return { status: 'resuming', review: undefined }
+          return { status: 'resuming' }
         })
       }
       const followUpId = await recordFollowUp(ctx, taskId, text)
