@@ -2,7 +2,7 @@
 
 一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在独立 Worktree 中执行、提交并接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
-- router 收到输入后调用 `dispatch_worker` 派工，或调用 `continue_worker` 追加要求；不需要项目工作时直接回答并写明理由。
+- router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务；同一未发布任务的补充用 `continue_worker`。
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个只读子代理审查该提交。
 - 审查通过的分支经你明确授权后合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。

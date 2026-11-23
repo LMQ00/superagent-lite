@@ -10,13 +10,13 @@
 
 用户输入先得到一次 `dispatch_worker` 调用。这个调用在 Router 回答前记录本回合的派发决定。
 
-- `delegate=false` 不派 worker，`reason` 必填，长度 1–2,000 字符（`src/validation.js:3-7`）。
-- `delegate=true` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:8-19`）。
-- `mode` 省略时为 `change`，也可以显式传 `report`（`src/validation.js:17-19`）。
-- Task ID 是 `[agent.id, callId]` 的 SHA-256 前 16 位十六进制（`src/dispatch.js:52`）。
-- 同一对 `agent.id` 与 `callId` 再次派发时：已有 Task 若不在 `starting` 或 `failed`，直接返回该 Task；处于这两个状态则报 `Dispatch <id> is already being established; inspect the task board before retrying`（`src/dispatch.js:53-60`）。
-- Task 属于另一个 Router Session 时拒绝：`Task id is already owned by another Session`（`src/dispatch.js:55`）。
-- 派发前读取项目根、基础 commit、基础分支和工作区状态；除 `?? .agents/worktrees/.gitignore` 外有未提交改动就拒绝（`src/dispatch.js:62-67`）。
+- `mode` 必填，取值 `change`、`report` 或 `answer`（`src/validation.js:3-6`）。
+- `mode=answer` 不派 worker：Router 直接回答，不建 Worktree、不建 Task、不写 Task 记录（`src/validation.js:6`、`src/dispatch.js:47`）。
+- `mode=change` 或 `mode=report` 创建一个 Task 和一个 Worker Session。`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 匹配 `[a-zA-Z0-9][a-zA-Z0-9._-]*` 且最多 64 字符（`src/validation.js:7-16`）。
+- Task ID 是 `[agent.id, callId]` 的 SHA-256 前 16 位十六进制（`src/dispatch.js:50`）。
+- 同一对 `agent.id` 与 `callId` 再次派发时：已有 Task 若不在 `starting` 或 `failed`，直接返回该 Task；处于这两个状态则报 `Dispatch <id> is already being established; inspect the task board before retrying`（`src/dispatch.js:51-58`）。
+- Task 属于另一个 Router Session 时拒绝：`Task id is already owned by another Session`（`src/dispatch.js:53`）。
+- 派发前读取项目根、基础 commit、基础分支和工作区状态；除 `?? .agents/worktrees/.gitignore` 外有未提交改动就拒绝（`src/dispatch.js:60-65`）。
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:70-75`）。
 
 ### 已有工作
@@ -34,14 +34,14 @@
 
 - `dispatch_worker` 不恢复已有 Task，也不给运行中的 Worker 追加要求。
 - `continue_worker` 不创建 Task 或 Worktree。
-- 文件重叠不是合并工作的理由；新目标有自己的 Worker、Worktree 和分支，合并路径会拒绝冲突（`src/validation.js:1-20`、`src/git-actions.js:199-208`）。
+- 文件重叠不是合并工作的理由；新目标有自己的 Worker、Worktree 和分支，合并路径会拒绝冲突（`src/validation.js:1-16`、`src/git-actions.js:199-208`）。
 
 ## 授权级别
 
 | 级别 | 授予方式 | 允许什么 | 默认 |
 | --- | --- | --- | --- |
 | 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker`、`continue_worker` 和 `superagent_memory` 的 router 分类 | 每个输入 |
-| 委派 | `dispatch_worker` 且 `delegate=true` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
+| 委派 | `dispatch_worker` 且 `mode=change` 或 `mode=report` | 创建一个 Task 和一个 Worker Session | 否；需要决定 |
 | 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
 | 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
@@ -56,19 +56,20 @@
 
 | 模式 | 选择方式 | Worktree | 修改项目文件 | 提交 | 请求审查 | 结束方式 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `change` | `dispatch_worker` 省略 mode 或传 `change` | 必须 | 可以，限定在 Worktree | 可以 | 可以，直到通过 | `review_worker_commit`，然后 Worker 报告 |
+| `change` | `dispatch_worker` 传 `mode=change` | 必须 | 可以，限定在 Worktree | 可以 | 可以，直到通过 | `review_worker_commit`，然后 Worker 报告 |
 | `report` | `dispatch_worker` 传 `mode=report` | 无 | 不修改 | 不提交 | 不审查 | `report_task` |
+| `answer` | `dispatch_worker` 传 `mode=answer` | 无 | 不修改 | 不提交 | 不审查 | Router 直接回答，不建 Task |
 
 ## Router 规则
 
 Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生效（`src/turn-guard.js:89-93`）。
 
-- 每个用户输入需要当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。失败的工具结果不算；`delegate=false` 的成功结果算（`src/turn-guard.js:73-108`）。
+- 每个用户输入需要当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。失败的工具结果不算；`mode=answer` 的成功结果算（`src/turn-guard.js:73-108`）。
 - 完成回合没有决定时，等 agent 空闲后插入提醒。提醒是 `source.kind = superagent-lite-reminder` 的用户角色消息，不是新输入（`src/turn-guard.js:7`、`src/turn-guard.js:33-51`）。
 - 每个输入最多提醒 2 次；新的用户输入重置预算（`src/turn-guard.js:3-7`、`src/turn-guard.js:56-70`）。
 - Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
 - 只有用户要求保存或读取记忆、路由需要某条已保存事实、或用户要求加载 skill 时，Router 才调用别的工具。
-- 派发参数在碰文件前完成校验：`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符，`reason` 1–2,000 字符（`src/dispatch.js:48`、`src/validation.js:1-20`）。
+- 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符（`src/dispatch.js:46`、`src/validation.js:1-16`）。
 - 合并只在用户明确授权后执行：直接指示、面板的合并操作或 `/merge-worker <task ID>` 命令。没有授权就不合并（`cordis.patch.yml:43`）。
 
 ## Worker 规则
@@ -206,7 +207,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## 版本
 
-Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-83`、`src/review.js:20-32`、`src/continue.js:66-67`）。
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:67-80`、`src/review.js:20-32`、`src/continue.js:66-67`）。
 
 Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:560-579`、`src/merge.js:23-43`）。
 

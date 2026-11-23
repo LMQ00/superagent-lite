@@ -6,8 +6,8 @@ Superagent 轻量版把项目工作拆成一条固定链路：用户输入先在
 
 | 原则 | 判定 |
 | --- | --- |
-| 每次输入一个派发决定 | Router Session 在回答前调用一次 `dispatch_worker` 或 `continue_worker`。项目工作用 `delegate=true`；不派 worker 用 `delegate=false` 并写明 1–2,000 字符的理由。完成回合没有成功决定时，插件最多插入 2 次提醒（`src/turn-guard.js:63-127`）。 |
-| Router 不直接做项目工作 | 文件修改、命令执行和仓库检查发生在 Worker Session。Router 只派发、追问、读取记忆，并在授权后执行合并（`cordis.patch.yml:21-43`、`src/dispatch.js:85-100`）。 |
+| 每次输入一个派发决定 | Router Session 在回答前调用一次 `dispatch_worker` 或 `continue_worker`。`dispatch_worker` 必须写明 `mode=change`（改项目文件）、`mode=report`（只查证并交回结论）或 `mode=answer`（直接回答，不派 worker、不建任务）。完成回合没有成功决定时，插件最多插入 2 次提醒（`src/turn-guard.js:63-127`）。 |
+| Router 不直接做项目工作 | 文件修改、命令执行和仓库检查发生在 Worker Session。Router 只派发、追问、读取记忆，并在授权后执行合并（`cordis.patch.yml:21-43`、`src/dispatch.js:83-98`）。 |
 | 一个 Task 固定一组关系 | 一个 Task 属于一个 Router Session、一个 Team、一个 Project 和一个 Worker Session。Team 与 Project 一经绑定不得改配（`src/task-store.js:70-75`、`src/task-store.js:110-124`）。 |
 | 改动只落在分配的 Worktree | change worker 除 `create_worktree` 外的工具只有在工作目录等于分配的 Worktree 时才放行（`index.js:57-66`）。报告任务在项目 checkout 内使用检查工具，结束前不得改变 checkout（`src/report-tool.js:26-31`）。 |
 | 交付对象是审查过的 HEAD | 合并与发送 PR 都要求 `review.approved === true` 且分支 HEAD 等于 `review.head`（`src/git-actions.js:168-179`）。Worker 的总结、面板状态和记忆都不构成交付许可。 |

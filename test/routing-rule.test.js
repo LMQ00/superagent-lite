@@ -34,3 +34,22 @@ test('dispatch_worker relays the request without losing information', () => {
   assert.match(dispatch.description, /do not omit or compress its information/)
   assert.match(dispatch.parameters.properties.task.description, /without omitting, rewriting or compressing its information/)
 })
+
+test('dispatch_worker makes answer, report, and change a required first-class mode', () => {
+  assert.deepEqual(dispatch.parameters.properties.mode.enum, ['change', 'report', 'answer'])
+  assert.deepEqual(dispatch.parameters.required, ['mode'])
+  assert.match(dispatch.description, /mode=change when the request needs project files changed/)
+  assert.match(dispatch.description, /mode=report when answering requires a worker to inspect the repository/)
+  assert.match(dispatch.description, /mode=answer when the input only asks something you can answer/)
+  assert.match(dispatch.description, /no worker, worktree, or task is created/)
+  assert.equal(dispatch.parameters.properties.delegate, undefined)
+  assert.equal(dispatch.parameters.properties.reason, undefined)
+})
+
+test('the router persona names all three modes and when to choose each', async () => {
+  const persona = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  assert.match(persona, /Set dispatch_worker mode by need: answer/)
+  assert.match(persona, /answer when the user only asks and memory or the conversation already answers it/)
+  assert.match(persona, /report when the answer needs read-only repository inspection or commands/)
+  assert.match(persona, /change when project files must change/)
+})
