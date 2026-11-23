@@ -2,6 +2,7 @@ import { readTask, updateTask, listTasks } from './task-store.js'
 import { runCommand, runProcess } from './process.js'
 import { githubRepository, publishGithub, pullRequestUrl } from './github.js'
 import { deleteWorkerBranch, mergeWorkerBranch } from './merge.js'
+import { setLandingPullRequest, setLandingReview } from './landing.js'
 import { runReview, worktreeHead } from './review.js'
 import { panelStatus, reviewIndex, reviewKey } from './status.js'
 
@@ -275,9 +276,11 @@ export function createGitManager(ctx, dependencies = {}) {
     const candidates = records ?? (store.listTasks ? await store.listTasks() : [task])
     const review = reviewIndex(candidates).get(reviewKey(task.projectRoot, head))
     if (!review) return task
-    return store.updateTask(task.id, {
+    const next = await store.updateTask(task.id, {
       review: { head: review.head, reviewerSessionId: review.reviewerSessionId, approved: true },
     })
+    setLandingReview(task.id, { head: review.head, approved: true })
+    return next
   }
 
   async function viewFor(record, project, signal, reviews) {
@@ -303,6 +306,7 @@ export function createGitManager(ctx, dependencies = {}) {
         task = await store.updateTask(task.id, {
           review: { head: adopted.head, reviewerSessionId: adopted.reviewerSessionId, approved: true },
         })
+        setLandingReview(task.id, { head: adopted.head, approved: true })
         reviewed = true
       }
     }
@@ -407,6 +411,7 @@ export function createGitManager(ctx, dependencies = {}) {
       status: verdict.approved ? 'awaiting-merge' : 'review-required',
       failure: verdict.approved ? undefined : task.failure,
     })
+    setLandingReview(task.id, verdict)
     return result(task, 'review', {
       status: next.status,
       approved: verdict.approved,
@@ -464,7 +469,10 @@ export function createGitManager(ctx, dependencies = {}) {
       const published = await publish(task, { repo: remote.repository, pushUrl: remote.pushUrl }, signal, changes => store.updateTask(task.id, changes))
       const next = await store.readTask(task.id)
       const url = pullRequestUrl(next.prUrl) ?? published.url
-      if (url) pullRequests.delete(url)
+      if (url) {
+        pullRequests.delete(url)
+        setLandingPullRequest(task.id, url)
+      }
       return result(task, 'publish', {
         status: next.status,
         prUrl: next.prUrl ?? published.url,

@@ -77,6 +77,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
           assert.match(spec.prompt[0].text, /Base branch: main/)
           assert.match(spec.prompt[0].text, /Task: Change notes/)
           assert.match(spec.prompt[0].text, /Requirements:\nUpdate notes/)
+          assert.match(spec.prompt[0].text, /Landing is authorized for this task/)
           let previous = -1
           for (const section of ['Project team:', 'Base branch:', 'Task:', 'Requirements:', 'Before:', 'During:', 'After:', 'Reporting:']) {
             const index = section === 'Project team:' ? spec.prompt[0].text.indexOf(section) : spec.prompt[0].text.indexOf(`\n${section}`)
@@ -129,7 +130,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const sends = []
   ctx.subagents.sendMessage = async (sender, targetId, content) => sends.push({ sender: sender.id, targetId, text: content[0].text })
   const dispatch = createDispatchTool(ctx)
-  const args = { delegate: true, title: 'Change notes', teamId: 'team', task: 'Update notes' }
+  const args = { delegate: true, title: 'Change notes', teamId: 'team', task: 'Update notes', land: true }
   const exec = { agent: parent, signal, callId: 'call' }
   await assert.rejects(dispatch.execute({ ...args, teamId: '../bad' }, exec), /teamId/)
   await assert.rejects(dispatch.execute({ delegate: false }, exec), /reason/)
@@ -140,6 +141,8 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const branch = 'sl-fixture'
   assert.equal(dispatched.workerSessionId, worker.id)
   assert.equal((await readTask(dispatched.taskId)).baseCommit, baseCommit)
+  assert.equal((await readTask(dispatched.taskId)).land, true)
+  assert.equal((await readTask(dispatched.taskId)).landAuthorizedVia, 'dispatch')
   git(['worktree', 'add', '-b', branch, worktree])
   await writeFile(join(worktree, 'notes.txt'), 'updated\n')
   git(['commit', '-am', 'change notes'], worktree)

@@ -22,3 +22,11 @@ test('mode defaults to change and accepts report', () => {
   assert.equal(validateDispatchArguments({ ...args, mode: 'report' }).mode, 'report')
   assert.throws(() => validateDispatchArguments({ ...args, mode: 'docs' }), /mode/)
 })
+
+test('land defaults to false, accepts true, and rejects other values or report tasks', () => {
+  const args = { delegate: true, teamId: 'team', title: 't', task: 'do it' }
+  assert.equal(validateDispatchArguments(args).land, false)
+  assert.equal(validateDispatchArguments({ ...args, land: true }).land, true)
+  assert.throws(() => validateDispatchArguments({ ...args, land: 'yes' }), /land/)
+  assert.throws(() => validateDispatchArguments({ ...args, land: true, mode: 'report' }), /report-only tasks cannot be authorized to land/)
+})

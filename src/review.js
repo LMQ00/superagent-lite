@@ -1,5 +1,6 @@
 import { readTask, updateTask } from './task-store.js'
 import { clearHelperExpectation, expectHelper, takeHelperEvidence } from './helper-guard.js'
+import { setLandingReview } from './landing.js'
 import { createReviewScope } from './review-scope.js'
 import { runCommand } from './process.js'
 
@@ -136,6 +137,7 @@ export function createReviewTool(ctx, agent, taskId) {
       if (exec.agent !== agent || task?.status !== 'running' || !task.worktree) throw new Error('No active worker worktree')
       const verdict = await runReview(ctx, agent, task, exec.signal)
       await updateTask(taskId, { review: { head: verdict.head, reviewerSessionId: verdict.reviewerSessionId, approved: verdict.approved } })
+      setLandingReview(taskId, verdict)
       return `${verdict.approved ? 'Approved' : 'Changes requested'} for ${verdict.head}: ${verdict.findings.slice(0, 6000)}`
     },
   }

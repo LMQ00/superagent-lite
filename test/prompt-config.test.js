@@ -28,11 +28,14 @@ test('merge authorization policy is consistent across the router prompt, worker 
   for (const [name, text] of Object.entries(texts)) {
     assert.doesNotMatch(text, /Never merge|merges nothing|router 与 worker 都不推送、不合并/, name)
   }
+  assert.match(texts.config, /Set dispatch_worker or continue_worker land=true only when this user input explicitly authorizes/)
   assert.match(texts.config, /Merge only after the user explicitly authorizes it/)
-  assert.match(texts.rules, /合并只在用户明确授权后执行/)
+  assert.match(texts.rules, /worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许/)
   assert.match(texts.prompts, /router 只在用户明确授权后合并/)
-  assert.match(texts.worker, /Merge only after the user explicitly authorizes it/)
-  assert.match(texts.readme, /未授权时 router 和 worker 都不会合并/)
+  assert.match(texts.prompts, /派发或续派发只在用户本轮明确授权落地时才传 `land=true`/)
+  assert.match(texts.worker, /landingRule\(land, baseBranch\)/)
+  assert.match(texts.worker, /landingAuthorizationRule\(\)/)
+  assert.match(texts.readme, /worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许/)
 })
 
 test('bundled router prompt answers objectively without rewriting the user opinion', async () => {

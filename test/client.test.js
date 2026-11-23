@@ -128,7 +128,7 @@ test('renders the six status categories, navigation and session links without a 
   const requests = []
   const opened = []
   const tasks = [
-    task({ prUrl: 'https://github.com/owner/repo/pull/1', git: gitFacts(), status: 'unmerged' }),
+    task({ prUrl: 'https://github.com/owner/repo/pull/1', git: gitFacts(), status: 'unmerged', land: true }),
     task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
   ]
   const board = setup({
@@ -149,6 +149,7 @@ test('renders the six status categories, navigation and session links without a 
   assert.match(text(tree), /未合并的任务可以合并或提交 PR/)
   assert.match(text(tree), /Task A/)
   assert.match(text(tree), /Task B/)
+  assert.match(text(tree), /已授权落地/)
   for (const label of ['未合并1', '运行中1', '未审查0', '已完成0', '失败0', '仅回答0']) assert.ok(text(tree).includes(label), label)
   assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1', '运行中1'])
   assert.equal(byClass(tree, 'sl-git-section').length, 0)

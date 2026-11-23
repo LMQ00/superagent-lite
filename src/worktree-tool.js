@@ -1,4 +1,5 @@
 import { taskForSession, updateTask } from './task-store.js'
+import { setLandingWorktree } from './landing.js'
 
 export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
   return {
@@ -27,6 +28,7 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
       if (task.worktree) {
         await ctx.workingDirectory.set(agent, task.worktree.path, exec.signal)
         releaseGuard(task.worktree.path)
+        setLandingWorktree(taskId, task.worktree)
         return {
           path: task.worktree.path,
           branch: task.worktree.branch,
@@ -48,6 +50,7 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
         }
         await updateTask(taskId, { worktree: saved, status: 'running' })
         releaseGuard(saved.path)
+        setLandingWorktree(taskId, saved)
         return {
           path: saved.path,
           branch: saved.branch,

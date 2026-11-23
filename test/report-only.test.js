@@ -127,6 +127,8 @@ test('a report-only task completes through report_task without a branch, commit,
 
   assert.equal(guard({ name: 'read' }), undefined)
   assert.equal(guard({ name: 'bash' }), undefined)
+  assert.match(guard({ name: 'bash', arguments: { command: 'git push origin main' } }), /Landing is not authorized/)
+  assert.match(guard({ name: 'bash', arguments: { command: 'git merge HEAD' } }), /Landing is not authorized/)
   assert.match(guard({ name: 'write' }), /Report-only tasks/)
   assert.match(guard({ name: 'create_worktree' }), /Report-only tasks/)
   assert.equal(registered.get('create_worktree').options.when(), false)
@@ -235,6 +237,10 @@ test('dispatch stores the report mode and builds a report-only prompt', async ()
   await assert.rejects(
     dispatch.execute({ delegate: true, teamId: 'team-dispatch', title: 'Bad mode', task: 'x', mode: 'docs' }, exec),
     /mode/,
+  )
+  await assert.rejects(
+    dispatch.execute({ delegate: true, teamId: 'team-dispatch', title: 'Bad land', task: 'x', mode: 'report', land: true }, exec),
+    /report-only tasks cannot be authorized to land/,
   )
   const result = await dispatch.execute({ delegate: true, teamId: 'team-dispatch', title: 'Diagnose', task: '只做诊断，不改代码', mode: 'report' }, exec)
   assert.equal(result.delegated, true)
