@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const anchor = process.env.DSH_INSTALL_DIR
 
-test('installed DSH schemas, dispatched worktree, reviewed commit and explicit local merge', {
+test('installed DSH schemas, dispatched worktree and reviewed commit', {
   skip: !anchor || typeof registerHooks !== 'function',
 }, async (t) => {
   const require = createRequire(join(anchor, 'package.json'))
@@ -30,7 +30,6 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
     await rm(root, { recursive: true, force: true })
   })
   const { createDispatchTool } = await import('../src/dispatch.js')
-  const { mergeCommand } = await import('../src/merge.js')
   const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
@@ -55,7 +54,7 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   const parent = { id: 'router', session: { id: 'router' } }
   let worker
   let reviewCalls = 0
-  let scopeMode = 'danger-full-access'
+  const scopeMode = 'danger-full-access'
   const ctx = {
     workingDirectory: { get: () => repo },
     sandboxPolicy: { resolve: () => ({ mode: scopeMode }) },
@@ -153,8 +152,6 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   await continueTool.execute({ taskId: dispatched.taskId, task: 'Add a changelog entry' }, { agent: parent, signal })
   assert.match(sends[0].text, /Add a changelog entry/)
   sends.length = 0
-  const local = mergeCommand(ctx)
-  assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'error')
   const review = createReviewTool(ctx, worker, dispatched.taskId)
   for (const tool of [dispatch, review]) {
     assertSupportedJsonSchema(tool.parameters)
@@ -173,20 +170,6 @@ test('installed DSH schemas, dispatched worktree, reviewed commit and explicit l
   await message.execute({ message: 'Done on sl-fixture' }, { agent: worker, signal })
   assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])
   assert.equal((await readTask(dispatched.taskId)).review.head, head)
-  await updateTask(dispatched.taskId, { status: 'awaiting-merge' })
-  scopeMode = 'read-only'
-  assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'error')
-  scopeMode = 'danger-full-access'
-  await writeFile(join(repo, 'notes.txt'), 'main change\n')
-  git(['commit', '-am', 'change main'])
-  const conflicted = await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })
-  assert.equal(conflicted.kind, 'error')
-  assert.match(conflicted.text, /Merge would conflict/)
-  git(['reset', '--hard', baseCommit])
-  assert.equal(git(['rev-parse', 'HEAD']), baseCommit)
-  assert.equal((await local.handler({ agent: parent, rawInput: dispatched.taskId, signal })).kind, 'success')
-  assert.equal(git(['show', 'HEAD:notes.txt']), 'updated')
-  assert.equal((await readTask(dispatched.taskId)).status, 'merged')
 
   const caller = { role: 'worker', teamId: 'team', projectRoot: repo }
   const memory = createMemoryTool(caller, candidate => candidate === worker)

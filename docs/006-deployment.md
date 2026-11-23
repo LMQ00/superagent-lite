@@ -147,13 +147,10 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `Only settled, unpublished worktrees can be resumed` | Task 没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；重新派发 |
-| `This task does not belong to the current router Session.` | 在派发该 Task 的 Router Session 里运行 `/merge-worker` |
-| `Local merge is unavailable under this Session file policy.` | 把 Router Session 设为 full access |
 | `Only a task that finished its worker turn can be delivered` | Task 处于 `resuming`、`running`、`publishing`、`merging`、`failed`、`delivery-blocked` 等非交付状态；等 Worker 回合结束或刷新面板后重试 |
 | `The task left its deliverable state during preparation` | 交付准备期间 Task 被续派发或状态变化；重新确认后重试，本次没有执行写操作 |
 | `The review changed during delivery` | 准备期间 Review 被替换或 HEAD 移动；重新审查当前 HEAD |
 | `GitHub authentication is required to publish: ...` | 运行 `gh auth login` 后重试；本地合并不需要 `gh` |
-| `Usage: /merge-worker <task ID>` | 传一个 16 位十六进制 Task ID |
 | `Report-only tasks must leave the project checkout unchanged` | 还原 checkout 改动后再调用 `report_task` |
 | `Report-only task ended without report_task` | 回合结束前必须调用 `report_task`；重新派发报告任务 |
 | `Only the active worker for this task can message its router` | `message_router` 是 Worker 工具，Router 不能调用 |

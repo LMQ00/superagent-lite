@@ -11,7 +11,7 @@ Superagent 轻量版把项目工作拆成一条固定链路：用户输入先在
 | 一个 Task 固定一组关系 | 一个 Task 属于一个 Router Session、一个 Team、一个 Project 和一个 Worker Session。Team 与 Project 一经绑定不得改配（`src/task-store.js:70-75`、`src/task-store.js:110-124`）。 |
 | 改动只落在分配的 Worktree | change worker 除 `create_worktree` 外的工具只有在工作目录等于分配的 Worktree 时才放行（`index.js:57-66`）。报告任务在项目 checkout 内使用检查工具，结束前不得改变 checkout（`src/report-tool.js:26-31`）。 |
 | 交付对象是审查过的 HEAD | 合并与发送 PR 都要求 `review.approved === true` 且分支 HEAD 等于 `review.head`（`src/git-actions.js:168-179`）。Worker 的总结、面板状态和记忆都不构成交付许可。 |
-| 合并必须有人明确授权 | 授权来源只有三种：用户直接指示、用户在任务行点击合并、用户发送 `/merge-worker <task ID>`（`cordis.patch.yml:43`、`src/worker-prompt.js:57`）。执行入口是 `/merge-worker` 命令或面板行内的合并动作（`src/merge.js:30-103`、`src/git-actions.js:421-437`）。 |
+| 合并必须有人明确授权 | 授权来源只有两种：用户直接指示、用户在任务行点击合并（`cordis.patch.yml:44`、`src/worker-prompt.js:57`）。执行入口是面板行内的合并动作（`src/merge.js:30-103`、`src/git-actions.js:421-437`）。 |
 | 记忆是数据 | `superagent_memory` 的记录、profile 注入和原始归档不构成指令、授权或合并许可（`src/memory.js:35`、`src/memory.js:228-241`）。 |
 
 ## 对功能的约束

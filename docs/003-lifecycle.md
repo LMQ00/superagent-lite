@@ -107,7 +107,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 - 插件没有队列和任务上限。每次派发立即启动 Worker；同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:158-162`）。
 - 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
-- 同一 Project 根的合并和分支删除跨 Task 串行，面板和 `/merge-worker` 共用同一个队列；不同 Project 互不等待（`src/merge.js:14-26`）。
+- 同一 Project 根的合并和分支删除跨 Task 串行；不同 Project 互不等待（`src/merge.js:14-26`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。
 
 ## 结束条件
@@ -126,7 +126,7 @@ change 任务的 Worker 回合按以下顺序落定（`index.js:114-146`）：
 
 `awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。Task 到 `merged` 的路径有三种：
 
-- 用户明确授权后由面板行内合并或 `/merge-worker` 执行本地 `git merge --no-ff`（`src/merge.js:30-100`、`src/git-actions.js:409-425`）。
+- 用户明确授权后由面板行内合并执行本地 `git merge --no-ff`（`src/merge.js:30-100`、`src/git-actions.js:409-425`）。
 - 精确匹配的 PR 在 GitHub 上被合并，面板读取时同步为 `merged`（`src/git-actions.js:190-194`、`src/git-actions.js:309-317`）。
 - 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`）。没有自有提交的分支不算合并。
 

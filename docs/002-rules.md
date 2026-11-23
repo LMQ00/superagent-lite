@@ -47,7 +47,7 @@
 | 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个只读 reviewer | 否；需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
 | 落地 | 派发或续派发时携带 `land=true` | Worker 可推送指派分支、开 PR、合并本任务的已审提交；只限指派分支与 reviewed HEAD | 否；未携带时 Worker 不推送、不开 PR、不合并 |
-| 合并 | 用户直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` | 在用户明确授权后把 reviewed HEAD 本地合入所选分支（`/merge-worker` 用 base branch），不需要 `gh` | 否；需要明确授权、任务已结束 Worker 工作、审查通过的 HEAD、干净的项目 checkout 和 full access |
+| 合并 | 用户直接指示或面板任务行的合并操作 | 在用户明确授权后把 reviewed HEAD 本地合入所选分支，不需要 `gh` | 否；需要明确授权、任务已结束 Worker 工作、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要任务已结束 Worker 工作、审查通过的 HEAD、`gh` 账号、GitHub remote 和 full access |
 | 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
 | 删除任务 | 安装 owner 在面板点击「删除任务」 | 移除 Task 记录和 worker 会话映射，保留 worker 分支、Worktree 和记忆归档 | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
@@ -72,7 +72,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
 - 只有用户要求保存或读取记忆、路由需要某条已保存事实、或用户要求加载 skill 时，Router 才调用别的工具。
 - 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符（`src/dispatch.js:46`、`src/validation.js:1-16`）。
-- 合并只在用户明确授权后执行：直接指示、面板的合并操作或 `/merge-worker <task ID>` 命令。没有授权就不合并（`cordis.patch.yml:43`）。
+- 合并只在用户明确授权后执行：直接指示或面板的合并操作。没有授权就不合并（`cordis.patch.yml:44`）。
 
 ## Worker 规则
 
@@ -126,7 +126,7 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 ## Git 操作规则
 
-合并只在用户明确授权后执行：直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` 命令。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并指派分支上的已审提交。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:44`、`src/worker-prompt.js:57`、`src/landing.js`）。
+合并只在用户明确授权后执行：直接指示或面板任务行的合并操作。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并指派分支上的已审提交。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:44`、`src/worker-prompt.js:57`、`src/landing.js`）。
 
 ### 合并与发送 PR 的共同前提
 
@@ -144,15 +144,15 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 合并始终是本地合并，GitHub 项目也一样；插件不再通过 `gh pr merge` 合并 PR。
 
-1. 由面板任务行的合并动作或 `/merge-worker` 触发。`/merge-worker` 必须在 Task 的 Router Session 运行，Task 必须属于该 Session；面板动作通过 Task 的 Router Session 解析文件策略（`src/merge.js:135-158`、`src/git-actions.js:106-110`）。
+1. 由面板任务行的合并动作触发；面板动作通过 Task 的 Router Session 解析文件策略（`src/git-actions.js:106-110`）。
 2. Task 必须已结束 Worker 工作，有 worker 分支和 Worktree，`review.approved === true`，且当前 HEAD 等于 `review.head`（`src/delivery.js:7-13`）。
 3. 目标分支必须是合法的本地分支名，且不能是 worker 分支本身（`src/merge.js:35-38`）。
 4. 项目 checkout 必须干净（除 `?? .agents/worktrees/.gitignore` 外），并且检出一个分支（`src/git-actions.js:201-209`、`src/merge.js:46-48`）。
 5. 用 `git merge-tree --write-tree refs/heads/<target> <head>` 做冲突预检；冲突时报 `Merge would conflict; the target was not changed`（`src/merge.js:49-53`）。
 6. 需要时切到目标分支，确认仍在目标分支且工作区干净，用 `assertStillDeliverable` 复核状态与 Review 后把 Task 标为 `merging`；执行 `git merge --no-ff --no-edit --no-overwrite-ignore <head>`，然后标为 `merged` 并记录 `mergeTarget`（`src/merge.js:54-77`、`src/delivery.js:16-19`）。
-7. 合并命令失败时标为 `delivery-blocked`；最后把 checkout 切回原来的分支，切换失败时在结果里说明（`src/merge.js:69-99`）。
+7. 合并执行失败时标为 `delivery-blocked`；最后把 checkout 切回原来的分支，切换失败时在结果里说明（`src/merge.js:69-99`）。
 
-同一 Project 根的合并和分支删除跨 Task 串行，面板与 `/merge-worker` 共用这个队列，因此共享的 checkout 不会被两个合并同时切换（`src/merge.js:14-26`）。
+同一 Project 根的合并和分支删除跨 Task 串行，因此共享的 checkout 不会被两个合并同时切换（`src/merge.js:14-26`）。
 
 ### 发送 PR
 
@@ -179,7 +179,6 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 - 面板的 merge、publish、review 和 delete-branch 按 Task ID 串行；同一 Task 的重复动作不会并行执行（`src/git-actions.js:83-92`、`src/git-actions.js:537-547`）。
 - 删除 Task 与同一 Task 的状态写入在 `src/task-store.js` 中按记录串行，先读后删；第二次删除返回未找到（`src/task-store.js:103-121`）。
 - 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:123`、`src/board.js:142`）。
-- `/merge-worker` 接受一个 16 位任务 ID；用法错误返回 `Usage: /merge-worker <task ID>`（`src/merge.js:142`）。
 
 ## 记忆规则
 
