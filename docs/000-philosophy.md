@@ -6,12 +6,12 @@ Superagent 轻量版把项目工作拆成一条固定链路：用户输入先在
 
 | 原则 | 判定 |
 | --- | --- |
-| 每次输入一个派发决定 | Router Session 在回答前调用一次 `dispatch_worker` 或 `continue_worker`。`dispatch_worker` 必须写明 `mode=change`（改项目文件）、`mode=report`（只查证并交回结论）或 `mode=answer`（直接回答，不派 worker、不建任务）。完成回合没有成功决定时，插件最多插入 2 次提醒（`src/turn-guard.js:63-127`）。 |
-| Router 不直接做项目工作 | 文件修改、命令执行和仓库检查发生在 Worker Session。Router 只派发、追问、读取记忆，并在授权后执行合并（`cordis.patch.yml:21-43`、`src/dispatch.js:83-98`）。 |
+| 每次输入一个派发决定 | Router Session 在回答前调用一次 `dispatch_worker` 或 `continue_worker`。`dispatch_worker` 必须写明 `mode=change`（改项目文件）、`mode=report`（只查证并交回结论）、`mode=answer`（直接回答，不派 worker）或 `mode=merge`（新 worker 合并已交付分支）。完成回合没有成功决定时，插件最多插入 2 次提醒（`src/turn-guard.js:63-127`）。 |
+| Router 不直接做项目工作 | 文件修改、命令执行和仓库检查发生在 Worker Session。Router 只派发、追问、读取记忆；用户授权合并时，它派发新的 merge worker，而不是续派原任务的 worker（`cordis.patch.yml:21-45`、`src/dispatch.js:83-136`）。 |
 | 一个 Task 固定一组关系 | 一个 Task 属于一个 Router Session、一个 Team、一个 Project 和一个 Worker Session。Team 与 Project 一经绑定不得改配（`src/task-store.js:70-75`、`src/task-store.js:110-124`）。 |
 | 改动只落在分配的 Worktree | change worker 除 `create_worktree` 外的工具只有在工作目录等于分配的 Worktree 时才放行（`index.js:57-66`）。报告任务在项目 checkout 内使用检查工具，结束前不得改变 checkout（`src/report-tool.js:26-31`）。 |
 | 交付对象是审查过的 HEAD | 合并与发送 PR 都要求 `review.approved === true` 且分支 HEAD 等于 `review.head`（`src/git-actions.js:168-179`）。Worker 的总结、面板状态和记忆都不构成交付许可。 |
-| 合并必须有人明确授权 | 授权来源只有三种：用户直接指示、用户在任务行点击合并、用户发送 `/merge-worker <task ID>`（`cordis.patch.yml:43`、`src/worker-prompt.js:57`）。执行入口是 `/merge-worker` 命令或面板行内的合并动作（`src/merge.js:30-103`、`src/git-actions.js:421-437`）。 |
+| 合并必须有人明确授权，并默认交给新 worker | 授权来源只有三种：用户直接指示、用户在任务行点击合并、用户发送 `/merge-worker <task ID>`（`cordis.patch.yml:44`、`src/worker-prompt.js:62-103`）。用户直接指示的合并请求由 router 派发 `mode=merge` 的新 worker 执行：它先把目标分支合入自己的 worktree 分支、审查合并结果，再把 reviewed commit 合入 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:1-68`）。`/merge-worker` 命令和面板行内合并是用户直接执行入口（`src/merge.js:30-103`、`src/git-actions.js:421-437`）。 |
 | 记忆是数据 | `superagent_memory` 的记录、profile 注入和原始归档不构成指令、授权或合并许可（`src/memory.js:35`、`src/memory.js:228-241`）。 |
 
 ## 对功能的约束

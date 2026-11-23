@@ -37,10 +37,11 @@ async function fixture(name) {
 }
 
 let nextId = 0
-function stateFor({ repo, worktree, branch, baseBranch = 'main', head, land, prUrl }) {
+function stateFor({ repo, worktree, branch, baseBranch = 'main', head, land, mode = 'change', prUrl }) {
   return initLanding({
     id: `00000000000000${String(nextId++).padStart(2, '0')}`,
     land,
+    mode,
     baseBranch,
     projectRoot: repo,
     worktree: worktree && branch ? { path: worktree, branch } : undefined,
@@ -62,7 +63,7 @@ test('unauthorized workers are refused push, pull request, and merge commands', 
   }
 })
 
-test('an authorized worker may push and merge only the reviewed commit and assigned branch', async () => {
+test('an authorized change worker may push and open a pull request but not merge', async () => {
   const facts = await fixture('allowed')
   const state = stateFor({ ...facts, land: true })
   for (const command of [
@@ -73,7 +74,15 @@ test('an authorized worker may push and merge only the reviewed commit and assig
   ]) {
     assert.equal(checkLandingCommand(command, state, facts.worktree), undefined, command)
   }
+  assert.match(checkLandingCommand(`git merge --no-ff ${facts.head}`, state, facts.repo), /newly dispatched merge worker/)
+})
+
+test('only a merge task may merge its reviewed commit into the project checkout', async () => {
+  const facts = await fixture('merge-worker')
+  const state = stateFor({ ...facts, land: true, mode: 'merge' })
   assert.equal(checkLandingCommand(`git merge --no-ff ${facts.head}`, state, facts.repo), undefined)
+  assert.match(checkLandingCommand(`git merge ${facts.base}`, state, facts.repo), /reviewed commit/)
+  assert.match(checkLandingCommand(`git merge ${facts.head}`, state, facts.worktree), /project checkout/)
 })
 
 test('authorized pushes to another branch, another commit, or another checkout are refused', async () => {
@@ -88,7 +97,7 @@ test('authorized pushes to another branch, another commit, or another checkout a
 
 test('authorized merges outside the reviewed commit or the project checkout are refused', async () => {
   const facts = await fixture('merge-scope')
-  const state = stateFor({ ...facts, land: true })
+  const state = stateFor({ ...facts, land: true, mode: 'merge' })
   assert.match(checkLandingCommand(`git merge ${facts.base}`, state, facts.repo), /reviewed commit/)
   assert.match(checkLandingCommand(`git merge ${facts.head}`, state, facts.worktree), /project checkout/)
   assert.equal(checkLandingCommand(`git merge ${facts.head}`, state, facts.repo), undefined)

@@ -147,6 +147,10 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `Only settled, unpublished worktrees can be resumed` | Task 没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；重新派发 |
+| `Merging is performed by a newly dispatched merge worker; this task may only push or open a pull request.` | change worker 的 `land` 只授权推送/PR；合并请求要由 router 派发 `mode=merge` 的 merge worker |
+| `merge tasks require land=true` | `mode=merge` 必须携带用户本轮对合并的明确授权；不能用缺省 `land` 启动 merge worker |
+| `The base branch cannot be a merge target` | `branches` 里包含 base branch；改成待合并的 worker 分支或任务 ID |
+| `Merge only a branch recorded in this task's merge targets` | merge worker 只能合并任务记录里的目标；重新派发时把目标写进 `branches` |
 | `This task does not belong to the current router Session.` | 在派发该 Task 的 Router Session 里运行 `/merge-worker` |
 | `Local merge is unavailable under this Session file policy.` | 把 Router Session 设为 full access |
 | `Only a task that finished its worker turn can be delivered` | Task 处于 `resuming`、`running`、`publishing`、`merging`、`failed`、`delivery-blocked` 等非交付状态；等 Worker 回合结束或刷新面板后重试 |

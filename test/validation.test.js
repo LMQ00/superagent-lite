@@ -7,7 +7,7 @@ test('mode=answer answers directly and needs no title, team, task, or reason', (
   assert.deepEqual(validateDispatchArguments({ mode: 'answer', title: 'ignored' }), { delegate: false, mode: 'answer' })
 })
 
-test('mode is required and limited to change, report, and answer', () => {
+test('mode is required and limited to change, report, answer, and merge', () => {
   assert.throws(() => validateDispatchArguments({}), /mode/)
   assert.throws(() => validateDispatchArguments({ delegate: false, reason: 'old interface' }), /mode/)
   assert.throws(() => validateDispatchArguments({ mode: 'docs' }), /mode/)
@@ -41,4 +41,17 @@ test('land defaults to false, accepts true, and rejects other values or report t
   assert.equal(validateDispatchArguments({ ...args, land: true }).land, true)
   assert.throws(() => validateDispatchArguments({ ...args, land: 'yes' }), /land/)
   assert.throws(() => validateDispatchArguments({ ...args, mode: 'report', land: true }), /report-only tasks cannot be authorized to land/)
+})
+
+test('merge dispatches require land, targets, and keep branches in order without duplicates', () => {
+  const args = { mode: 'merge', teamId: 'team', title: 'Merge branches', task: 'merge these', land: true }
+  assert.throws(() => validateDispatchArguments({ ...args, land: false }), /merge tasks require land=true/)
+  assert.throws(() => validateDispatchArguments({ ...args, branches: [] }), /branches/)
+  assert.throws(() => validateDispatchArguments({ ...args, branches: ['bad branch'] }), /merge target/)
+  assert.throws(() => validateDispatchArguments({ ...args, branches: ['-bad'] }), /merge target/)
+  assert.deepEqual(validateDispatchArguments({
+    ...args,
+    branches: ['sl-one', 'a4939a132f499bb4', 'sl-one'],
+  }).branches, ['sl-one', 'a4939a132f499bb4'])
+  assert.throws(() => validateDispatchArguments({ ...args, mode: 'change', branches: ['sl-one'] }), /only accepted for merge/)
 })

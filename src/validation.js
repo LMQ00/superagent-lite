@@ -1,8 +1,23 @@
-const MODES = ['change', 'report', 'answer']
+const MODES = ['change', 'report', 'answer', 'merge']
+const BRANCH_NAME = /^[A-Za-z0-9._/-]{1,200}$/
+const TASK_ID = /^[a-f0-9]{16}$/
+const MAX_MERGE_TARGETS = 20
+
+function validateMergeTargets(value) {
+  if (!Array.isArray(value) || value.length === 0) throw new TypeError('branches must list at least one branch or task ID')
+  if (value.length > MAX_MERGE_TARGETS) throw new RangeError(`branches must list at most ${MAX_MERGE_TARGETS} targets`)
+  const targets = value.map(target => typeof target === 'string' ? target.trim() : '')
+  for (const target of targets) {
+    if (!TASK_ID.test(target) && (!BRANCH_NAME.test(target) || target.startsWith('-'))) {
+      throw new TypeError('each merge target must be a branch name or a 16-character task ID')
+    }
+  }
+  return [...new Set(targets)]
+}
 
 export function validateDispatchArguments(args) {
   const mode = args?.mode
-  if (!MODES.includes(mode)) throw new TypeError('mode must be change, report, or answer')
+  if (!MODES.includes(mode)) throw new TypeError('mode must be change, report, answer, or merge')
   if (mode === 'answer') return { delegate: false, mode }
   if (typeof args.teamId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(args.teamId)) {
     throw new TypeError('teamId must use 1-64 letters, digits, dots, underscores, or hyphens')
@@ -15,6 +30,11 @@ export function validateDispatchArguments(args) {
   if (!task || task.length > 20000) throw new RangeError('task must be 1-20000 characters')
   const land = validateLandFlag(args.land)
   if (mode === 'report' && land) throw new TypeError('report-only tasks cannot be authorized to land')
+  if (mode === 'merge') {
+    if (!land) throw new TypeError('merge tasks require land=true')
+    return { delegate: true, title, teamId: args.teamId, task, mode, land, branches: validateMergeTargets(args.branches) }
+  }
+  if (args.branches !== undefined) throw new TypeError('branches are only accepted for merge tasks')
   return { delegate: true, title, teamId: args.teamId, task, mode, land }
 }
 

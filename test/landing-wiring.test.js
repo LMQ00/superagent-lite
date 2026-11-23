@@ -60,6 +60,7 @@ function harness() {
 
 async function workerAgent(agents, dirs, id, cwd) {
   let guard
+  const tools = []
   const worker = {
     id,
     status: 'running',
@@ -68,22 +69,22 @@ async function workerAgent(agents, dirs, id, cwd) {
       systemPrompt: { context: () => () => {} },
       tools: {
         guard(callback) { guard = callback; return () => {} },
-        register() { return () => {} },
+        register(tool, options) { tools.push({ name: tool.name, when: options?.when }); return () => {} },
       },
     },
   }
   agents.set(id, worker)
   dirs.set(id, cwd)
-  return { worker, guard: args => guard(args) }
+  return { worker, guard: args => guard(args), tools }
 }
 
-async function runningTask({ id, workerSessionId, facts, land = false, task = 'Change notes' }) {
+async function runningTask({ id, workerSessionId, facts, land = false, mode = 'change', task = 'Change notes' }) {
   await createTask({
     id,
     title: 'Change notes',
     teamId: `team-${id}`,
     task,
-    mode: 'change',
+    mode,
     land,
     parentSessionId: 'router',
     projectRoot: facts.repo,
@@ -119,20 +120,35 @@ test('the worker shell guard refuses landing without a recorded authorization', 
   assert.equal(guard({ name: 'read', arguments: {}, agent: worker }), undefined)
 })
 
-test('a recorded land authorization lets the guard pass scoped push and merge only', async () => {
+test('a recorded land authorization lets a change worker push but not merge', async () => {
   const facts = await createRepo('allowed-wiring')
   const env = harness()
   await apply(env.ctx)
   const id = '1111222233334444'
   await runningTask({ id, workerSessionId: 'worker-allowed', facts, land: true })
-  const { worker, guard } = await workerAgent(env.agents, env.dirs, 'worker-allowed', facts.worktree)
+  const { worker, guard, tools } = await workerAgent(env.agents, env.dirs, 'worker-allowed', facts.worktree)
   await env.listeners.get('agent/created')({ agent: worker })
 
+  assert.equal(tools.find(tool => tool.name === 'merge_branch')?.when({ agent: worker }), false)
   assert.equal(guard({ name: 'bash', arguments: { command: `git push origin ${facts.branch}` }, agent: worker }), undefined)
   assert.equal(guard({ name: 'bash', arguments: { command: `git push origin HEAD:refs/heads/${facts.branch}` }, agent: worker }), undefined)
-  assert.equal(guard({ name: 'bash', arguments: { command: `git merge ${facts.head}`, workdir: facts.repo }, agent: worker }), undefined)
+  assert.match(guard({ name: 'bash', arguments: { command: `git merge ${facts.head}`, workdir: facts.repo }, agent: worker }), /newly dispatched merge worker/)
   assert.match(guard({ name: 'bash', arguments: { command: 'git push origin main' }, agent: worker }), /outside it/)
+})
+
+test('a merge task may merge only its reviewed commit from the project checkout', async () => {
+  const facts = await createRepo('merge-wiring')
+  const env = harness()
+  await apply(env.ctx)
+  const id = 'ddddeeeeffff0000'
+  await runningTask({ id, workerSessionId: 'worker-merge', facts, land: true, mode: 'merge', task: 'Merge delivered branches' })
+  const { worker, guard, tools } = await workerAgent(env.agents, env.dirs, 'worker-merge', facts.worktree)
+  await env.listeners.get('agent/created')({ agent: worker })
+
+  assert.equal(tools.find(tool => tool.name === 'merge_branch')?.when({ agent: worker }), true)
+  assert.equal(guard({ name: 'bash', arguments: { command: `git merge ${facts.head}`, workdir: facts.repo }, agent: worker }), undefined)
   assert.match(guard({ name: 'bash', arguments: { command: `git merge ${facts.head}` }, agent: worker }), /project checkout/)
+  assert.match(guard({ name: 'bash', arguments: { command: `git merge ${facts.baseCommit}`, workdir: facts.repo }, agent: worker }), /reviewed commit/)
 })
 
 test('a peer task authorization does not authorize this task', async () => {
