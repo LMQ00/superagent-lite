@@ -37,14 +37,20 @@ async function repoFixture(name) {
   return { repo, baseCommit, branch }
 }
 
-function context(repo) {
+function context(repo, { sendMessage, liveWorker } = {}) {
   const activations = []
+  const sends = []
   const ctx = {
     workingDirectory: { get: () => repo },
     sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' }) },
+    agents: { get: id => liveWorker === undefined || liveWorker.has(id) ? { status: 'running' } : undefined },
     subagents: {
       resolveMaxDepth: () => 1,
       async startActivation(spec) { activations.push(spec); return { childId: spec.childId } },
+      async sendMessage(sender, targetId, content, options) {
+        if (sendMessage) await sendMessage(sender, targetId, content, options)
+        sends.push({ sender: sender.id, targetId, text: content[0].text })
+      },
     },
     subprocess: {
       async resolveExecutable(name) { return name },
@@ -61,7 +67,13 @@ function context(repo) {
       },
     },
   }
-  return { ctx, activations }
+  return { ctx, activations, sends }
+}
+
+function addBranch(repo, name) {
+  git(repo, ['switch', '-q', '-c', name, 'main'])
+  git(repo, ['commit', '--allow-empty', '-m', name])
+  git(repo, ['switch', '-q', 'main'])
 }
 
 const exec = (callId = 'call-merge') => ({ agent: { id: 'router', session: { id: 'router' } }, callId, signal: new AbortController().signal })
@@ -153,4 +165,235 @@ test('mode=merge refuses a target task owned by another router or project', asyn
     }, exec('foreign')),
     /does not belong to this router Session and project/,
   )
+})
+
+test('mode=merge appends a new request to a running merge worker instead of dispatching another', async () => {
+  const facts = await repoFixture('append-running')
+  const extra = 'sl-append-running-extra'
+  addBranch(facts.repo, extra)
+  const mergeId = '1111111111111111'
+  await createTask({
+    id: mergeId,
+    title: 'Merge the delivered branch',
+    teamId: 'team-append',
+    task: 'Merge the delivered branch into main.',
+    mode: 'merge',
+    land: true,
+    landAuthorizedAt: new Date().toISOString(),
+    landAuthorizedVia: 'dispatch',
+    mergeBranches: [facts.branch],
+    parentSessionId: 'router',
+    projectRoot: facts.repo,
+    baseCommit: facts.baseCommit,
+    baseBranch: 'main',
+    workerSessionId: 'worker-merge',
+    status: 'running',
+    createdAt: new Date().toISOString(),
+  })
+  const { ctx, activations, sends } = context(facts.repo)
+  const result = await createDispatchTool(ctx).execute({
+    mode: 'merge',
+    title: 'Merge the extra branch',
+    teamId: 'team-append',
+    task: 'Also merge the extra branch.',
+    land: true,
+    branches: [extra],
+  }, exec('append-running-call'))
+  assert.equal(result.appended, true)
+  assert.equal(result.taskId, mergeId)
+  assert.equal(result.workerSessionId, 'worker-merge')
+  assert.equal(result.status, 'running')
+  assert.equal(activations.length, 0)
+  assert.equal(sends.length, 1)
+  assert.equal(sends[0].sender, 'router')
+  assert.equal(sends[0].targetId, 'worker-merge')
+  assert.match(sends[0].text, /appended to this running merge task/)
+  assert.match(sends[0].text, /Call merge_branch for each added target/)
+  assert.ok(sends[0].text.includes(`- ${extra}`))
+  assert.match(sends[0].text, /Landing is authorized for this task/)
+  const task = await readTask(mergeId)
+  assert.deepEqual(task.mergeBranches, [facts.branch, extra])
+  assert.equal(task.followUps.length, 1)
+  assert.equal(task.followUps[0].text, 'Also merge the extra branch.')
+  assert.equal(task.land, true)
+  assert.equal(task.status, 'running')
+})
+
+test('mode=merge records a repeated target once and still delivers the appended request', async () => {
+  const facts = await repoFixture('append-repeat')
+  const mergeId = '2222222222222222'
+  await createTask({
+    id: mergeId,
+    title: 'Merge the delivered branch',
+    teamId: 'team-append-repeat',
+    task: 'Merge the delivered branch into main.',
+    mode: 'merge',
+    land: true,
+    mergeBranches: [facts.branch],
+    parentSessionId: 'router',
+    projectRoot: facts.repo,
+    baseCommit: facts.baseCommit,
+    baseBranch: 'main',
+    workerSessionId: 'worker-merge-repeat',
+    status: 'starting',
+    createdAt: new Date().toISOString(),
+  })
+  const { ctx, activations, sends } = context(facts.repo)
+  const result = await createDispatchTool(ctx).execute({
+    mode: 'merge',
+    title: 'Merge it again',
+    teamId: 'team-append-repeat',
+    task: 'Keep going after the conflict.',
+    land: true,
+    branches: [facts.branch],
+  }, exec('append-repeat-call'))
+  assert.equal(result.appended, true)
+  assert.equal(result.taskId, mergeId)
+  assert.equal(activations.length, 0)
+  assert.equal(sends.length, 1)
+  assert.match(sends[0].text, /No target was added; do not merge another branch/)
+  const task = await readTask(mergeId)
+  assert.deepEqual(task.mergeBranches, [facts.branch])
+  assert.equal(task.followUps[0].text, 'Keep going after the conflict.')
+})
+
+test('mode=merge starts a new merge worker when the recorded merge task is no longer running', async () => {
+  const facts = await repoFixture('settled-merge')
+  const extra = 'sl-settled-merge-extra'
+  addBranch(facts.repo, extra)
+  const settledId = '3333333333333333'
+  await createTask({
+    id: settledId,
+    title: 'Merge the delivered branch',
+    teamId: 'team-settled',
+    task: 'Merge the delivered branch into main.',
+    mode: 'merge',
+    land: true,
+    mergeBranches: [facts.branch],
+    parentSessionId: 'router',
+    projectRoot: facts.repo,
+    baseCommit: facts.baseCommit,
+    baseBranch: 'main',
+    workerSessionId: 'worker-settled',
+    status: 'review-required',
+    createdAt: new Date().toISOString(),
+  })
+  const { ctx, activations, sends } = context(facts.repo)
+  const result = await createDispatchTool(ctx).execute({
+    mode: 'merge',
+    title: 'Merge the extra branch',
+    teamId: 'team-settled',
+    task: 'Merge the extra branch.',
+    land: true,
+    branches: [extra],
+  }, exec('settled-merge-call'))
+  assert.equal(result.appended, undefined)
+  assert.notEqual(result.taskId, settledId)
+  assert.equal(activations.length, 1)
+  assert.equal(sends.length, 0)
+  assert.deepEqual((await readTask(result.taskId)).mergeBranches, [extra])
+  const settled = await readTask(settledId)
+  assert.deepEqual(settled.mergeBranches, [facts.branch])
+  assert.equal(settled.followUps, undefined)
+})
+
+test('concurrent merge requests append to one merge worker instead of racing another', async () => {
+  const facts = await repoFixture('concurrent-merge')
+  const first = 'sl-concurrent-merge-first'
+  const second = 'sl-concurrent-merge-second'
+  addBranch(facts.repo, first)
+  addBranch(facts.repo, second)
+  const { ctx, activations, sends } = context(facts.repo, {
+    sendMessage: async () => { await new Promise(resolve => setTimeout(resolve, 5)) },
+  })
+  const dispatch = createDispatchTool(ctx)
+  const base = { mode: 'merge', title: 'Merge concurrent', teamId: 'team-concurrent', task: 'Merge the requested branches.', land: true }
+  const [left, right] = await Promise.all([
+    dispatch.execute({ ...base, branches: [first] }, exec('concurrent-left')),
+    dispatch.execute({ ...base, branches: [second] }, exec('concurrent-right')),
+  ])
+  assert.equal(activations.length, 1)
+  assert.equal(sends.length, 1)
+  assert.equal(left.taskId, right.taskId)
+  assert.equal([left.appended, right.appended].filter(Boolean).length, 1)
+  const task = await readTask(left.taskId)
+  assert.deepEqual([...task.mergeBranches].sort(), [first, second].sort())
+  assert.equal(task.followUps.length, 1)
+})
+
+test('a failed append delivery rolls back the added target and follow-up', async () => {
+  const facts = await repoFixture('append-failure')
+  const extra = 'sl-append-failure-extra'
+  addBranch(facts.repo, extra)
+  const mergeId = '4444444444444444'
+  await createTask({
+    id: mergeId,
+    title: 'Merge the delivered branch',
+    teamId: 'team-append-failure',
+    task: 'Merge the delivered branch into main.',
+    mode: 'merge',
+    land: true,
+    mergeBranches: [facts.branch],
+    parentSessionId: 'router',
+    projectRoot: facts.repo,
+    baseCommit: facts.baseCommit,
+    baseBranch: 'main',
+    workerSessionId: 'worker-merge-failure',
+    status: 'running',
+    createdAt: new Date().toISOString(),
+  })
+  const { ctx } = context(facts.repo, {
+    sendMessage: async () => { throw new Error('worker is gone') },
+  })
+  await assert.rejects(
+    createDispatchTool(ctx).execute({
+      mode: 'merge',
+      title: 'Merge the extra branch',
+      teamId: 'team-append-failure',
+      task: 'Merge the extra branch.',
+      land: true,
+      branches: [extra],
+    }, exec('append-failure-call')),
+    /worker is gone/,
+  )
+  const task = await readTask(mergeId)
+  assert.deepEqual(task.mergeBranches, [facts.branch])
+  assert.deepEqual(task.followUps ?? [], [])
+})
+
+test('mode=merge starts a new worker when the recorded merge task has no live worker Session', async () => {
+  const facts = await repoFixture('stale-merge')
+  const staleId = '5555555555555555'
+  await createTask({
+    id: staleId,
+    title: 'Merge the delivered branch',
+    teamId: 'team-stale',
+    task: 'Merge the delivered branch into main.',
+    mode: 'merge',
+    land: true,
+    mergeBranches: [facts.branch],
+    parentSessionId: 'router',
+    projectRoot: facts.repo,
+    baseCommit: facts.baseCommit,
+    baseBranch: 'main',
+    workerSessionId: 'worker-stale',
+    status: 'running',
+    createdAt: new Date().toISOString(),
+  })
+  const { ctx, activations, sends } = context(facts.repo, { liveWorker: new Set() })
+  const result = await createDispatchTool(ctx).execute({
+    mode: 'merge',
+    title: 'Merge again',
+    teamId: 'team-stale',
+    task: 'Merge the delivered branch again.',
+    land: true,
+    branches: [facts.branch],
+  }, exec('stale-merge-call'))
+  assert.equal(result.appended, undefined)
+  assert.notEqual(result.taskId, staleId)
+  assert.equal(activations.length, 1)
+  assert.equal(sends.length, 0)
+  const stale = await readTask(staleId)
+  assert.equal(stale.status, 'running')
+  assert.equal(stale.followUps, undefined)
 })

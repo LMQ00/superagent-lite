@@ -44,7 +44,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 
 ### Worker Session
 
-`dispatch_worker` 先写 `starting` 记录，再通过 `ctx.subagents.startActivation` 启动一个 Worker Session（`src/dispatch.js:105-131`）。change、report 和 merge 模式都走同一条启动路径。
+`dispatch_worker` 先写 `starting` 记录，再通过 `ctx.subagents.startActivation` 启动一个 Worker Session（`src/dispatch.js:105-131`）。change、report 和 merge 模式都走同一条启动路径；`mode=merge` 遇到同一 Router Session 和 Project 已有运行中的 merge worker 时，不启动新 Session，而是把目标追加到该 Task 并给 worker 发送 follow-up。
 
 | 属性 | 值 |
 | --- | --- |
@@ -59,7 +59,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 
 Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:42-52`、`src/task-store.js:110-124`）。同一事件安装工具守卫、注册 Worker 工具，并在注册后读取项目 + 全局记忆作为必需的运行时上下文（`index.js:53-124`）。
 
-Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:39-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:27-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，worker 用 `merge_branch` 把这些目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
+Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:39-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:27-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
 Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息工具（`index.js:114-116`、`index.js:58-59`）。
 
@@ -106,10 +106,10 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 ## 并发
 
 - 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:110-124`）。
-- 插件没有队列和任务上限。每次派发立即启动 Worker；同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
+- 插件没有通用队列和任务上限。每次派发立即启动 Worker；同一 Project 的多个 Task 各用自己的 Worktree 并行。`mode=merge` 例外：同一 Router Session 和 Project 只有一个活着的 merge worker，新的 merge 请求追加给它，并发的 merge 派发按 Router 和 Project 排队；没有活 Worker Session 的残留运行中 Task 不参与追加（`cordis.patch.yml:1-7`、`src/dispatch.js`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和记忆对话以深度 2 启动（`src/review.js:64`、`src/memory.js:140-148`）。
 - 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
-- 同一 Project 根的合并和分支删除跨 Task 串行，共享 checkout 不会被两个合并同时切换；merge worker 的目标分支合并发生在自己的 worktree 内，不占共享 checkout（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
+- 面板的合并和分支删除按 Project 根串行，共享 checkout 不会被两个面板动作同时切换；merge worker 的目标分支合并发生在自己的 worktree 内，不占共享 checkout（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。
 
 ## 结束条件
@@ -128,7 +128,7 @@ change 和 merge 任务的 Worker 回合按以下顺序落定（`index.js:147-18
 
 `awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。merge worker 自己把 reviewed merge commit 合入 base branch 后，目标分支的提交就成为 base branch 的祖先；面板读取这些原任务时按「已包含在基础分支」收尾。Task 到 `merged` 的路径有三种：
 
-- 用户明确授权后由新派发的 merge worker 把 reviewed merge commit 合入 base branch（`src/merge-tool.js:13-64`、`src/landing.js:370-388`）；也可以由面板行内合并执行本地 `git merge --no-ff`（`src/merge.js:30-100`、`src/git-actions.js:409-425`）。
+- 用户明确授权后由 merge worker（没有运行中的就新派发，已有则追加目标）把 reviewed merge commit 合入 base branch（`src/merge-tool.js:13-64`、`src/landing.js:370-388`）；也可以由面板行内合并执行本地 `git merge --no-ff`（`src/merge.js:30-100`、`src/git-actions.js:409-425`）。
 - 精确匹配的 PR 在 GitHub 上被合并，面板读取时同步为 `merged`（`src/git-actions.js:190-194`、`src/git-actions.js:309-317`）。
 - 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`）。没有自有提交的分支不算合并。
 
@@ -152,7 +152,7 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 ### Host 重启或插件重载
 
-Task 记录和记忆文件保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:48-60`）。
+Task 记录和记忆文件保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签（`src/board.js:48-60`）。这样的残留 merge Task 不会被新的 merge 请求追加；新的请求会新派发 merge worker。
 
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入（`src/dispatch.js:51-58`）。
 

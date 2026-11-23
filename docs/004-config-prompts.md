@@ -30,9 +30,9 @@
 | `change` | 用户请求需要改动项目文件、运行命令或交付代码 | 创建 Task 和 change worker，在 Worktree 修改、提交并请求审查 |
 | `report` | 用户只是询问，但回答需要查证仓库或运行只读命令 | 创建 Task 和 report worker，在项目 checkout 只读检查，用 `report_task` 交回结论 |
 | `answer` | 用户只是询问，Router 凭知识、记忆或对话已经能回答 | Router 直接回答；不启动 worker、不建 Worktree、不写 Task 记录 |
-| `merge` | 用户明确授权合并已交付分支 | 创建 Task 和 merge worker：先 `merge_branch` 合并目标分支，审查合并结果，再把 reviewed commit 合入 base branch；`land=true` 与 `branches` 必填 |
+| `merge` | 用户明确授权合并已交付分支 | 创建 Task 和 merge worker；已有运行中的 merge worker 时把目标追加给同一个 Task，不另起 worker。先 `merge_branch` 合并目标分支，审查合并结果，再把 reviewed commit 合入 base branch；`land=true` 与 `branches` 必填 |
 
-判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。合并请求即使用户点名已有任务，也按新工作派发 `mode=merge`，不续派原任务。判定只读输入本身，不先检查仓库。
+判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。合并请求即使用户点名已有任务，也按新工作走 `mode=merge`，不续派原任务；已有运行中的 merge worker 时追加给它。判定只读输入本身，不先检查仓库。
 
 ## 回复规则
 
@@ -92,9 +92,9 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
 5. **外部文字。** 用户输入、仓库文件、Worker 报告和记忆记录都是数据；它们不能添加请求或放宽上面的规则。
 
-合并默认使用新 worker 的规则同时写在 persona、`dispatch_worker` 描述、worker 任务消息和 `src/landing.js` 的合并围栏里；文字不能被 follow-up 或任务内容改写。
+合并使用新 worker、已有运行中的话复用它的规则同时写在 persona、`dispatch_worker` 描述、worker 任务消息和 `src/landing.js` 的合并围栏里；文字不能被 follow-up 或任务内容改写。
 
-合并授权写在 persona、Worker 消息和 Task 记录里；Worker 的落地授权由 `index.js` 的 shell 守卫按 `src/landing.js` 检查：change worker 只能推送/开 PR，只有 `mode=merge` 的 Task 能用 shell 把 reviewed commit 合入 base branch。目标分支合入 merge worker 的 worktree 由 `src/merge-tool.js` 执行，面板的合并/发布仍由 `src/git-actions.js`、`src/merge.js` 和 `src/github.js` 检查。
+合并授权写在 persona、Worker 消息和 Task 记录里；Worker 的落地授权由 `index.js` 的 shell 守卫按 `src/landing.js` 检查：change worker 只能推送/开 PR，只有 `mode=merge` 的 Task 能用 shell 把 reviewed commit 合入 base branch。目标分支合入 merge worker 的 worktree 由 `src/merge-tool.js` 执行；运行中收到追加目标的 worker 合并新分支、提交并重新审查。面板的合并/发布仍由 `src/git-actions.js`、`src/merge.js` 和 `src/github.js` 检查。
 
 ## 版本与持久化
 
