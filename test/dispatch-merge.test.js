@@ -89,6 +89,7 @@ test('mode=merge resolves a task ID to its worker branch and dispatches a new me
   const result = await createDispatchTool(ctx).execute({
     mode: 'merge',
     title: 'Merge delivered branches',
+    worktreeName: 'merge-delivered-branches',
     teamId: 'team-merge',
     task: 'Merge the delivered branches into master.',
     land: true,
@@ -111,7 +112,7 @@ test('mode=merge accepts branch names and rejects missing targets or a missing a
   const facts = await repoFixture('by-branch')
   const { ctx } = context(facts.repo)
   const dispatch = createDispatchTool(ctx)
-  const base = { mode: 'merge', title: 'Merge', teamId: 'team-merge-branch', task: 'merge it', land: true }
+  const base = { mode: 'merge', title: 'Merge', worktreeName: 'merge-branches', teamId: 'team-merge-branch', task: 'merge it', land: true }
   await assert.rejects(
     dispatch.execute({ ...base, land: false, branches: [facts.branch] }, exec('no-land')),
     /merge tasks require land=true/,
@@ -146,6 +147,7 @@ test('mode=merge refuses a target task owned by another router or project', asyn
     createDispatchTool(ctx).execute({
       mode: 'merge',
       title: 'Merge',
+      worktreeName: 'merge-foreign',
       teamId: 'team-foreign-merge',
       task: 'merge it',
       land: true,

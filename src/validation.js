@@ -2,6 +2,20 @@ const MODES = ['change', 'report', 'answer', 'merge']
 const BRANCH_NAME = /^[A-Za-z0-9._/-]{1,200}$/
 const TASK_ID = /^[a-f0-9]{16}$/
 const MAX_MERGE_TARGETS = 20
+const WORKTREE_NAME = /^[a-z]+(?:-[a-z0-9]+){0,3}$/
+
+function validateWorktreeName(value, mode) {
+  if (mode !== 'change' && mode !== 'merge') {
+    if (value !== undefined) throw new TypeError('worktreeName is only accepted for change and merge tasks')
+    return undefined
+  }
+  if (typeof value !== 'string') throw new TypeError('worktreeName is required')
+  const name = value.trim()
+  if (name.length > 32 || !WORKTREE_NAME.test(name)) {
+    throw new RangeError('worktreeName must be 1-4 lowercase English kebab-case words, at most 32 characters')
+  }
+  return name
+}
 
 function validateMergeTargets(value) {
   if (!Array.isArray(value) || value.length === 0) throw new TypeError('branches must list at least one branch or task ID')
@@ -29,13 +43,14 @@ export function validateDispatchArguments(args) {
   if (!title || title.length > 120) throw new RangeError('title must be 1-120 characters')
   if (!task || task.length > 20000) throw new RangeError('task must be 1-20000 characters')
   const land = validateLandFlag(args.land)
+  const worktreeName = validateWorktreeName(args.worktreeName, mode)
   if (mode === 'report' && land) throw new TypeError('report-only tasks cannot be authorized to land')
   if (mode === 'merge') {
     if (!land) throw new TypeError('merge tasks require land=true')
-    return { delegate: true, title, teamId: args.teamId, task, mode, land, branches: validateMergeTargets(args.branches) }
+    return { delegate: true, title, teamId: args.teamId, task, mode, land, worktreeName, branches: validateMergeTargets(args.branches) }
   }
   if (args.branches !== undefined) throw new TypeError('branches are only accepted for merge tasks')
-  return { delegate: true, title, teamId: args.teamId, task, mode, land }
+  return { delegate: true, title, teamId: args.teamId, task, mode, land, ...(worktreeName ? { worktreeName } : {}) }
 }
 
 export function validateLandFlag(value) {

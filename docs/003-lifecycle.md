@@ -59,7 +59,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 
 Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:42-52`、`src/task-store.js:110-124`）。同一事件安装工具守卫、注册 Worker 工具，并在注册后读取项目 + 全局记忆作为必需的运行时上下文（`index.js:53-124`）。
 
-Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:39-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:27-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，worker 用 `merge_branch` 把这些目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
+Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，worker 用 `merge_branch` 把这些目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
 Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息工具（`index.js:114-116`、`index.js:58-59`）。
 

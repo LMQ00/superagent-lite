@@ -74,7 +74,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/worktree-tool.js`
 
-通过 `ctx.worktrees.create` 从 base commit 创建 Worktree，保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，并把 Worker 工作目录切过去。第二次调用只重新进入（`src/worktree-tool.js:23-62`）。
+通过 `ctx.worktrees.create` 从 base commit 创建 Worktree，名字为 `sl-<worktreeName>-<Task ID 前 12 位>`，保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，并把 Worker 工作目录切过去。第二次调用只重新进入（`src/worktree-tool.js:23-64`）。
 
 ### `src/landing.js`
 
@@ -241,9 +241,10 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/status.test.js` | 六个面板状态、优先级和审查索引。 |
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射和路径形 ID 拒绝。 |
 | `test/turn-guard.test.js` | 每个输入一个决定、提醒预算、idle 投递和中止处理。 |
-| `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report 的参数规则。 |
+| `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report/merge 的参数规则和 `worktreeName` 校验。 |
 | `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒。 |
 | `test/worker-prompt.test.js` | change 与 report 任务消息、段顺序和范围限制。 |
+| `test/worktree-tool.test.js` | 可读 Worktree 与分支名、重复调用重新进入，以及旧 Task 的原命名回退。 |
 
 ## 持久化
 
@@ -264,7 +265,7 @@ Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 
 | 工具 | 调用方 | 用途 |
 | --- | --- | --- |
-| `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report`/`merge` 启动 Worker |
+| `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report`/`merge` 启动 Worker；change/merge 必须给出英文 `worktreeName` |
 | `continue_worker` | Router | 给同一 Task 发 follow-up |
 | `create_worktree` | change worker | 创建或进入 Task 的 Worktree |
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
