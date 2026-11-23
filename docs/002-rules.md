@@ -50,8 +50,8 @@
 | 合并 | 用户直接指示、面板任务行的合并操作或 `/merge-worker <task ID>` | 在用户明确授权后把 reviewed HEAD 本地合入所选分支（`/merge-worker` 用 base branch），不需要 `gh` | 否；需要明确授权、任务已结束 Worker 工作、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要任务已结束 Worker 工作、审查通过的 HEAD、`gh` 账号、GitHub remote 和 full access |
 | 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
-| 删除任务 | 安装 owner 在面板点击「删除任务」 | 移除 Task 记录和 worker 会话映射，保留 worker 分支、Worktree 和记忆归档 | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
-| 编辑记忆 | owner 在面板编辑或删除 | 改一条记忆记录 | 否；需要 owner 明确点击 |
+| 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支、Worktree 和记忆归档 | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
+| 编辑记忆 | owner 在面板编辑、逐条删除或批量删除 | 改一条记忆记录，或删除所选的记忆记录 | 否；需要 owner 明确点击 |
 | 提取记忆 | 最终 `message_router` 报告 | 启动一次记忆对话，读取 Worker 对话并把提炼结果写回四类 | 否；仅 change worker |
 
 ## 准入
