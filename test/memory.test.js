@@ -209,6 +209,27 @@ test('empty results write nothing and malformed results fail closed', async () =
   await assert.rejects(runMemoryExtraction(empty.ctx, noConversation, { projectRoot }, signal), /conversation is empty/)
 })
 
+test('worker turn archives are skipped when they exceed the configured size limit', async t => {
+  const { createSettingsStore } = await import('../src/settings-store.js')
+  const { archiveWorkerTurn, createMemoryStore } = await import('../src/memory.js')
+  const settings = createSettingsStore()
+  const events = [
+    { seq: 0, type: 'turn/start', data: { turn: 1 } },
+    { seq: 1, type: 'turn/end', data: { turn: 1 } },
+  ]
+  const session = {
+    id: 'archive-limit', firstLiveSeq: 0, eventAt: index => events[index],
+    snapshotEvents: (start, end) => events.slice(start, end),
+  }
+  t.after(() => settings.setArchiveMaxBytes(null))
+  await settings.setArchiveMaxBytes(1)
+  await assert.rejects(archiveWorkerTurn(session, events[1]), /over the 1-byte limit/)
+  assert.equal(await createMemoryStore().archive.read({ sessionId: 'archive-limit', seq: 1 }), undefined)
+  await settings.setArchiveMaxBytes(null)
+  await archiveWorkerTurn(session, events[1])
+  assert.equal((await createMemoryStore().archive.read({ sessionId: 'archive-limit', seq: 1 })).turn, 1)
+})
+
 test('injection keeps memory as data and stays empty without saved fields', async () => {
   const { memoryText } = await import('../src/memory.js')
   assert.equal(memoryText({ global: {}, project: {} }), '')

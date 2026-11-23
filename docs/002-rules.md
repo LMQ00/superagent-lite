@@ -207,7 +207,10 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 - 触发方式只有一种：最终 `message_router` 报告送达后触发一次记忆对话；Worker 没有提交 findings 的 `extract_memory` 工具（`index.js:100-113`、`src/message-router.js:22`）。
 - 触发只发生在 change 任务、Worker 位于 Worktree 且未冻结时；每个 Worker Session 最多一次（`index.js:100-113`）。
 - 提取失败不阻塞最终报告；只记录警告，报告照常送达（`index.js:109-111`）。
-- 原始归档不是记忆字段，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:150-168`）。
+- 原始归档不是记忆字段，也没有模型工具可读；它按 Worker Session 和轮次结束序号存放（`src/memory-store.js:161-175`）。
+- 单个归档文件有大小上限，默认 128M；可在 DSH 设置页「归档」分组调到最大 2G，或选择「不限制」。上限按写入文件的 JSON 字节数计算；超过上限的回合不写归档，Worker 继续运行，Host 只记录警告（`src/settings-store.js:10-21`、`src/memory-store.js:55-66`、`src/memory.js:191-206`）。
+- 归档大小保存在 `~/.dsh/superagent-lite/settings.json`；写入和读取都校验：只接受 1–2G 的整数或 `null`（不限制），损坏或越界值不会被覆盖（`src/settings-store.js:24-83`）。
+- 设置端点 `GET /superagent-lite/settings` 和 `PUT /superagent-lite/settings` 只接受安装 owner；PUT 要求 `application/json` 和 4 KB 以内的请求体，非法值返回 `400`（`src/board.js:161-204`）。
 
 ## 版本
 

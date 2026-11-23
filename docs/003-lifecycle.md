@@ -90,7 +90,7 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### 原始归档
 
-Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条记录（`src/memory.js:187-200`）。
+Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/end` 向前找到同 `turn` 的 `turn/start`，取出这轮的完整事件，写入一条记录（`src/memory.js:191-206`）。
 
 | 字段 | 内容 |
 | --- | --- |
@@ -99,7 +99,9 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 | `references` | 按事件顺序编号的 `reference`（从 1 开始）、Session `seq` 和事件类型 |
 | `events` | 完整事件快照 |
 
-归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源再次写入会覆盖该来源的记录（`src/memory-store.js:150-168`）。归档只由 Host 写入，模型工具没有读取入口。
+归档位于 `~/.dsh/superagent-lite/memory/archive/`，文件名是 Session 与结束序号的哈希；同一来源再次写入会覆盖该来源的记录（`src/memory-store.js:161-175`）。归档只由 Host 写入，模型工具没有读取入口。
+
+单个归档文件有大小上限，默认 128M，可在 DSH 设置页「归档」分组调整到最大 2G，或选择「不限制」（`~/.dsh/superagent-lite/settings.json`）。写入前按 UTF-8 JSON 字节数检查；超过上限的回合不写归档，Worker 继续运行，Host 只记录警告。上限在每次写入时读取，设置保存后立即对下一次回合生效（`src/settings-store.js:66-83`、`src/memory-store.js:55-66`、`src/memory.js:6-10`）。
 
 ## 并发
 

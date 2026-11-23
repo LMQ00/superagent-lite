@@ -52,7 +52,7 @@ flowchart LR
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
 | Memory | 分全局记忆和项目记忆两层。 | 全局记忆由所有项目共享，保存 `userProfile` 和 `sharedSkill`；项目记忆按项目根分开，保存 `responsibilities`、`positioning`、`scenarios` 和 `skill`；每个字段是记忆对话维护的文本，最多 4,000 字符；Worker 和 Reviewer 注入项目级 + 全局，Router 只注入全局；记忆是数据，不是指令（`src/memory.js:26-119`、`src/memory-store.js:1-190`）。 |
 | 记忆对话（Memory conversation） | 读取 Worker 原始会话并更新记忆的独立 helper 子代理。 | 自己读取 Worker 的完整会话记录（含各轮 follow-up），不接收 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数，因此 COMPLETED 摘要本身不进入 transcript；返回六个字段的完整更新文本，空字符串表示保持不变；插件只写回发生变化的字段；每个字段最多 4,000 字符（`src/memory.js:70-185`）。 |
-| 原始归档（Raw archive） | Worker 对话的完整轮次记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；仅 Host 可写，模型工具读不到（`src/memory.js:187-200`、`src/memory-store.js:150-168`）。 |
+| 原始归档（Raw archive） | Worker 对话的完整轮次记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；仅 Host 可写，模型工具读不到；单个文件默认上限 128M，可调到最大 2G 或「不限制」，超限回合不写入（`src/memory.js:191-206`、`src/memory-store.js:55-66`、`src/memory-store.js:161-175`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
 | Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；构建、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务，不读写记忆（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:220-700`）。 |
 
@@ -161,4 +161,4 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 若干 worker 组成团队，一个项目通常由一个团队管理，不同项目由 Router 分开 | 相同；第一个 Task 固定 Team 与 Project 的一对一关系，之后不能改配（`src/task-store.js:70-75`）。 |
 | 团队知识库按团队隔离，只有同团队 worker 能读 | 新架构按项目根隔离项目记忆；同一项目下的所有 Team 共享该项目记忆，不同项目互相读不到（`src/memory-store.js:122-135`）。 |
 | 私有信息保存密钥等 | 新架构不再有私有记忆分类；记忆提示词明确禁止保存密码、API key、token、凭据或个人数据（`src/memory.js:100-104`）。 |
-| 对话历史全量保留并编号；记忆提取有用信息 | 每个 Worker 回合完整归档，事件带 Session 序号和从 1 开始的轮内 `reference`；最终报告后记忆对话直接读取 Worker 会话记录（保留首尾、单条与总长度有上限），最终报告工具的参数不进入 transcript，不再接收 worker 提交的摘要（`src/memory.js:187-200`、`src/memory.js:70-185`）。 |
+| 对话历史全量保留并编号；记忆提取有用信息 | 每个 Worker 回合完整归档，事件带 Session 序号和从 1 开始的轮内 `reference`；归档单文件有大小上限（默认 128M，最大 2G 或不限制），超限回合不写；最终报告后记忆对话直接读取 Worker 会话记录（保留首尾、单条与总长度有上限），最终报告工具的参数不进入 transcript，不再接收 worker 提交的摘要（`src/memory.js:191-206`、`src/memory.js:74-189`）。 |

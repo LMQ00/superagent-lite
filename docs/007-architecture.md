@@ -42,7 +42,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:45-124`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git` 两个路由，并在 Worker 创建时把项目 + 全局记忆注册为必需的运行时上下文（`index.js:20-30`、`index.js:116-124`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具（`index.js:45-124`）。它为已认领的 Reviewer 注册 `submit_review`，注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/settings` 三个路由，并在 Worker 创建时把项目 + 全局记忆注册为必需的运行时上下文（`index.js:18-34`、`index.js:116-124`）。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`（`index.js:143-183`）。`session/event` 的 `turn/end` 触发 Worker 轮次归档（`index.js:136-141`）。它不决定路由，也不编辑项目文件。
 
@@ -98,7 +98,11 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/memory-store.js`
 
-保存全局记忆、项目记忆和原始归档。全局记忆是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；原始归档按 Session 与序号哈希保存（`src/memory-store.js:1-190`）。
+保存全局记忆、项目记忆和原始归档。全局记忆是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；原始归档按 Session 与序号哈希保存，写入前按 UTF-8 JSON 字节数执行归档大小上限（`src/memory-store.js:1-184`）。
+
+### `src/settings-store.js`
+
+保存运行时设置。当前只有 `archiveMaxBytes`：默认 128M，最大 2G，`null` 表示不限制；校验整数范围，写入使用临时文件 + rename，目录 `0700`、文件 `0600`；读取到损坏或越界文档时报错，不覆盖原文件（`src/settings-store.js:1-83`）。`src/memory.js` 在每次归档写入前读取它，`/superagent-lite/settings` 端点读取和更新它。
 
 ### `src/delivery.js`
 
@@ -126,7 +130,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/board.js`
 
-提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；并提供 JSON body 读取工具（`src/board.js:1-148`）。
+提供 `GET /superagent-lite/tasks`、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=`、`POST /superagent-lite/git`、`GET /superagent-lite/settings` 和 `PUT /superagent-lite/settings`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`，拒绝删除运行中的 Task 并删除记录与 worker 会话映射，限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；设置端点校验归档大小并返回默认值和最大值；还提供 JSON body 读取工具（`src/board.js:1-204`）。
 
 ### `src/report-tool.js`
 
@@ -138,7 +142,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。面板不显示或编辑记忆（`client.js:1-700`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main`、`sidebar.panellist` 和 `settings.section` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录；设置页「归档」分组读写归档大小上限，可输入 1–2048（M）或选择不限制。面板不显示或编辑记忆（`client.js:1-881`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
@@ -147,8 +151,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 - 没有源文件 import `@deepseek-ai/*` 包。Host 能力通过 `ctx` 服务提供：`subagents`、`tools`、`worktrees`、`subprocess`、`agents`、`agentPresets`、`sandboxPolicy`、`workingDirectory`、`systemPrompt`、`webServer`、`connection`（`index.js:13`、`router.js:5`）。
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js:157-161`）。
-- `src/memory-store.js` 是唯一记忆与归档存储模块；`src/memory.js` 的注入、提取和归档都经过它的 facade（`src/memory-store.js:113-168`）。
-- `src/memory.js` 只持有字段定义、提示词、注入文本和提取流程，不提供模型侧记忆工具（`src/memory.js:1-200`）。
+- `src/memory-store.js` 是唯一记忆与归档存储模块；`src/memory.js` 的注入、提取和归档都经过它的 facade（`src/memory-store.js:120-175`）。
+- `src/settings-store.js` 是唯一运行时设置存储与校验模块；`src/memory.js` 和面板设置端点都经过它（`src/settings-store.js:1-83`）。
+- `src/memory.js` 只持有字段定义、提示词、注入文本和提取流程，不提供模型侧记忆工具（`src/memory.js:1-206`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js:25-107`）。
 - `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-133`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
 - `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
@@ -195,7 +200,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/helper-guard.js` | 计数待认领 helper，并把它们限制在只读工具和审查范围内。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
 | `src/memory.js` | 定义记忆字段、注入文本、记忆对话提示词与提取流程，并负责轮次归档。 |
-| `src/memory-store.js` | 保存全局记忆、项目记忆和原始归档，执行字段校验与原子写入。 |
+| `src/memory-store.js` | 保存全局记忆、项目记忆和原始归档，执行字段校验、归档大小上限与原子写入。 |
+| `src/settings-store.js` | 保存运行时设置（归档大小），执行范围校验与原子写入。 |
 | `src/merge.js` | 实现本地 `--no-ff` 合并和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router，并触发最终报告记忆提取。 |
@@ -214,7 +220,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | 测试 | 覆盖什么 |
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、推导面板状态、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除和错误。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、会话导航、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、归档设置分组和错误。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并与分支删除、remote 选择、面板审查和 PR 状态同步。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -228,8 +234,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/land-all.test.js` | 双方纯新增时保留两边、同一行改写与 add/add 冲突时停下、按计划顺序合并和测试失败即停。 |
 | `test/landing.test.js` | 未授权与授权后的 push/PR/merge 检查、分支与 reviewed HEAD 范围、跨任务授权和伪造授权。 |
 | `test/landing-wiring.test.js` | Worker shell guard 的安装、真实拒绝与放行、跨任务隔离。 |
-| `test/memory.test.js` | 记忆角色提示词、全局 + 项目提取、纠正覆盖、空结果、Transcript 上限和注入文本。 |
-| `test/memory-store.test.js` | 全局和项目记忆读写、字段校验、按项目隔离、归档和损坏文件拒绝。 |
+| `test/memory.test.js` | 记忆角色提示词、全局 + 项目提取、纠正覆盖、空结果、Transcript 上限、注入文本和归档大小上限。 |
+| `test/memory-store.test.js` | 全局和项目记忆读写、字段校验、按项目隔离、归档、归档大小上限和损坏文件拒绝。 |
+| `test/settings.test.js` | 归档大小默认值、范围校验、无损持久化、损坏设置拒绝和设置端点。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、不再注册记忆工具、提取失败不影响报告。 |
 | `test/preset-injection.test.js` | Router 预设挂载 agent instructions，Worker 预设保留自己的配置。 |
 | `test/process.test.js` | git/gh 默认 65,536 字节上限、自定义上限和超限报错。 |
@@ -256,9 +263,10 @@ Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | 全局记忆 | `memory/global.json` | `src/memory-store.js` |
 | 项目记忆 | `memory/projects/<sha256(projectRoot)>.json` | `src/memory-store.js` |
 | 原始轮次归档 | `memory/archive/<hash(sessionId, seq)>.json` | `src/memory.js` 通过 `archiveWorkerTurn` |
+| 归档大小等设置 | `settings.json` | `src/settings-store.js` 通过设置端点 |
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 
-项目记忆哈希覆盖规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，文件以 `0600` 写入（`src/memory-store.js:64-80`、`src/task-store.js:34-57`、`src/memory-store.js:150-168`）。
+项目记忆哈希覆盖规范化后的 Project 根；归档哈希覆盖 Session ID 和轮次结束序号。目录以 `0700` 创建，文件以 `0600` 写入（`src/memory-store.js:71-87`、`src/task-store.js:34-57`、`src/memory-store.js:161-175`、`src/settings-store.js:45-63`）。
 
 ## 对外接口
 
@@ -278,10 +286,13 @@ Task 与记忆文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `/superagent-lite/tasks` | `DELETE` | 删除一个已结束 Task 的记录和 worker 会话映射 |
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
+| `/superagent-lite/settings` | `GET` | 返回当前归档大小上限、默认值和可调最大值 |
+| `/superagent-lite/settings` | `PUT` | 保存归档大小上限；`null` 表示不限制 |
 
 | 接口 | 值 |
 | --- | --- |
 | 侧栏槽位 | `sidebar.panellist`，面板标签「项目任务」 |
+| 设置槽位 | `settings.section`，分组「归档」 |
 | 主槽位 | `main` |
 | Locale 命名空间 | `superagent-lite` |
 | 包导出 | `.`、`./router`、`./locale/*.json`、`./icon`、`./client` |

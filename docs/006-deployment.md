@@ -50,7 +50,7 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 
 ## 配置
 
-Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
+Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；唯一的运行时设置是 DSH 设置页「归档」分组里的归档大小上限。
 
 | 键 | 必填 | 含义 |
 | --- | --- | --- |
@@ -60,6 +60,7 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
 | `engines.dsh` | 是，`0.2.2-rc.3` | Bundle 面向的 Host 版本 |
+| 归档大小上限 | 否，默认 128M | DSH 设置页「归档」；可选 1–2G 的整数或「不限制」，保存在 `~/.dsh/superagent-lite/settings.json` |
 
 外部设置单独完成：
 
@@ -83,21 +84,23 @@ Bundle 没有设置页，配置是 `cordis.patch.yml` 和源文件。
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 记忆 | 面板不显示记忆；Worker 和 Reviewer 的提示词自动注入项目 + 全局记忆，Router 注入全局记忆 |
-| 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/`；记忆文件是 `memory/global.json`、`memory/projects/<hash>.json`、`memory/archive/<hash>.json` |
+| 归档大小 | DSH 设置页「归档」分组：默认 128M，最大 2G，可选「不限制」 |
+| 记录位置 | `~/.dsh/superagent-lite/`，分为 `tasks/` 和 `memory/`；记忆文件是 `memory/global.json`、`memory/projects/<hash>.json`、`memory/archive/<hash>.json`；归档大小在 `settings.json` |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、Git 动作或任务删除成功 |
-| `400` | 任务 ID 或 JSON 请求体格式不对 |
+| `200` | 列表、Git 动作、任务删除或设置读写成功 |
+| `400` | 任务 ID、JSON 请求体或归档大小不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
 | `404` | Git 详情或任务删除找不到 Task |
 | `405` | 方法不被该端点接受 |
 | `409` | Git 动作被拒绝或失败，或任务删除被拒绝 |
-| `413` | Git 动作请求体超过 4 KB |
-| `415` | 动作请求体不是 `application/json` |
+| `413` | Git 动作或设置请求体超过 4 KB |
+| `415` | 动作或设置请求体不是 `application/json` |
+| `500` | 设置文件读取或写入失败 |
 
 ## 设置
 

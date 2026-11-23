@@ -52,12 +52,19 @@ async function readDocument(path) {
   }
 }
 
-async function writeDocument(path, value) {
+async function writeDocument(path, value, maxBytes) {
+  const text = `${JSON.stringify(value)}\n`
+  if (maxBytes !== undefined && maxBytes !== null) {
+    const bytes = Buffer.byteLength(text)
+    if (bytes > maxBytes) {
+      throw new RangeError(`Raw memory archive is ${bytes} bytes, over the ${maxBytes}-byte limit`)
+    }
+  }
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   const temporary = join(dirname(path), `.${randomUUID()}.tmp`)
   const handle = await open(temporary, 'wx', 0o600)
   try {
-    await handle.writeFile(`${JSON.stringify(value)}\n`, 'utf8')
+    await handle.writeFile(text, 'utf8')
     await handle.sync()
   } catch (error) {
     await handle.close().catch(() => {})
@@ -82,8 +89,9 @@ function archivePath(root, source) {
   return join(root, 'archive', `${key}.json`)
 }
 
-export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagent-lite', 'memory')) {
+export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagent-lite', 'memory'), options = {}) {
   const root = resolve(directory)
+  const archiveMaxBytes = options.archiveMaxBytes ?? (() => undefined)
 
   async function readGlobal() {
     const doc = await readDocument(join(root, 'global.json'))
@@ -152,7 +160,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
 
   async function writeArchive(source, value) {
     const path = archivePath(root, source)
-    await writeDocument(path, { version: VERSION, source, value })
+    await writeDocument(path, { version: VERSION, source, value }, await archiveMaxBytes())
   }
 
   async function readArchive(source) {
