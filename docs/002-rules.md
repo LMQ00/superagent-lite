@@ -210,8 +210,8 @@ Reviewer 只能检查 Worktree 与 `base..head`。以下规则由 `src/helper-gu
 
 - 记忆对话是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2；它和 Reviewer 共用 helper 守卫，运行只读（`src/memory.js:151-184`、`src/memory-extractor.js:4-13`）。
 - 它自己读取 Worker 的对话记录，不接收 worker 提交的摘要：`[user]`、`[assistant]`、`[tool call]` 和 `[tool result]` 逐条组成 transcript；每条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长时保留首尾并标出省略（`src/memory.js:108-149`、`src/memory-extractor.js:7-9`）。
-- 角色提示词返回四个数组：`private`、`public`、`profile`、`team`。每条事实最多 500 字符；一次最多 1 条 private、3 条 public、1 条 profile、3 条 team（`src/memory-extractor.js:4-43`）。
-- 提示词要求每条事实写成一句短小、独立、规范化的陈述并保持稳定主语，不得用不同措辞重复同一事实；纠正旧结论时只返回纠正后的事实，写入端负责覆盖匹配记录（`src/memory-extractor.js:35-36`）。
+- 角色提示词返回四个数组：`private`、`public`、`profile`、`team`。每条事实最多 500 字符；一次最多 1 条 private、3 条 public、1 条 profile、3 条 team（`src/memory-extractor.js:4-45`）。
+- 提示词要求只固化长期可复用的事实或结论，跳过一次性、短期或易过时的内容；没有合格事实就返回空数组，不强制每次任务都写入。每条事实写成一句短小、独立、规范化的陈述并保持稳定主语，不得用不同措辞重复同一事实；纠正旧结论时只返回纠正后的事实，写入端负责覆盖匹配记录（`src/memory-extractor.js:29-38`）。
 - 输出校验失败、事实超长或数量超出上限时整次提取报错；空数组不写记录（`src/memory.js:89-106`、`src/memory.js:168-169`）。
 - 触发方式只有一种：最终 `message_router` 报告送达后触发一次记忆对话；Worker 不再拥有提交 findings 的 `extract_memory` 工具（`index.js:77-86`、`src/message-router.js:22`）。
 - 触发只发生在 change 任务、Worker 位于 Worktree 且未冻结时；每个 Worker Session 最多一次（`index.js:77-86`）。
