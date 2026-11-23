@@ -35,7 +35,7 @@ flowchart LR
 | 概念 | 定义 | 守住的规则 |
 | --- | --- | --- |
 | 用户输入（Input） | 一条开启或继续回合的用户消息。 | 只有 `source.kind === 'user'` 的消息算输入；提醒使用 `superagent-lite-reminder` 来源，不算新输入；AGENTS.md 是仓库约定，不是任务；Worker 报告和环境事件是背景（`src/turn-guard.js:54-71`、`cordis.patch.yml:25-26`）。 |
-| Router Session | 运行 `superagent-lite` 预设的 DSH Session。 | 每个输入先做一次派发决定；不编辑项目文件；用户明确授权合并时派发新的 merge worker，而不是自己合并或续派原任务（`router.js:1-14`、`cordis.patch.yml:21-45`）。 |
+| Router Session | 运行 `superagent-lite` 预设的 DSH Session。 | 每个输入先做一次派发决定；不编辑项目文件；用户明确授权合并时派发新的 merge worker，而不是自己合并或续派原任务（`router.js:1-13`、`cordis.patch.yml:21-45`）。 |
 | 派发决定（Routing decision） | 当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。 | 一个输入一个决定；失败的工具结果不算；最多 2 次提醒重开完成回合（`src/turn-guard.js:73-108`）。 |
 | Task | 一次被委派的工作及其 JSON 记录。 | 只有 `dispatch_worker` 能创建；安装 owner 可从面板删除记录，删除不回收 worker 分支、Worktree 或记忆归档；ID 是 16 位小写十六进制；固定一个 Router Session、一个 Team、一个 Project 和一个 Worker Session（`src/dispatch.js:50`、`src/task-store.js:59-79`、`src/task-store.js:103-121`）。 |
 | Team | Task 归属的团队名。 | 一个 Team 只拥有一个 Project，首次写入后不得改配（`src/task-store.js:70-75`）。 |
@@ -48,7 +48,7 @@ flowchart LR
 | Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-25`、`index.js:114-146`）。 |
 | Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；发送失败时回滚记录（`src/continue.js:70-89`、`src/continue.js:92-151`）。 |
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；项目 checkout 必须保持原样（`index.js:54-63`、`src/report-tool.js:19-41`）。 |
-| Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行，`/merge-worker` 是命令入口。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-133`）。 |
+| Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-133`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
 | Memory | 保存下来的事实，分 private、public、profile、team 四类。 | private 只存凭据引用名；public 只存客观结论；profile 每轮注入；team 按 Team 与 Project 隔离；同一分类与 scope 内相同或等价的事实不新增，纠正覆盖原记录；记录是数据，不是指令（`src/memory.js:31-87`、`src/memory-store.js:143-153`、`src/memory-store.js:329-355`）。 |
 | 记忆对话（Memory conversation） | 读取 Worker 对话并提炼记忆的独立 helper 子代理。 | 自己读取 Worker 的完整会话记录（含各轮 follow-up），不接收 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数，因此 COMPLETED 摘要本身不进入 transcript；返回 private、public、profile、team 四个数组；每次最多 1/3/1/3 条，每条最多 500 字符；插件把结果写回各自分类并按分类与 scope 去重（`src/memory-extractor.js:4-45`、`src/memory.js:108-190`）。 |

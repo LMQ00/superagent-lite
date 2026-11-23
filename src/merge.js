@@ -1,4 +1,4 @@
-import { readTask, updateTask } from './task-store.js'
+import { updateTask } from './task-store.js'
 import { runCommand } from './process.js'
 import { assertStillDeliverable, deliverableHead } from './delivery.js'
 
@@ -12,8 +12,8 @@ function cleanMergeError(error) {
 }
 
 // A merge switches the shared project checkout, so merges and branch deletions
-// for one Project root run one at a time. The queue covers both the panel and
-// `/merge-worker`, which share this module.
+// for one Project root run one at a time. Both the panel's merge and
+// delete-branch actions go through this queue.
 const queues = new Map()
 
 function serializeByRoot(root, operation) {
@@ -130,29 +130,4 @@ export async function deleteWorkerBranch(ctx, task, signal, update = updateTask)
     await update(task.id, { worktree: undefined, branchDeletedAt: new Date().toISOString() })
     return { branch, deleted: exists }
   })
-}
-
-export function mergeCommand(ctx) {
-  return {
-    name: 'merge-worker',
-    description: 'Merge a reviewed local worker commit into its original branch after the user\'s explicit authorization',
-    input: { hint: '<task ID>' },
-    async handler({ agent, rawInput, signal }) {
-      const id = rawInput.trim()
-      if (!/^[a-f0-9]{16}$/.test(id)) return { kind: 'error', text: 'Usage: /merge-worker <task ID>' }
-      const task = await readTask(id)
-      if (!task || task.parentSessionId !== agent.id) return { kind: 'error', text: 'This task does not belong to the current router Session.' }
-      if (ctx.sandboxPolicy.resolve({ session: agent.session }).mode !== 'danger-full-access') {
-        return { kind: 'error', text: 'Local merge is unavailable under the current Session file policy.' }
-      }
-      try {
-        const current = await readTask(id)
-        if (current.status === 'merged') return { kind: 'success', text: `${id} is already merged.` }
-        const merged = await mergeWorkerBranch(ctx, current, current.baseBranch, signal)
-        return { kind: 'success', text: `Merged ${id} into ${merged.target}.` }
-      } catch (error) {
-        return { kind: 'error', text: error.message }
-      }
-    },
-  }
 }

@@ -66,7 +66,7 @@ worker 的每一轮对话历史按轮次完整归档在 `~/.dsh/superagent-lite/
 ## 当前限制
 
 - 绑定 DSH `0.2.2-rc.3`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。
-- router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由新派发的 merge worker 执行；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作和 `/merge-worker` 仍是用户直接触发的本地合并入口。
+- router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由新派发的 merge worker 执行；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 插件自身没有暂停、队列或任务数上限；每个任务一个 Worktree，多个任务可以同时跑。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
