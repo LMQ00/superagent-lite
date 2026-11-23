@@ -60,7 +60,7 @@ export function createReadTaskTool(agent, taskId, read = taskForSession) {
 
 - **身份从闭包来。** `agent` 和 `taskId` 在注册时绑定，不从模型参数读取；`exec.agent !== agent` 拒绝其他 Session。
 - **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:44-45`）。
-- **输出只含公开字段。** 不返回需求全文、Review findings、失败原因或记忆内容；Task 记录里这些字段不进入返回值。
+- **输出只含公开字段。** 不返回需求全文、Review findings 或失败原因；Task 记录里这些字段不进入返回值。
 - **不写记录。** 工具只调用 `taskForSession` 读取，不调用 `updateTask`。
 
 ## 2. 在 Worker Session 上注册
@@ -79,9 +79,9 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 })
 ```
 
-把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:92`）。
+把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:98`）。
 
-- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:73-77`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
+- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:93`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
 - **注册位置在 `agent/created` 内。** 该回调已经完成 Task 归属核对；不要把工具注册到 `router.js`。
 - **不要另建全局工具。** 工具只能看到闭包绑定的那个 Task，避免 `read_task` 变成跨 Task 读取入口。
 
@@ -94,7 +94,6 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 | 捆绑配置 | `cordis.patch.yml` 不改；没有新的工具行或预设 |
 | 重启 | 重载 bundle 或重启 DSH Web；运行中的 Worker 不会自动获得新工具 |
 | Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:23`） |
-| 记忆对话 | 使用只读工具集和受限 shell；`read_task` 不在其中，因此不可用（`src/helper-guard.js:4-16`） |
 
 ## 4. 测试
 

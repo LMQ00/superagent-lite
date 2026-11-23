@@ -79,11 +79,6 @@ function setup({ fetch, openSession, language = 'en' }) {
       stateIndex = refIndex = effectIndex = 0
       return main.Component({ t: ctx.locale.bind(), ...main.options.inject() })
     },
-    renderSettings() {
-      stateIndex = refIndex = effectIndex = 0
-      const section = slots.get('settings.section')
-      return section.Component({ t: ctx.locale.bind(), close() {} })
-    },
     dispose() {
       for (const { dispose } of effects) dispose()
       for (const dispose of applyDisposers.reverse()) dispose()
@@ -106,6 +101,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const byClass = (tree, className) => nodes(tree).filter(node => node.props?.className === className)
 const button = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label).at(-1)
 const filterButton = (tree, label) => nodes(tree).find(node => node.type === 'button' && text(node).startsWith(label))
+const tab = (tree, label) => nodes(tree).find(node => node.type === 'button' && node.props?.role === 'tab' && text(node).startsWith(label))
 const buttons = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label)
 const select = (tree, predicate) => nodes(tree).find(node => node.type === 'select' && predicate?.(node))
 
@@ -188,7 +184,7 @@ test('renders the six status categories, navigation and session links without a 
   assert.ok(requests.every(request => request.options.signal.aborted))
 })
 
-test('scrolls the task list inside a fixed panel without a tab bar', async () => {
+test('keeps the task list scrollable beside the settings tab', async () => {
   const requests = []
   const tasks = Array.from({ length: 12 }, (_, index) => task({
     id: `t${index}`, title: `Task ${index + 1}`,
@@ -203,14 +199,78 @@ test('scrolls the task list inside a fixed panel without a tab bar', async () =>
   board.render()
   await flush()
   const tree = board.render()
-  assert.equal(nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab').length, 0)
+  const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置'])
+  assert.equal(tabs[0].props['aria-selected'], true)
+  assert.equal(tabs[1].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
   assert.match(text(byClass(tree, 'sl-scroll')[0]), /Task 1/)
   assert.equal(byClass(tree, 'sl-task').length, 12)
   assert.equal(requests.filter(path => path === '/superagent-lite/tasks').length, 1)
-  assert.equal(requests.filter(path => path === '/superagent-lite/memory').length, 0)
+  board.dispose()
+})
+
+test('the settings tab edits the worker model and concurrency limit', async () => {
+  const requests = []
+  let saved = { workerModel: null, maxWorkers: 3 }
+  const catalog = {
+    default: { provider: 'deepseek', model: 'deepseek-chat' },
+    groups: [{ id: 'deepseek', name: 'DeepSeek', models: [
+      { id: 'deepseek-chat', name: 'Chat' },
+      { id: 'deepseek-reasoner', name: 'Reasoner', reasoning: { efforts: [{ id: 'high', name: 'High' }] } },
+    ] }],
+    failures: [],
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [] }) }
+      if (path === '/superagent-lite/worker-settings' && options.method === 'POST') {
+        saved = JSON.parse(options.body)
+        return { ok: true, json: async () => ({ settings: saved }) }
+      }
+      return {
+        ok: true,
+        json: async () => ({ settings: saved, limits: { maxWorkers: { min: 1, max: 16 } }, catalog }),
+      }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '设置').props.onClick()
+  tree = board.render()
+  assert.equal(tab(tree, '设置').props['aria-selected'], true)
+  assert.match(text(tree), /Worker 模型/)
+  assert.match(text(tree), /留空时跟随 DSH 默认模型/)
+  assert.match(text(tree), /并发 worker 上限/)
+  assert.match(text(tree), /DSH 当前默认/)
+  const input = id => nodes(tree).find(node => node.type === 'input' && node.props?.id === id)
+  input('panel-heading-provider').props.onChange({ target: { value: 'deepseek' } })
+  tree = board.render()
+  input('panel-heading-model').props.onChange({ target: { value: 'deepseek-reasoner' } })
+  tree = board.render()
+  input('panel-heading-effort').props.onChange({ target: { value: 'high' } })
+  tree = board.render()
+  input('panel-heading-provider').props.onChange({ target: { value: 'deepseek' } })
+  nodes(tree).find(node => node.type === 'input' && node.props?.min === 1)
+    .props.onChange({ target: { value: '2' } })
+  tree = board.render()
+  button(tree, '保存').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  const posts = requests.filter(request => request.path === '/superagent-lite/worker-settings' && request.options.method === 'POST')
+  assert.equal(posts.length, 1)
+  assert.deepEqual(JSON.parse(posts[0].options.body), {
+    workerModel: { provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high' },
+    maxWorkers: 2,
+  })
+  assert.match(text(board.render()), /设置已保存/)
   board.dispose()
 })
 
@@ -611,94 +671,6 @@ test('selects several tasks and deletes them in one confirmed batch', async () =
   assert.deepEqual(requests.filter(request => request.options.method === 'DELETE')
     .map(request => request.path).sort(),
   ['/superagent-lite/tasks?taskId=a', '/superagent-lite/tasks?taskId=c'])
-  board.dispose()
-})
-
-test('the archive settings section loads and saves a numeric size limit', async () => {
-  const requests = []
-  const view = archiveMaxBytes => ({
-    archiveMaxBytes, defaultArchiveMaxBytes: 134217728, maxArchiveMaxBytes: 2147483648,
-  })
-  const board = setup({
-    fetch: async (path, options = {}) => {
-      requests.push({ path, options })
-      assert.equal(path, '/superagent-lite/settings')
-      if (options.method === 'PUT') {
-        assert.equal(options.credentials, 'same-origin')
-        return { ok: true, json: async () => view(JSON.parse(options.body).archiveMaxBytes) }
-      }
-      return { ok: true, json: async () => view(134217728) }
-    },
-    language: 'zh',
-  })
-  const section = board.slots.get('settings.section')
-  assert.equal(section.options.id, 'superagent-lite-archive')
-  assert.equal(section.options.label(), '归档')
-  assert.match(text(board.renderSettings()), /正在加载/)
-  await flush()
-  let tree = board.renderSettings()
-  assert.match(text(tree), /归档大小/)
-  assert.match(text(tree), /默认 128M/)
-  let number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  assert.equal(number.props.value, '128')
-  assert.equal(number.props.max, 2048)
-  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.type === 'checkbox').props.checked, false)
-  number.props.onChange({ target: { value: '256' } })
-  tree = board.renderSettings()
-  button(tree, '保存').props.onClick()
-  for (let step = 0; step < 4; step += 1) {
-    board.renderSettings()
-    await flush()
-  }
-  const put = requests.find(request => request.options.method === 'PUT')
-  assert.deepEqual(JSON.parse(put.options.body), { archiveMaxBytes: 268435456 })
-  tree = board.renderSettings()
-  assert.match(text(tree), /已保存。/)
-  number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  assert.equal(number.props.value, '256')
-  board.dispose()
-})
-
-test('the archive settings section offers unlimited and refuses an out-of-range value', async () => {
-  const requests = []
-  const body = value => ({ archiveMaxBytes: value, defaultArchiveMaxBytes: 134217728, maxArchiveMaxBytes: 2147483648 })
-  const board = setup({
-    fetch: async (path, options = {}) => {
-      requests.push({ path, options })
-      if (options.method === 'PUT') return { ok: true, json: async () => body(JSON.parse(options.body).archiveMaxBytes) }
-      return { ok: true, json: async () => body(null) }
-    },
-    language: 'en',
-  })
-  board.renderSettings()
-  await flush()
-  let tree = board.renderSettings()
-  let checkbox = nodes(tree).find(node => node.type === 'input' && node.props.type === 'checkbox')
-  assert.equal(checkbox.props.checked, true)
-  let number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  assert.equal(number.props.disabled, true)
-  checkbox.props.onChange({ target: { checked: false } })
-  tree = board.renderSettings()
-  number = nodes(tree).find(node => node.type === 'input' && node.props.type === 'number')
-  number.props.onChange({ target: { value: '2049' } })
-  tree = board.renderSettings()
-  button(tree, 'Save').props.onClick()
-  await flush()
-  assert.match(text(board.renderSettings()), /whole number from 1 to 2048 MB/)
-  assert.equal(requests.filter(request => request.options.method === 'PUT').length, 0)
-  checkbox = nodes(board.renderSettings()).find(node => node.type === 'input' && node.props.type === 'checkbox')
-  checkbox.props.onChange({ target: { checked: true } })
-  tree = board.renderSettings()
-  assert.equal(nodes(tree).find(node => node.type === 'input' && node.props.type === 'number').props.disabled, true)
-  button(tree, 'Save').props.onClick()
-  for (let step = 0; step < 4; step += 1) {
-    board.renderSettings()
-    await flush()
-  }
-  const puts = requests.filter(request => request.options.method === 'PUT')
-  assert.equal(puts.length, 1)
-  assert.deepEqual(JSON.parse(puts[0].options.body), { archiveMaxBytes: null })
-  assert.match(text(board.renderSettings()), /Saved\./)
   board.dispose()
 })
 

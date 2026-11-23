@@ -33,7 +33,6 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')
-  const { archiveWorkerTurn, createMemoryStore, memoryOutputSchema } = await import('../src/memory.js')
   const { createMessageRouterTool } = await import('../src/message-router.js')
   const { claimHelper, registerReadOnlyGuard } = await import('../src/helper-guard.js')
   const repo = join(root, 'repo')
@@ -101,8 +100,6 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
         assert.ok(spec.prompt[0].text.includes(worktree))
         assert.doesNotMatch(spec.prompt[0].text, /diff --git/)
         assert.doesNotMatch(spec.prompt[0].text, /\+updated/)
-        assert.match(spec.prompt[0].text, /User profile: Prefers terse reviews\./)
-        assert.match(spec.prompt[0].text, /Responsibilities: Review notes carefully\./)
         const claim = claimHelper(spec.parent.session.id)
         assert.ok(claim)
         const listeners = []
@@ -130,7 +127,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const sends = []
   ctx.subagents.sendMessage = async (sender, targetId, content) => sends.push({ sender: sender.id, targetId, text: content[0].text })
   const dispatch = createDispatchTool(ctx)
-  const args = { mode: 'change', title: 'Change notes', teamId: 'team', task: 'Update notes', land: true }
+  const args = { mode: 'change', title: 'Change notes', worktreeName: 'change-notes', teamId: 'team', task: 'Update notes', land: true }
   const exec = { agent: parent, signal, callId: 'call' }
   await assert.rejects(dispatch.execute({ ...args, teamId: '../bad' }, exec), /teamId/)
   await assert.rejects(dispatch.execute({ title: 'Missing mode' }, exec), /mode/)
@@ -142,6 +139,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   const branch = 'sl-fixture'
   assert.equal(dispatched.workerSessionId, worker.id)
   assert.equal((await readTask(dispatched.taskId)).baseCommit, baseCommit)
+  assert.equal((await readTask(dispatched.taskId)).worktreeName, 'change-notes')
   assert.equal((await readTask(dispatched.taskId)).land, true)
   assert.equal((await readTask(dispatched.taskId)).landAuthorizedVia, 'dispatch')
   git(['worktree', 'add', '-b', branch, worktree])
@@ -149,10 +147,6 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   git(['commit', '-am', 'change notes'], worktree)
   const head = git(['rev-parse', 'HEAD'], worktree)
   await updateTask(dispatched.taskId, { status: 'running', worktree: { path: worktree, branch } })
-  await createMemoryStore().writeMemory(repo, {
-    global: { userProfile: 'Prefers terse reviews.' },
-    project: { responsibilities: 'Review notes carefully.' },
-  })
   const continueTool = createContinueTool(ctx)
   await continueTool.execute({ taskId: dispatched.taskId, task: 'Add a changelog entry' }, { agent: parent, signal })
   assert.match(sends[0].text, /Add a changelog entry/)
@@ -175,17 +169,4 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
   await message.execute({ message: 'Done on sl-fixture' }, { agent: worker, signal })
   assert.deepEqual(sends, [{ sender: worker.id, targetId: 'router', text: 'Done on sl-fixture' }])
   assert.equal((await readTask(dispatched.taskId)).review.head, head)
-
-  assertSupportedJsonSchema(memoryOutputSchema)
-  const events = [{ type: 'turn/start', seq: 0, data: { turn: 1 } }, { type: 'turn/end', seq: 1, data: { turn: 1 } }]
-  const archive = []
-  await archiveWorkerTurn({ id: worker.id, firstLiveSeq: 0, eventAt: i => events[i], snapshotEvents: (a, b) => events.slice(a, b) }, events[1], { write: (source, snapshot) => archive.push([source, snapshot]) })
-  assert.deepEqual(archive[0], [{ sessionId: worker.id, seq: 1 }, {
-    turn: 1, startSeq: 0, endSeq: 1,
-    references: [
-      { reference: 1, seq: 0, type: 'turn/start' },
-      { reference: 2, seq: 1, type: 'turn/end' },
-    ],
-    events,
-  }])
 })
