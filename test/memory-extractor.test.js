@@ -165,6 +165,39 @@ test('the transcript is capped while keeping both ends of a long worker conversa
 
 })
 
+test('the transcript keeps the workflow but drops the final report summary', async () => {
+  const { workerConversation } = await import('../src/memory.js')
+  const { memoryExtractorPrompt } = await import('../src/memory-extractor.js')
+  const session = sessionWith([
+    textMessage('user', 'Change the notes.'),
+    { role: 'assistant', content: [
+      { type: 'text', text: 'I will update the notes.' },
+      { type: 'tool-call', name: 'bash', arguments: '{"command":"npm test"}' },
+    ] },
+    textMessage('tool', '217 passing', { isError: false }),
+    { role: 'assistant', content: [
+      { type: 'text', text: 'The change is ready.' },
+      { type: 'tool-call', name: 'message_router', arguments: '{"message":"COMPLETED secret summary"}' },
+    ] },
+    { role: 'assistant', content: [
+      { type: 'tool-call', name: 'report_task', arguments: '{"report":"REPORT secret summary"}' },
+    ] },
+  ], 10)
+  const transcript = workerConversation(session)
+  assert.match(transcript, /\[user\] Change the notes\./)
+  assert.match(transcript, /\[assistant\] I will update the notes\./)
+  assert.match(transcript, /\[tool call\] bash .*npm test/)
+  assert.match(transcript, /\[tool result\] 217 passing/)
+  assert.match(transcript, /\[tool call\] message_router/)
+  assert.doesNotMatch(transcript, /COMPLETED secret summary/)
+  assert.match(transcript, /\[tool call\] report_task/)
+  assert.doesNotMatch(transcript, /REPORT secret summary/)
+  const prompt = memoryExtractorPrompt(transcript)
+  assert.match(prompt, /\[assistant\] The change is ready\./)
+  assert.match(prompt, /\[tool call\] bash/)
+  assert.doesNotMatch(prompt, /COMPLETED secret summary/)
+})
+
 test('empty extraction writes no record, oversized and excessive facts fail, and private keeps reference names', async () => {
   const { createMemoryPanel, runMemoryExtraction } = await import('../src/memory.js')
   const caller = { role: 'worker', teamId: 'core', projectRoot: join(home, 'project') }

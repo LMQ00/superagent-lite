@@ -27,12 +27,13 @@ async function taskForWorker(taskId, workerId) {
   return projectRoot
 }
 
-async function workerWiring(workerId, taskId, projectRoot, structured, { fail = false } = {}) {
+async function workerWiring(workerId, taskId, projectRoot, structured, { fail = false, beforeCreate } = {}) {
   const { apply } = await import('../index.js')
   const listeners = new Map()
   const activations = []
   const registered = []
   const warnings = []
+  const contexts = []
   const ctx = {
     logger: { warn: message => warnings.push(message) },
     inject() {},
@@ -51,6 +52,7 @@ async function workerWiring(workerId, taskId, projectRoot, structured, { fail = 
     },
   }
   await apply(ctx)
+  await beforeCreate?.()
   const agent = {
     id: workerId,
     session: {
@@ -67,12 +69,12 @@ async function workerWiring(workerId, taskId, projectRoot, structured, { fail = 
         guard() { return () => {} },
         register(tool) { registered.push(tool); return () => {} },
       },
-      systemPrompt: { context() { return () => {} } },
+      systemPrompt: { context(entry) { contexts.push(entry); return () => {} } },
     },
   }
   await listeners.get('agent/created')({ agent })
   return {
-    agent, activations, registered, warnings,
+    agent, activations, registered, warnings, contexts,
     message: () => registered.find(tool => tool.name === 'message_router'),
   }
 }
@@ -132,4 +134,26 @@ test('an extraction failure does not fail the final report', async () => {
   assert.match(result, /Message delivered to the router/)
   assert.equal(wiring.activations.length, 1)
   assert.match(wiring.warnings.join('\n'), /memory extraction/)
+})
+
+test('a worker injects profile facts written after plugin startup', async () => {
+  const taskId = 'e'.repeat(16)
+  const workerId = 'worker-e'
+  const projectRoot = await taskForWorker(taskId, workerId)
+  const wiring = await workerWiring(workerId, taskId, projectRoot, {
+    private: [], public: [], profile: [], team: [],
+  }, {
+    async beforeCreate() {
+      const { createMemoryStore } = await import('../src/memory-store.js')
+      await createMemoryStore().memory.create({ role: 'router' }, {
+        category: 'profile',
+        content: 'Environment: worker profile refresh check.',
+        source: { sessionId: 'router', seq: 1 },
+      })
+    },
+  })
+  const profile = wiring.contexts.find(entry => entry.name === 'superagent-lite-profile')
+  assert.ok(profile, 'the worker registered a profile context')
+  assert.equal(profile.required, true)
+  assert.match(profile.text(), /worker profile refresh check/)
 })

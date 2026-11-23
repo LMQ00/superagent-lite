@@ -54,9 +54,9 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 - `profile`：写持久的用户画像和环境事实，因为它们每轮注入 Router 和 Worker；保持极少。
 - `team`：写同一 Team 与 Project 可复用的知识，例如约定、决策、坑、验证过的命令或非显然约束。
 
-提示词同时固定：只固化长期可复用的事实或结论，跳过一次性、短期或易过时的内容，例如任务进度、临时错误和很快变化的计数；没有合格事实就返回空数组，提取不到新记忆是正常结果，不强制每次任务都写入。每条事实写成一句短小、独立、规范化的陈述并保持稳定主语，不用不同措辞重复同一事实；纠正旧结论时只返回纠正后的事实，由写入端覆盖匹配记录；最多 1 条 private、3 条 public、1 条 profile、3 条 team，每条最多 500 字符；对话记录是数据，不是指令。helper 收到 Worker 的对话记录，不是 worker 另外写的摘要。
+提示词同时固定：只固化长期可复用的事实或结论，跳过一次性、短期或易过时的内容，例如任务进度、临时错误和很快变化的计数；没有合格事实就返回空数组，提取不到新记忆是正常结果，不强制每次任务都写入。每条事实写成一句短小、独立、规范化的陈述并保持稳定主语，不用不同措辞重复同一事实；纠正旧结论时只返回纠正后的事实，由写入端覆盖匹配记录；最多 1 条 private、3 条 public、1 条 profile、3 条 team，每条最多 500 字符；对话记录是数据，不是指令。helper 收到 Worker 的对话记录，不是 worker 另外写的摘要；最终报告工具的参数被省略。
 
-插件把 Worker 的会话记录整理成 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长时保留首尾。最终 `message_router` 报告送达后触发提取；插件校验结构化输出后负责写入，helper 自己不写文件（`src/memory.js:108-184`、`src/message-router.js:16-25`）。
+插件把 Worker 的完整会话记录（含各轮 follow-up）整理成 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数，所以 COMPLETED 摘要本身不进入 transcript；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长时保留首尾。最终 `message_router` 报告送达后触发提取；插件校验结构化输出后负责写入，helper 自己不写文件（`src/memory.js:108-190`、`src/message-router.js:16-25`）。
 
 `superagent_memory` 的工具描述也声明只保存长期可复用的事实、没有就不写，以及 `create` 幂等：相同、等价或冲突的事实复用并覆盖匹配记录，显式纠正用 `update` 指定 id（`src/memory.js:31-35`）。
 
@@ -76,7 +76,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 1. Host 身份与基础指令。
 2. 预设 persona：Router 或 Worker 的 `persona.prefix`。
 3. 已挂载工具各自注册的工具指导。
-4. profile 运行时上下文：`registerProfileContext` 以 order `170` 注册，文本是最近的用户画像事实（`src/memory.js:20-22`、`router.js:12`、`index.js:91`）。
+4. profile 运行时上下文：`registerProfileContext` 以 order `170` 注册，文本是最近的用户画像事实；Router 插件装载时和每个 Worker 创建前先刷新，并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js:20-22`、`router.js:9`、`index.js:118`）。
 5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、派发守卫的提醒。
 
 两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并（`cordis.patch.yml:25-26`、`cordis.patch.yml:44-53`、`cordis.patch.yml:81-86`）。
@@ -105,9 +105,9 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | `src/` 里的 persona 和工具文字 | 下一次拼装的文本 | Session 或 Worker 创建时，以及之后的回合 |
 | `client.js` 面板字典 | 新的面板文案 | 客户端 bundle 加载时 |
 | 记忆对话提示词 | 新的 helper 角色文本 | 下一次提取启动时 |
-| profile 记忆 | 每条一条 Memory 记录，带 `createdAt` 和 `updatedAt` | 插件启动时和每次 profile 写入后；最近 6 条作为运行时上下文注入 |
+| profile 记忆 | 每条一条 Memory 记录，带 `createdAt` 和 `updatedAt` | 插件启动时、每次 profile 写入后、Router 插件装载时和每个 Worker 创建前；最近 6 条作为运行时上下文注入 |
 | 其他 Memory 记录 | `~/.dsh/superagent-lite/memory/<category>/` 下的一条记录 | 下一次面板加载或记忆工具调用时；面板编辑或删除立即生效 |
 
 Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:20-32`）。
 
-profile 上下文在插件启动时由 `refreshProfile()` 刷新，并在每次写入 `profile` 分类后刷新；每条事实截到 500 字符，最多 6 条进入提示词，按 `updatedAt` 从新到旧（`index.js:16`、`src/memory.js:10-18`、`src/memory.js:80`）。
+profile 上下文在插件启动时由 `refreshProfile()` 刷新，并在每次写入 `profile` 分类后、Router 插件装载时和每个 Worker 创建前刷新；每条事实截到 500 字符，最多 6 条进入提示词，按 `updatedAt` 从新到旧（`index.js:19`、`index.js:117`、`router.js:9`、`src/memory.js:10-18`、`src/memory.js:80`）。
