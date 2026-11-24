@@ -23,11 +23,13 @@ export function createReportTool(ctx, agent, taskId, admit, onReported) {
       if (task.worktree) throw new Error('Report-only tasks cannot create a worktree')
       const text = report.trim()
       if (!text || text.length > 20000) throw new Error('Report must contain 1-20000 characters')
-      const head = await runCommand(ctx, ['rev-parse', '--verify', 'HEAD^{commit}'], task.projectRoot, exec.signal)
-      if (head !== task.baseCommit) throw new Error('Report-only tasks must not commit or move HEAD')
-      const dirty = await runCommand(ctx, ['status', '--porcelain', '--untracked-files=all'], task.projectRoot, exec.signal)
-      if (dirty.split('\n').some(line => line && line !== '?? .agents/worktrees/.gitignore')) {
-        throw new Error('Report-only tasks must leave the project checkout unchanged')
+      if (task.git !== false) {
+        const head = await runCommand(ctx, ['rev-parse', '--verify', 'HEAD^{commit}'], task.projectRoot, exec.signal)
+        if (head !== task.baseCommit) throw new Error('Report-only tasks must not commit or move HEAD')
+        const dirty = await runCommand(ctx, ['status', '--porcelain', '--untracked-files=all'], task.projectRoot, exec.signal)
+        if (dirty.split('\n').some(line => line && line !== '?? .agents/worktrees/.gitignore')) {
+          throw new Error('Report-only tasks must leave the project checkout unchanged')
+        }
       }
       const message = `Report-only task ${taskId} (no branch, commit, review, or pull request):\n${text}`
       await ctx.subagents.sendMessage(agent, task.parentSessionId, [{ type: 'text', text: message }], { signal: exec.signal })

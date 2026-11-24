@@ -1,4 +1,4 @@
-import { landingAuthorizationRule, landingRule } from './landing.js'
+import { landingAuthorizationRule, landingRule, nonGitLandingRule } from './landing.js'
 
 const REPORTING = [
   'Reporting:',
@@ -23,10 +23,10 @@ function mergeTargets(branches) {
   return branches.map(branch => `- ${branch}`)
 }
 
-export function buildWorkerPrompt({ title, teamId, task, baseBranch, mode = 'change', land = false, branches = [] }) {
+export function buildWorkerPrompt({ title, teamId, task, baseBranch, mode = 'change', land = false, branches = [], git = true }) {
   const header = [
     `Project team: ${teamId}`,
-    `Base branch: ${baseBranch}`,
+    git ? `Base branch: ${baseBranch}` : 'Base branch: none (this project is not a git repository)',
     `Task: ${title}`,
     '',
     'Requirements:',
@@ -86,6 +86,32 @@ export function buildWorkerPrompt({ title, teamId, task, baseBranch, mode = 'cha
       '- Assess each finding. Fix real defects; commit and request review after each new commit until it approves or you are genuinely blocked.',
       '- If review still blocks on a finding you decline, say why and report INCOMPLETE instead of repeating the same review.',
       `- ${landingRule(land, baseBranch, 'merge')}`,
+      '',
+      ...REPORTING,
+    ].join('\n')
+  }
+  if (!git) {
+    return [
+      ...header,
+      ...DATA_RULES,
+      `- ${nonGitLandingRule()}`,
+      '',
+      'Mode: change',
+      '- The request needs project files changed. Work directly in the project folder; there is no branch, worktree, or commit.',
+      '',
+      'Before:',
+      '- Do not call create_worktree; this project is not a git repository, so the worker already works in the project folder.',
+      '',
+      'During:',
+      '- The title is a label; Requirements is the request. Make routine implementation choices yourself.',
+      '- Implement the change and run relevant tests.',
+      '- Do not add unrequested features, refactors, or unrelated files. Add or update tests needed to verify the change. If the change requires a product/design decision or breaks existing callers or public interfaces that the requirements do not explicitly authorize, stop and report the question instead of guessing.',
+      '- Fix failures your change introduces; do not stop merely because a check fails, and report pre-existing or unrelated failures honestly.',
+      '',
+      'After:',
+      '- Do not commit, push, or open a pull request; this task has no branch. When the change is complete, call review_worker_commit; the reviewer inspects the current project files and runs checks.',
+      '- Assess each finding. Fix real defects; request review again after each new change until it approves or you are genuinely blocked.',
+      '- If review still blocks on a finding you decline, say why and report INCOMPLETE instead of repeating the same review.',
       '',
       ...REPORTING,
     ].join('\n')

@@ -17,6 +17,15 @@ export function panelStatus(task, facts = {}) {
     if (FAILED.has(status)) return 'failed'
     return 'running'
   }
+  if (task.git === false) {
+    // Without git there is no branch to merge or publish, so an approved
+    // workspace review is the delivered state instead of "unmerged".
+    if (FAILED.has(status)) return 'failed'
+    if (task.review?.approved === true) return 'completed'
+    if (status === 'completed') return 'completed'
+    if (status === 'review-required') return 'unreviewed'
+    return RUNNING.has(status) ? 'running' : 'failed'
+  }
   if (RUNNING.has(status)) return 'running'
   if (status === 'merged' || facts.merged === true) return 'completed'
   if (facts.closed === true) return 'failed'

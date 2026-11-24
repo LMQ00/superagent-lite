@@ -64,6 +64,7 @@ async function launch(ctx, task) {
           teamId: task.teamId,
           task: task.task,
           baseBranch: task.baseBranch,
+          git: task.git !== false,
           mode: task.mode,
           land: task.land === true,
           branches: task.mergeBranches ?? [],

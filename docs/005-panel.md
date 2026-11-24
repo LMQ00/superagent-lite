@@ -17,10 +17,12 @@
 | --- | --- | --- |
 | 未合并 | 当前 worker HEAD 已审查通过且尚未合并 | 合并、提交 PR、删除分支 |
 | 运行中 | Worker、排队中的 Worker 或交付动作正在进行；排队中的 Task 带「排队中」标签，记录失联时带「未确认」标签 | 会话链接；worker 分支还在时「删除分支」禁用 |
-| 未审查 | Worker 提交了 HEAD，但没有通过的审查 | 审查、删除分支 |
-| 已完成 | 已审查的 HEAD 已合并，Worker 结束时没有可交付的提交，或非失败的 Task 的 worker 分支已被删除 | worker 分支还在时「删除分支」 |
+| 未审查 | Worker 提交了 HEAD，但没有通过的审查；非 Git 任务结束但工作区审查未通过 | 审查（仅 Git 任务）、删除分支（仅 Git 任务） |
+| 已完成 | 已审查的 HEAD 已合并，Worker 结束时没有可交付的提交，非 Git 任务审查通过，或非失败 Task 的 worker 分支已被删除 | worker 分支还在时「删除分支」 |
 | 失败 | Worker 回合、交付动作或 Task 失败 | 会话链接；显示保存的失败原因；worker 分支还在时「删除分支」 |
 | 仅回答 | report 任务交回了报告 | 会话链接 |
+
+非 Git 任务没有分支、Worktree、提交和 `git` 字段视图，因此没有合并、提交 PR、审查、删除分支这些 Git 动作；审查通过后行状态直接是「已完成」。面板读取时依旧从任务记录和审查事实推导状态，不新增第七个状态。
 
 面板读取 Task 时会修正过期的 `review-required`、`delivery-blocked` 或 `failed`：当前 HEAD 已审查时改为 `awaiting-merge`；也会采纳同一 Project 的另一个 Task 为同一 commit 记录的通关审查。
 

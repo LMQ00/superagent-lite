@@ -36,6 +36,7 @@ test('git commands that move branches or history are refused', () => {
   for (const command of [
     'git commit -m x',
     'git commit --amend',
+    'git init',
     'git merge feature',
     'git rebase main',
     `git -C ${worktree} commit -m x`,
@@ -76,7 +77,7 @@ test('git commands that move branches or history are refused', () => {
     'git filter-branch --all',
     'git replace abc123 def456',
   ]) {
-    assert.match(reviewScope.checkCommand(command), /may not change git branches or history/, command)
+    assert.match(reviewScope.checkCommand(command), /may not create or change git branches/, command)
   }
 })
 
@@ -125,4 +126,19 @@ test('only a diff or changed-file read counts as evidence', () => {
   const grepScope = scope()
   grepScope.record('grep', { path: 'changed.js' })
   assert.equal(grepScope.hasEvidence(), true)
+})
+
+test('a workspace review counts reading any project file and blocks git init', () => {
+  const workspace = createReviewScope({ worktree, workspace: true })
+  assert.equal(workspace.checkCommand('git diff HEAD'), undefined)
+  assert.match(workspace.checkCommand('git init'), /may not create or change git branches/)
+  assert.equal(workspace.hasEvidence(), false)
+  workspace.record('read', { file_path: 'notes.txt' })
+  assert.equal(workspace.hasEvidence(), true)
+
+  const outside = createReviewScope({ worktree, workspace: true })
+  outside.record('read', { file_path: '/elsewhere/notes.txt' })
+  assert.equal(outside.hasEvidence(), false)
+  outside.record('grep', { path: '/elsewhere' })
+  assert.equal(outside.hasEvidence(), false)
 })
