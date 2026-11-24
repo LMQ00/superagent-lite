@@ -169,14 +169,30 @@ test('a finished worker is not shown a catalog update caused by its own memory s
     message: 'Done. Review approved; tests pass.',
   }, { agent: wiring.agent, signal: new AbortController().signal })
 
+  const { createMemoryStore } = await import('../src/memory.js')
+  await createMemoryStore().writeSkill('project', projectRoot, {
+    name: 'superagent-lite-test-conventions',
+    description: 'Test conventions.',
+    content: 'Run the suite.',
+  })
+
   const update = catalog([
     { name: 'find-skills', description: 'Find skills.' },
     { name: 'superagent-project-memory', description: 'Run the project tests.' },
+    { name: 'superagent-lite-test-conventions', description: 'Test conventions.' },
   ], true)
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [update] }))
     assert.deepEqual(decision.messages, [], `attempt ${attempt + 1}`)
   }
+
+  const unrelated = catalog([
+    { name: 'find-skills', description: 'Find, install, and extend skills.' },
+    { name: 'superagent-project-memory', description: 'Run the project tests.' },
+    { name: 'superagent-lite-test-conventions', description: 'Test conventions.' },
+  ], true)
+  const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [unrelated] }))
+  assert.deepEqual(decision.messages, [unrelated])
 })
 
 test('a worker gets project and global memory injected and only the knowledge read tools', async () => {

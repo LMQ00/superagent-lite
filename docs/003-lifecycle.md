@@ -90,7 +90,7 @@ memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js`、`index.js`）。
 
-写入的 skill 只对之后新派发的 Worker/Reviewer 可见。已运行或已结束的 Worker/Reviewer 会话保留启动时的 skill catalog：只由 `superagent-shared-memory`、`superagent-project-memory` 变化构成的 catalog 更新会被拦截，不会因为 memory 写入而收到变更提醒并继续行动（`src/skill-catalog.js`、`index.js`）。
+写入的 skill 只对之后新派发的 Worker/Reviewer 可见。已运行或已结束的 Worker/Reviewer 会话保留启动时的 skill catalog：只由 memory 管理的 skill 变化构成的 catalog 更新会被拦截，不会因为 memory 写入而收到变更提醒并继续行动。归属来源是 memory store 写入 skill 时登记的名单（按全局和项目根分开记录），并列的第二个项目 skill 也按同一规则处理；未登记的其他 skill 变化照常发布（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 
 ### 原始归档
 

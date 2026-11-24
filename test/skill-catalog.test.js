@@ -4,7 +4,13 @@ import { createWorkerSkillCatalogGuard, WORKER_PRESET } from '../src/skill-catal
 
 const projectSkill = description => ({ name: 'superagent-project-memory', description })
 const sharedSkill = description => ({ name: 'superagent-shared-memory', description })
+const projectConventions = description => ({ name: 'superagent-project-conventions', description })
+const trackedProjectSkill = description => ({ name: 'superagent-lite-test-conventions', description })
 const otherSkill = description => ({ name: 'find-skills', description })
+
+const MEMORY_SKILLS = new Set([
+  projectSkill('').name, sharedSkill('').name, projectConventions('').name,
+])
 
 function catalogMessage(entries, update = false) {
   return {
@@ -13,8 +19,11 @@ function catalogMessage(entries, update = false) {
   }
 }
 
-function guardFor(preset = () => WORKER_PRESET) {
-  return createWorkerSkillCatalogGuard({ agentPresets: { composedPreset: preset } })
+function guardFor(preset = () => WORKER_PRESET, ownedSkills = async () => MEMORY_SKILLS) {
+  return createWorkerSkillCatalogGuard(
+    { agentPresets: { composedPreset: preset } },
+    { ownedSkills },
+  )
 }
 
 const agent = { id: 'worker-a', ctx: { scope: 'worker-a' } }
@@ -38,6 +47,32 @@ test('a memory-owned skill change is not injected into a running worker session'
   ], true)
   const decision = await step(guard, [update])
   assert.deepEqual(decision.messages, [])
+})
+
+test('a second memory-owned project skill is not injected into a running worker session', async () => {
+  const guard = guardFor()
+  await step(guard, [catalogMessage([otherSkill('find skills'), projectSkill('Project skill.')])])
+  const update = catalogMessage([
+    otherSkill('find skills'), projectSkill('Project skill.'), projectConventions('Test conventions.'),
+  ], true)
+  const decision = await step(guard, [update])
+  assert.deepEqual(decision.messages, [])
+})
+
+test('a second tracked project skill does not weaken the memory-only filter', async () => {
+  const guard = guardFor()
+  const baseline = [
+    otherSkill('find skills'), projectSkill('Project skill.'), trackedProjectSkill('Test guidance.'),
+  ]
+  await step(guard, [catalogMessage(baseline)])
+  const memoryOnly = catalogMessage([
+    otherSkill('find skills'), projectSkill('Edited project skill.'), trackedProjectSkill('Test guidance.'),
+  ], true)
+  assert.deepEqual((await step(guard, [memoryOnly])).messages, [])
+  const edited = catalogMessage([
+    otherSkill('find skills'), projectSkill('Edited project skill.'), trackedProjectSkill('Edited test guidance.'),
+  ], true)
+  assert.deepEqual((await step(guard, [edited])).messages, [edited])
 })
 
 test('a newly created global memory skill is not injected into a running worker session', async () => {
@@ -77,6 +112,16 @@ test('a catalog change that includes another skill is still delivered', async ()
   assert.deepEqual(decision.messages, [update])
 })
 
+test('a skill outside the memory-owned set is delivered even when a memory skill appears', async () => {
+  const guard = guardFor()
+  await step(guard, [catalogMessage([projectSkill('Project skill.')])])
+  const update = catalogMessage([
+    projectSkill('Project skill.'), projectConventions('Test conventions.'), otherSkill('Find and install skills.'),
+  ], true)
+  const decision = await step(guard, [update])
+  assert.deepEqual(decision.messages, [update])
+})
+
 test('a session that never published a catalog in this process keeps its existing catalog', async () => {
   const guard = guardFor()
   const update = catalogMessage([otherSkill('Find and install skills.')], true)
@@ -90,6 +135,17 @@ test('only the worker preset catalog is stabilized', async () => {
   const update = catalogMessage([otherSkill('Find, install, and extend skills.')], true)
   const decision = await step(guard, [update], { id: 'router', ctx: { scope: 'router' } })
   assert.deepEqual(decision.messages, [update])
+})
+
+test('the ownership source receives the guarded agent', async () => {
+  const seen = []
+  const guard = guardFor(() => WORKER_PRESET, async target => {
+    seen.push(target)
+    return MEMORY_SKILLS
+  })
+  await step(guard, [catalogMessage([projectSkill('Project skill.')])])
+  await step(guard, [catalogMessage([projectSkill('Changed project skill.')], true)])
+  assert.deepEqual(seen, [agent])
 })
 
 test('the guard ignores rejected steps', async () => {

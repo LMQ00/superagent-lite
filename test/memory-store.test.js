@@ -129,6 +129,37 @@ test('global and project skills use their own files and only the description is 
   await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
 })
 
+test('memory records the skills it writes and reports them as owned', async () => {
+  const project = join(root, 'project-owned-skills')
+  const other = join(root, 'project-owned-skills-other')
+  await store.writeSkill('global', project, {
+    description: 'Shared inspection skill.', content: 'Inspect first.',
+  })
+  await store.writeSkill('project', project, {
+    description: 'Project skill.', content: 'Run the tests.',
+  })
+  await store.writeSkill('project', project, {
+    name: 'superagent-lite-test-conventions',
+    description: 'Test conventions.', content: 'Run the suite.',
+  })
+  await mkdir(join(project, '.dsh', 'skills', 'manual-skill'), { recursive: true })
+  await writeFile(join(project, '.dsh', 'skills', 'manual-skill', 'SKILL.md'),
+    '---\nname: manual-skill\ndescription: "Not memory-owned."\n---\n\nBody.\n')
+  assert.deepEqual([...(await store.ownedSkillNames(project))].sort(), [
+    'superagent-lite-test-conventions', 'superagent-project-memory', 'superagent-shared-memory',
+  ])
+  assert.equal((await store.ownedSkillNames(project)).has('manual-skill'), false)
+  assert.deepEqual([...(await store.ownedSkillNames(other))].sort(), [
+    'superagent-project-memory', 'superagent-shared-memory',
+  ])
+  assert.deepEqual([...(await store.ownedSkillNames())].sort(), [
+    'superagent-shared-memory',
+  ])
+  assert.deepEqual(await store.readSkill('project', project, 'superagent-lite-test-conventions'), {
+    description: 'Test conventions.', content: 'Run the suite.',
+  })
+})
+
 test('a project skill is kept out of the project checkout status through .git/info/exclude', async () => {
   const project = join(root, 'project-skill-exclude')
   await mkdir(join(project, '.git'), { recursive: true })

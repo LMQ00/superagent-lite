@@ -118,7 +118,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
 - 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
-- memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收只由 memory skill 变化引起的 catalog 更新，因此不会在最终报告后继续行动（`src/skill-catalog.js`、`index.js`）。
+- memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收只由 memory 管理的 skill（memory 写入全局或项目 skill 根下时登记的名单）变化引起的 catalog 更新，因此不会在最终报告后继续行动；其他 skill 的变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
 - memory 角色只在 change worker 的最终报告后触发一次，读取完整原始会话；最终报告工具的参数不进入 transcript（`src/memory.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。

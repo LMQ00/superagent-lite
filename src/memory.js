@@ -72,6 +72,12 @@ export async function memoryPromptForProject(projectRoot) {
   return memoryText(await store.readMemory(projectRoot))
 }
 
+// Skills this store writes are memory-owned. The catalog guard uses this set to
+// drop updates caused only by memory-managed skills without naming them.
+export function memorySkillNames(projectRoot) {
+  return store.ownedSkillNames(projectRoot)
+}
+
 // The panel shows saved memory and knowledge read-only; without a project it
 // can still show the global scope, and the knowledge base is always global.
 export async function readMemoryView(projectRoot) {
@@ -147,6 +153,7 @@ export function memoryPrompt({ conversation, global, project, skills }) {
     'You are the memory role: read the worker conversation and update the saved memory. Saving nothing is normal.',
     'Global memory is shared by every project. userProfile holds durable user preferences, environment, or working style and stays very small. sharedSkillDescription and sharedSkillContent hold one reusable skill usable across projects; only the description enters the skill catalog.',
     'Project memory belongs to the current project only. responsibilities and positioning stay very small and are injected into every worker and reviewer. projectSkillDescription and projectSkillContent hold one skill applicable to this project and its responsibilities; only the description enters the skill catalog.',
+    'Skills saved here are memory-managed. Later dispatched Worker and Reviewer sessions see their descriptions; a session that already published a skill catalog keeps the catalog it started with.',
     'The knowledge base is global and stores only reusable, broadly applicable knowledge; it is not injected into the role context. Use knowledge_query to search snippets and knowledge_get to read a full entry before saving, and use knowledge_write to add, correct, or delete entries. Only this role may write knowledge.',
     'Saving nothing is normal and preferred. Do not use the number of written entries as a goal; write an entry only when it is clearly reusable, because useless entries pollute the global knowledge base and are worse than no entry.',
     'Storage discipline: prefer less over more, keep memory long-term, never repeat an existing fact, and correct a wrong entry instead of adding another one.',

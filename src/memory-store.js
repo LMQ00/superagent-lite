@@ -178,9 +178,10 @@ function nextKnowledgeId(entries) {
   return String(highest + 1)
 }
 
-function skillNameOf(scope) {
+function skillNameOf(scope, name = SKILL_NAMES[scope]) {
   if (scope !== 'global' && scope !== 'project') throw new TypeError('Skill scope is required')
-  return SKILL_NAMES[scope]
+  if (typeof name !== 'string' || !SKILL_NAME.test(name)) throw new TypeError('Invalid memory skill name')
+  return name
 }
 
 function parseSkillDocument(text) {
@@ -204,13 +205,12 @@ function skillDocument(name, description, content) {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${content.trim()}\n`
 }
 
-const PROJECT_SKILL_EXCLUDE = `.dsh/skills/${SKILL_NAMES.project}/`
-
 // The project skill lives in the project checkout so later workers can read
 // it, but it is host-maintained data and must not dirty the checkout that
 // report tasks and local merges require to stay clean. Git's local exclude
 // list is the place for that; `.gitignore` itself would be a tracked change.
-async function excludeProjectSkill(projectRoot) {
+async function excludeProjectSkill(projectRoot, name) {
+  const line = `.dsh/skills/${name}/`
   const gitDirectory = join(projectRoot, '.git')
   let gitDirectoryInfo
   try {
@@ -228,10 +228,10 @@ async function excludeProjectSkill(projectRoot) {
     if (error.code !== 'ENOENT') throw error
     current = ''
   }
-  if (current.split(/\r?\n/).includes(PROJECT_SKILL_EXCLUDE)) return
+  if (current.split(/\r?\n/).includes(line)) return
   await mkdir(dirname(exclude), { recursive: true, mode: 0o700 })
   const prefix = current.length > 0 && !current.endsWith('\n') ? '\n' : ''
-  await appendFile(exclude, `${prefix}${PROJECT_SKILL_EXCLUDE}\n`, 'utf8')
+  await appendFile(exclude, `${prefix}${line}\n`, 'utf8')
 }
 
 function archivePath(root, source) {
@@ -257,12 +257,74 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return join(memoryRoot, 'knowledge.json')
   }
 
-  function skillPath(scope, projectRoot) {
-    const name = skillNameOf(scope)
-    if (!SKILL_NAME.test(name)) throw new Error('Invalid memory skill name')
+  function skillPath(scope, projectRoot, name = skillNameOf(scope)) {
+    const skillName = skillNameOf(scope, name)
     return scope === 'global'
-      ? join(globalSkillRoot, name, 'SKILL.md')
-      : join(projectRootOf(projectRoot), '.dsh', 'skills', name, 'SKILL.md')
+      ? join(globalSkillRoot, skillName, 'SKILL.md')
+      : join(projectRootOf(projectRoot), '.dsh', 'skills', skillName, 'SKILL.md')
+  }
+
+  function projectKey(projectRoot) {
+    return createHash('sha256').update(projectRootOf(projectRoot)).digest('hex')
+  }
+
+  function skillNames(value) {
+    if (!Array.isArray(value)) throw new Error('Invalid memory skill registry')
+    return value.map(name => {
+      if (typeof name !== 'string' || !SKILL_NAME.test(name)) throw new Error('Invalid memory skill name')
+      return name
+    })
+  }
+
+  // Memory records every skill it writes so the catalog guard can tell its own
+  // skills from unrelated ones without guessing from names.
+  async function readOwnedSkills() {
+    const doc = await readDocument(join(memoryRoot, 'skills.json'))
+    if (doc === undefined) return { global: [], projects: {} }
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.version !== VERSION ||
+        !doc.projects || typeof doc.projects !== 'object' || Array.isArray(doc.projects)) {
+      throw new Error('Invalid or unsupported memory skill registry')
+    }
+    return {
+      global: skillNames(doc.global),
+      projects: Object.fromEntries(Object.entries(doc.projects)
+        .map(([key, names]) => [key, skillNames(names)])),
+    }
+  }
+
+  async function ownedSkillNames(projectRoot) {
+    const owned = new Set([SKILL_NAMES.global])
+    if (projectRoot === undefined) {
+      for (const name of (await readOwnedSkills()).global) owned.add(name)
+      return owned
+    }
+    const registry = await readOwnedSkills()
+    owned.add(SKILL_NAMES.project)
+    for (const name of registry.global) owned.add(name)
+    for (const name of registry.projects[projectKey(projectRoot)] ?? []) owned.add(name)
+    return owned
+  }
+
+  function recordOwnedSkill(scope, projectRoot, name) {
+    const registry = join(memoryRoot, 'skills.json')
+    return serialize(registry, async () => {
+      const doc = await readOwnedSkills()
+      let changed = false
+      if (scope === 'global') {
+        if (!doc.global.includes(name)) {
+          doc.global.push(name)
+          changed = true
+        }
+      } else {
+        const key = projectKey(projectRoot)
+        const names = doc.projects[key] ?? []
+        if (!names.includes(name)) {
+          doc.projects[key] = [...names, name]
+          changed = true
+        }
+      }
+      if (changed) await writeDocument(registry, { version: VERSION, ...doc })
+    })
   }
 
   async function readGlobal() {
@@ -409,8 +471,8 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return entryIds.map(id => ({ id, entry: entries.get(id) }))
   }
 
-  async function readSkill(scope, projectRoot) {
-    const path = skillPath(scope, projectRoot)
+  async function readSkill(scope, projectRoot, name) {
+    const path = skillPath(scope, projectRoot, name)
     let text
     try {
       text = await readFile(path, 'utf8')
@@ -432,13 +494,18 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     const description = fieldValue(changes?.description, 'skillDescription', MAX_SKILL_DESCRIPTION)
     const content = fieldValue(changes?.content, 'skillContent')
     if (!description) return undefined
+    const name = skillNameOf(scope, changes?.name)
     const resolved = scope === 'project' ? projectRootOf(projectRoot) : undefined
-    const path = skillPath(scope, resolved)
+    const path = skillPath(scope, resolved, name)
     return serialize(path, async () => {
-      const current = await readSkill(scope, resolved)
-      if (current && current.description === description && current.content === content) return current
-      await writeTextAtomic(path, skillDocument(skillNameOf(scope), description, content))
-      if (scope === 'project') await excludeProjectSkill(resolved)
+      const current = await readSkill(scope, resolved, name)
+      if (current && current.description === description && current.content === content) {
+        await recordOwnedSkill(scope, resolved, name)
+        return current
+      }
+      await writeTextAtomic(path, skillDocument(name, description, content))
+      if (scope === 'project') await excludeProjectSkill(resolved, name)
+      await recordOwnedSkill(scope, resolved, name)
       return { description, content }
     })
   }
@@ -474,6 +541,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     getKnowledge,
     readSkill,
     readSkills,
+    ownedSkillNames,
     writeSkill,
     archive: Object.freeze({ write: writeArchive, read: readArchive }),
   }
