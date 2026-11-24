@@ -145,6 +145,38 @@ test('board refuses task deletion while the worker or delivery is running', asyn
   assert.deepEqual(removed, [])
 })
 
+test('board cancels a queued task through the cancel path instead of deleting it', async () => {
+  const taskId = 'a'.repeat(16)
+  const calls = []
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [{ id: taskId, status: 'queued', workerSessionId: 'worker' }],
+    undefined,
+    async id => { calls.push(['remove', id]); return true },
+    async id => { calls.push(['cancel', id]); return true },
+  )
+  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(result.status, 200)
+  assert.deepEqual(JSON.parse(result.body), { deleted: taskId })
+  assert.deepEqual(calls, [['cancel', taskId]])
+})
+
+test('board refuses to cancel a task that already left the queue', async () => {
+  const taskId = 'a'.repeat(16)
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [{ id: taskId, status: 'queued', workerSessionId: 'worker' }],
+    undefined,
+    async () => assert.fail('must not remove a task that started'),
+    async () => { throw new Error('The task is no longer queued') },
+  )
+  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(result.status, 409)
+  assert.deepEqual(JSON.parse(result.body), { error: 'The task is no longer queued' })
+})
+
 test('board validates task deletion requests and reports missing records', async () => {
   const taskId = 'a'.repeat(16)
   let called = false

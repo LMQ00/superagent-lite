@@ -4,7 +4,7 @@ import { panelStatus } from './status.js'
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 const ACTIVE_DELIVERY = new Set(['merging', 'publishing'])
 
-export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask) {
+export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask, cancel) {
   return async (req, res) => {
     const admission = connection.admit(req)
     if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
@@ -20,6 +20,18 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git, r
       const task = (await tasks()).find(record => record.id === taskId)
       if (!task) {
         res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
+        return
+      }
+      if (task.status === 'queued') {
+        try {
+          if (!await (cancel ?? remove)(taskId)) {
+            res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
+            return
+          }
+          res.writeHead(200, JSON_HEADERS).end(JSON.stringify({ deleted: taskId }))
+        } catch (error) {
+          res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+        }
         return
       }
       if (agents.get?.(task.workerSessionId) && ['starting', 'running', 'resuming'].includes(task.status)) {

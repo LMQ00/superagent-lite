@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { taskForSession, updateTask } from './src/task-store.js'
+import { cancelQueuedTask, taskForSession, updateTask } from './src/task-store.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
@@ -24,7 +24,7 @@ export async function apply(ctx) {
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
-      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager),
+      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager, undefined, cancelQueuedTask),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
