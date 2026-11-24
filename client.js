@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
         publishRemote: 'Repository', ghRequired: 'A GitHub account is required:',
         noBranch: 'No merge target is available.', noRemote: 'No repository is available.',
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
+        deleteUnmergedHint: 'This worker branch is not merged. Deleting it discards the branch and its worktree; this cannot be undone.',
         deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
         deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
         selectTask: 'Select task', selectedCount: 'Selected',
@@ -70,6 +71,7 @@ window.__ModuleLoader__.load({
         publishRemote: '提交仓库', ghRequired: '需要 gh 账号：',
         noBranch: '没有可选的合并目标分支。', noRemote: '没有可选的仓库。',
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
+        deleteUnmergedHint: '该修改分支尚未合并，删除会丢弃该分支及其工作树，且无法恢复。',
         deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
         deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
         selectTask: '选择任务', selectedCount: '已选择',
@@ -678,12 +680,21 @@ window.__ModuleLoader__.load({
           ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
         }
       }
+      const branchDeletedTask = (task, value) => {
+        const view = value?.view
+        return {
+          ...task,
+          status: view?.status ?? task.status,
+          git: view?.git,
+          ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+        }
+      }
       const openDialog = async (kind, task) => {
         setDialog({ kind, task })
         setDialogData({ phase: 'loading' })
         setDialogChoice('')
         setDialogError('')
-        if (kind === 'delete-task') {
+        if (kind === 'delete-task' || kind === 'delete') {
           setDialogData({ phase: 'ready' })
           return
         }
@@ -726,6 +737,8 @@ window.__ModuleLoader__.load({
           setDialog(null)
           if (action === 'merge') {
             setTasks(current => current.map(item => item.id === task.id ? mergedTask(item, value) : item))
+          } else if (action === 'delete-branch') {
+            setTasks(current => current.map(item => item.id === task.id ? branchDeletedTask(item, value) : item))
           } else {
             refresh()
           }
@@ -786,8 +799,9 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'sl-btn sl-btn--outline', disabled: busy || !git?.canReview,
                 title: git?.reviewReason, onClick: () => void reviewTask(task),
               }, icon('review'), t('review')),
-              task.status === 'completed' && git?.canDelete && h('button', {
-                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
+              git?.branch && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: busy || !git.canDelete, title: git.deleteReason,
                 onClick: () => void openDialog('delete', task),
               }, icon('trash'), t('deleteBranch')),
               task.queued && h('button', {
@@ -815,7 +829,8 @@ window.__ModuleLoader__.load({
         let body
         if (dialogData.phase === 'loading') body = h('p', { role: 'status' }, t('dialogLoading'))
         else if (dialogData.phase === 'error') body = h('p', { role: 'alert', className: 'sl-error' }, dialogData.error)
-        else if (kind === 'delete') body = h('p', null, `${t('deleteHint')} `, h('code', null, task.git?.branch ?? ''))
+        else if (kind === 'delete') body = h('p', null,
+          `${t(task.git?.merged ? 'deleteHint' : 'deleteUnmergedHint')} `, h('code', null, task.git?.branch ?? ''))
         else if (kind === 'delete-task') body = h('p', null, `${t('deleteTaskHint')} `, h('code', null, task.id))
         else if (kind === 'publish' && !dialogData.gh?.ok) {
           body = h('p', { role: 'alert', className: 'sl-error' },

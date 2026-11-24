@@ -49,7 +49,7 @@ flowchart LR
 | Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；发送失败时回滚记录（`src/continue.js:70-89`、`src/continue.js:92-151`）。 |
 | Worker status | Router 查询本会话 Worker 和 Task 状态的工具与后台通知。 | `worker_status` 只返回本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，并给出 Task ID、标题、Team、模式和 Worker Session；排队取消留下 `cancelled` 记录，排队 Worker 开始和取消会向 Router 注入背景通知，不打开新回合、不算新输入（`src/worker-status.js`、`src/task-store.js`、`src/launch-queue.js`）。 |
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；项目 checkout 必须保持原样（`index.js:54-63`、`src/report-tool.js:19-41`）。 |
-| Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-142`）。 |
+| Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 删除仍是 worker 分支的分支及其干净 Worktree，已合并、已发布和未合并的分支都可删除，运行中、工作树脏或被其他 Worktree 检出时拒绝。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；合并、发送 PR 和删除分支要求 full access，合并与发送 PR 还要求未移动的 reviewed HEAD（`src/git-actions.js:502-521`、`src/merge.js:121-170`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
 | Memory | 分全局记忆、项目记忆、项目 skill 和全局知识库。 | 全局记忆所有项目共享，保存用户画像和共享 skill；项目记忆按项目根分开，保存职责、定位和项目 skill；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker 和 Reviewer 注入项目 + 全局。记忆是数据，不是指令；面板的「记忆系统」标签页只读展示全局记忆、项目记忆和全局知识库（`src/memory.js`、`src/memory-store.js`、`src/memory-panel.js`、`router.js`、`src/review.js`）。 |
 | Memory 角色（Memory role） | 读取 Worker 原始会话并更新记忆的只读 helper 子代理。 | 只由 change 任务的最终 `message_router` 报告触发一次；自己读取 Worker 的完整会话，不接收 worker 提交的摘要；返回需要更新的字段，空字符串表示保持不变；只写回发生变化的字段和 skill；可以不加记忆，不把写入条数当指标；可用 `knowledge_query`、`knowledge_get` 和 `knowledge_write`，且只有它能写知识（`src/memory.js`、`src/message-router.js`、`index.js`）。 |
@@ -129,6 +129,8 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:142-144`、`src/git-actions.js:273-277`、`src/merge.js:81-82`） |
 | 结束 | `completed` | 只报告任务通过 `report_task` 交付了结论（`src/report-tool.js:34-39`） |
 | 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:104-112`、`index.js:128-133`、`src/continue.js:182-188`） |
+
+删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
 
 面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案，但活动 Task 没有写入这些状态；`cancelled` 只出现在排队取消后保留的墓碑记录里，供 `worker_status` 查询，面板列表不显示（`client.js:8-15`、`src/status.js:8-10`、`src/task-store.js`）。
 

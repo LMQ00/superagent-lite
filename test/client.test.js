@@ -741,17 +741,22 @@ test('starts a review from the unreviewed row and reports the verdict', async ()
   board.dispose()
 })
 
-test('deletes the worker branch from a completed merged row after confirmation', async () => {
+test('deletes the worker branch from a merged row after confirmation without reloading', async () => {
   const requests = []
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
       if (path === '/superagent-lite/git') {
         assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'delete-branch' })
-        return { ok: true, json: async () => ({ message: 'Deleted the worker branch sl-a.' }) }
-      }
-      if (path === '/superagent-lite/git?taskId=a') {
-        return { ok: true, json: async () => detail({ branches: [{ name: 'main', current: true }] }) }
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'merged',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            view: { status: 'completed' },
+            message: 'Deleted the worker branch sl-a.',
+          }),
+        }
       }
       return { ok: true, json: async () => ({ tasks: [task({
         status: 'completed', git: gitFacts({ merged: true, canMerge: false, canPublish: false, canDelete: true }),
@@ -762,16 +767,109 @@ test('deletes the worker branch from a completed merged row after confirmation',
   board.render()
   await flush()
   button(board.render(), '删除分支').props.onClick()
-  await flush()
   let tree = board.render()
   assert.match(text(tree), /删除修改分支/)
+  assert.match(text(tree), /已审查的提交已合并/)
   assert.match(text(tree), /sl-a/)
+  // Deleting a branch confirms in place; it does not need the branch-history read.
+  assert.equal(requests.filter(request => request.path.startsWith('/superagent-lite/git?')).length, 0)
   button(tree, '删除').props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
   }
-  assert.match(text(board.render()), /Deleted the worker branch sl-a/)
+  tree = board.render()
+  assert.match(text(tree), /Deleted the worker branch sl-a/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已完成1'])
+  assert.equal(buttons(tree, '删除分支').length, 0)
+  board.dispose()
+})
+
+test('offers delete branch on an unmerged row, warns, and settles the row in place', async () => {
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'delete-branch' })
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'awaiting-merge',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            view: { status: 'completed' },
+            message: 'Deleted the worker branch sl-a for a.',
+          }),
+        }
+      }
+      return { ok: true, json: async () => ({ tasks: [task({ status: 'unmerged', git: gitFacts({ canDelete: true }) })] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1'])
+  assert.equal(buttons(tree, '合并').length, 1)
+  button(tree, '删除分支').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /尚未合并/)
+  assert.match(text(tree), /丢弃该分支/)
+  assert.match(text(tree), /sl-a/)
+  assert.equal(requests.filter(request => request.path.startsWith('/superagent-lite/git?')).length, 0)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.match(text(tree), /Deleted the worker branch sl-a/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已完成1'])
+  assert.equal(buttons(tree, '合并').length, 0)
+  assert.equal(buttons(tree, '提交 PR').length, 0)
+  assert.equal(buttons(tree, '删除分支').length, 0)
+  board.dispose()
+})
+
+test('disables delete branch while the worker is still running and explains why', async () => {
+  const reason = 'The task is still running; wait for it to finish before deleting the branch'
+  const board = setup({
+    fetch: async path => ({ ok: true, json: async () => path === '/superagent-lite/tasks'
+      ? { tasks: [task({ status: 'running', git: gitFacts({ canDelete: false, deleteReason: reason }) })] }
+      : { records: [] } }),
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  const deleteBranch = button(board.render(), 'Delete branch')
+  assert.equal(deleteBranch.props.disabled, true)
+  assert.equal(deleteBranch.props.title, reason)
+  board.dispose()
+})
+
+test('offers delete branch on every row that still has a worker branch', async () => {
+  const rows = ['unmerged', 'unreviewed', 'completed', 'failed'].map((status, index) => task({
+    id: String(index), title: `Task ${status}`, status,
+    git: gitFacts({
+      canDelete: true, merged: status === 'completed', reviewed: status !== 'unreviewed',
+      canMerge: false, canPublish: false, canReview: false,
+    }),
+  }))
+  rows.push(task({
+    id: 'running', title: 'Task running', status: 'running',
+    git: gitFacts({ canDelete: false, deleteReason: 'The task is still running' }),
+  }))
+  const board = setup({
+    fetch: async () => ({ ok: true, json: async () => ({ tasks: rows }) }),
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  const buttonsOnRows = buttons(board.render(), 'Delete branch')
+  assert.equal(buttonsOnRows.length, 5)
+  assert.equal(buttonsOnRows.filter(node => node.props.disabled).length, 1)
   board.dispose()
 })
 

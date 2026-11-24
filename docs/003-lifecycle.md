@@ -4,12 +4,12 @@
 
 ## 阶段
 
-Task 记录只保存一个生命周期状态；面板不直接显示它，而是用存储状态、worker 分支、审查记录和 Pull request 事实推导出六个面板状态（`src/status.js:6-34`、`src/git-actions.js:283-392`）。推导回答的是「现在这个人能对这个 Task 做什么」。
+Task 记录只保存一个生命周期状态；面板不直接显示它，而是用存储状态、worker 分支、审查记录和 Pull request 事实推导出六个面板状态（`src/status.js:6-34`、`src/git-actions.js:276-390`）。推导回答的是「现在这个人能对这个 Task 做什么」。
 
 | 面板状态 | 成立条件（从上往下读） |
 | --- | --- |
 | `running` / 运行中 | 存储状态是 `queued`、`starting`、`running`、`resuming`、`publishing` 或 `merging` |
-| `completed` / 已完成 | 存储状态是 `merged`；或 worker HEAD 是基础分支 tip 的祖先；或 reviewed HEAD 的精确 PR 是 `MERGED` |
+| `completed` / 已完成 | 存储状态是 `merged`；或 worker HEAD 是基础分支 tip 的祖先；或 reviewed HEAD 的精确 PR 是 `MERGED`；或非失败 Task 的 worker 分支已被删除 |
 | `failed` / 失败 | 精确 PR 是 `CLOSED`，或存储状态是 `cancelled`、`interrupted`、`merge-conflict` |
 | `unmerged` / 未合并 | 当前 worker HEAD 有通过的审查且尚未合并；同一 Project 的另一个 Task 为同一 commit 记录的审查也算，面板会把它写回本 Task |
 | `completed` / 已完成 | Worker 回合以 `completed` 结束，且分支在基础 commit 之后没有提交，没有可审查的内容 |
@@ -38,6 +38,8 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | `running` | 存储状态是 `running`，且有活着的 Worker agent | `running` |
 | `starting` | 存储状态是 `starting`，且有活着的 Worker agent | `running` |
 | `queued` | 存储状态是 `queued`，等待并发名额；可在面板取消 | `running`，带「排队中」标签 |
+
+存储阶段表以 worker 分支仍存在为默认前提。worker 分支已删除的 Task 不再按分支推导面板状态：非失败的 Task 显示为已完成，失败 Task 保持失败（`src/git-actions.js:288-293`）。
 
 面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 的文案；活动 Task 不写这些值。排队取消会留下 `cancelled` 墓碑，`worker_status` 用它报告已取消任务，面板列表仍不显示（`client.js:8-15`、`src/status.js:8-10`、`src/task-store.js`、`src/worker-status.js`）。
 
@@ -140,6 +142,8 @@ change 和 merge 任务的 Worker 回合按以下顺序落定（`index.js:119-15
 report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:128-131`）。
 
 安装 owner 也可以从面板删除 Task 记录。删除移除记录和 worker 会话映射，不结束 Worker Session，也不回收 worker 分支或 Worktree；Worker Session 还活着的运行中 Task、`merging` 或 `publishing` 中的 Task 不能删除（`src/board.js:11-48`、`src/task-store.js:103-121`）。
+
+面板的「删除分支」不要求 Task 已合并。它只在一个 Task 仍有 worker 分支时出现；运行中的 Task 不能删除分支。删除先移除该 Task 登记且干净的工作树，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`；工作树有未提交改动、被其他工作树检出、移除失败或移除后仍存在时拒绝。删除后非失败的 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
 
 不需要 Worker 的输入不是 Task：`dispatch_worker` 收到 `mode=answer` 时直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录，回合直接回答（`src/dispatch.js:63`）。
 
