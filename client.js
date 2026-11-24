@@ -203,6 +203,7 @@ window.__ModuleLoader__.load({
     `
 
     const CATEGORY_ORDER = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
+    const QUEUE_POLL_MS = 3000
     const TONE = {
       unmerged: 'warning', running: 'ongoing', unreviewed: 'warning',
       completed: 'done', failed: 'error', answer: 'done',
@@ -290,6 +291,7 @@ window.__ModuleLoader__.load({
       const [batchError, setBatchError] = useState('')
       const active = useRef(null)
       const headingId = useId()
+      const queuedPending = phase === 'ready' && tasks.some(task => task.queued === true)
 
       useEffect(() => {
         const controller = new AbortController()
@@ -341,6 +343,42 @@ window.__ModuleLoader__.load({
         void loadSettings()
         return () => controller.abort()
       }, [revision])
+
+      // A queued Task is waiting for a concurrency slot that only the Host can
+      // open. Poll silently while one is listed so the row leaves the queue in
+      // place, without a page refresh or a loading state.
+      useEffect(() => {
+        if (!queuedPending) return undefined
+        const controller = new AbortController()
+        let timer
+        let stopped = false
+        const schedule = () => {
+          if (!stopped) timer = setTimeout(poll, QUEUE_POLL_MS)
+        }
+        async function poll() {
+          try {
+            const response = await fetch('/superagent-lite/tasks', {
+              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            })
+            if (!response.ok) throw new Error('Task list unavailable')
+            const value = await response.json()
+            if (stopped || !Array.isArray(value?.tasks)) throw new Error('Invalid task list')
+            const rows = value.tasks.filter(task => typeof task?.id === 'string')
+            setTasks(rows)
+            setTeam(current => rows.some(task => task.teamId === current) ? current : '')
+            setProject(current => rows.some(task => task.projectRoot === current) ? current : '')
+            if (rows.some(task => task.queued === true)) schedule()
+          } catch {
+            schedule()
+          }
+        }
+        schedule()
+        return () => {
+          stopped = true
+          controller.abort()
+          clearTimeout(timer)
+        }
+      }, [queuedPending])
 
       const optionsFor = key => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
         .sort((a, b) => a.localeCompare(b))

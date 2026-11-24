@@ -58,6 +58,21 @@ test('board lists only its public view fields to the owner and flags unrecovered
   assert.equal(tasks[1].landAuthorizedAt, undefined)
 })
 
+test('board marks a task waiting for a concurrency slot as queued instead of unconfirmed', async () => {
+  const rows = [
+    { id: 'a', status: 'queued', workerSessionId: 'w1' },
+    { id: 'b', status: 'starting', workerSessionId: 'w2' },
+  ]
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => rows,
+  )
+  const tasks = JSON.parse((await request(handler)).body).tasks
+  assert.deepEqual(tasks.map(row => [row.status, row.queued, row.unconfirmed]),
+    [['running', true, undefined], ['running', undefined, true]])
+})
+
 test('board overlays the panel status from the Git branch view', async () => {
   const rows = [
     { id: 'a', status: 'delivery-blocked', workerSessionId: 'w1', updatedAt: '2026-01-01T00:00:00.000Z' },
