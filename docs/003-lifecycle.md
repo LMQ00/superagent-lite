@@ -54,23 +54,23 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | Session ID | 启动前生成的随机 UUID，写入 Task 并建立 Session 映射 |
 | Agent 名 | `sl-<taskId>` |
 | 标签 | `<teamId>: <title>` |
-| 工作目录 | Project 根 |
+| 工作目录 | Project 根（非 Git 项目直接在这里修改） |
 | 预设 | `superagent-lite-worker` |
 | 投递 | `parent`，Router 接收 Worker 报告 |
 | 深度 | `ctx.subagents.resolveMaxDepth()` |
 | 首条消息 | `buildWorkerPrompt` 生成的任务消息 |
 
-Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:149-166`）。同一事件安装工具守卫、注册 Worker 工具和知识库查询工具，并把项目 + 全局记忆注册为必需的运行时上下文（`index.js:51-145`、`src/memory.js`）。
+Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:149-166`）。同一事件先注册项目 skill provider 和项目 + 全局记忆上下文，再安装工具守卫、注册 Worker 工具和知识库查询工具；记忆与上下文注入不依赖 Worktree 是否已创建，非 Git 项目没有 Worktree 时同样注入（`index.js:51-145`、`src/memory.js`）。
 
-Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
+Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。非 Git 项目的 Task 记录 `git: false`，没有 Worktree，工具守卫从一开始就允许在项目根工作，`create_worktree` 不可用（`src/dispatch.js`、`index.js`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
 Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息工具（`index.js:98`、`index.js:119-122`）。
 
 ### Reviewer
 
-`review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
+`review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree；非 Git 项目为项目根，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
 
-Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:56-71`）。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:87`、`src/helper-guard.js:105-117`）。审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:120`、`src/review.js:44-54`）。
+Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:56-71`）。非 Git 项目 Reviewer 收到需求、follow-up、项目 + 全局记忆和项目根；提示词说明没有 commit 和 diff，Reviewer 读取当前项目文件和工作区内容，裁决记为工作区标识 `workspace`。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:87`、`src/helper-guard.js:105-117`）。Git 项目审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:120`、`src/review.js:44-54`）；非 Git 项目没有 HEAD 可复核。
 
 Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:109-122`）。
 
@@ -113,7 +113,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 - 并发 worker 上限来自面板「设置」，默认 3，范围 1–16；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/launch-queue.js`）。
 - 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新；任务列表的「排队中」筛选可以单独筛出这些 Task，筛选后仍保留「排队中」标签和取消按钮。排队中的 Worker 开始执行时，启动队列向 Router 注入后台状态通知；排队中的 Task 也可以取消：面板发送既有 `DELETE /superagent-lite/tasks?taskId=`，服务端在同一 Task 锁内确认状态仍是 `queued` 后移除活动记录和会话映射，留下 `cancelled` 墓碑供 `worker_status` 查询，并通知 Router；已经离开队列的 Task 返回 `409`，不会在取消后继续启动。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:166-206`、`client.js:438-472`、`src/board.js:14-55`、`src/task-store.js:122-144`、`src/worker-status.js`）。
 - `mode=merge` 例外：同一 Router Session 和 Project 只有一个活着的 merge worker，新的 merge 请求追加给它，并发的 merge 派发按 Router 和 Project 排队；没有活 Worker Session 的残留运行中 Task 不参与追加（`src/dispatch.js`）。
-- 同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
+- Git 项目的同一 Project 下多个 Task 各用自己的 Worktree 并行；非 Git 项目没有 Worktree，多个 change 任务会直接共享同一目录，不应并发派发（`cordis.patch.yml:1-7`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和 memory 角色都以深度 2 启动（`src/review.js`、`src/memory.js`）。
 - 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:157`）。
 - 面板的合并和分支删除按 Project 根串行，共享 checkout 不会被两个面板动作同时切换；merge worker 的目标分支合并发生在自己的 worktree 内，不占共享 checkout（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
@@ -125,11 +125,15 @@ change 和 merge 任务的 Worker 回合按以下顺序落定（`index.js:119-15
 
 | 条件 | 结果 |
 | --- | --- |
-| Worker 未以 `completed` 结束或没有 Worktree | `failed` |
-| Worker 结束但没有通过的 Review | `review-required` |
-| Review 通过，但结束后的 HEAD 不再等于 reviewed HEAD | `review-required` |
-| Review 通过且 HEAD 仍匹配 | `awaiting-merge` |
-| 结束后的 HEAD 检查抛错 | `delivery-blocked` |
+| Worker 未以 `completed` 结束 | `failed` |
+| Git 项目没有 Worktree | `failed` |
+| Git 项目 Worker 结束但没有通过的 Review，或 HEAD 不再等于 reviewed HEAD | `review-required` |
+| Git 项目 Review 通过且 HEAD 仍匹配 | `awaiting-merge` |
+| Git 项目结束后的 HEAD 检查抛错 | `delivery-blocked` |
+| 非 Git 项目 Worker 结束且 Review 通过 | `completed` |
+| 非 Git 项目 Worker 结束但没有通过的 Review | `review-required` |
+
+非 Git 项目没有 commit 和 HEAD 可比较，Review 记录工作区标识 `workspace`；审查通过就是交付完成，不再进入 `awaiting-merge` 或 `merged`（`src/review.js`、`index.js`）。
 
 续派发不清空 Review：`continue_worker` 只把状态改为 `resuming`，保留 `review` 记录；Worker 回合结束时再按上表比较 `review.head` 与当前 HEAD，HEAD 变化则旧批准自动失效，HEAD 未变则旧批准仍然有效。
 
@@ -153,7 +157,7 @@ report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调�
 
 回合没有以 `completed` 结束，或 change/merge 任务没有 Worktree，Task 落为 `failed`，记录 `stopReason` 和 `finishedAt`；Worker 冻结（`index.js:119-151`）。
 
-已有 Worktree 的 `failed` Task 可以用 `continue_worker` 恢复。从未拿到 Worktree 的 Task，包括 report 任务，不能恢复，只能重新派发（`src/continue.js:127-134`）。
+已有 Worktree 的 Git 项目 `failed` Task 可以用 `continue_worker` 恢复；非 Git 项目的 `failed` 或 `review-required` Task 没有 Worktree，但项目根仍在，也可以用 `continue_worker` 恢复。从未拿到 Worktree 的 Git 项目 Task，包括 report 任务，不能恢复，只能重新派发（`src/continue.js:127-134`）。
 
 ### 审查未通过
 

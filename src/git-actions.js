@@ -391,10 +391,12 @@ export function createGitManager(ctx, dependencies = {}) {
     const entries = await Promise.all(records.map(async record => {
       let project = projects.get(record.projectRoot)
       if (!project) {
-        project = Promise.all([
-          remotesFor(record.projectRoot, signal).catch(() => []),
-          checkoutFacts(record.projectRoot, signal),
-        ]).then(([remotes, checkout]) => ({ remotes, checkout }))
+        project = record.git === false
+          ? Promise.resolve({ remotes: [], checkout: undefined })
+          : Promise.all([
+            remotesFor(record.projectRoot, signal).catch(() => []),
+            checkoutFacts(record.projectRoot, signal),
+          ]).then(([remotes, checkout]) => ({ remotes, checkout }))
         projects.set(record.projectRoot, project)
       }
       return [record.id, await viewFor(record, await project, signal, reviews)]
@@ -536,6 +538,16 @@ export function createGitManager(ctx, dependencies = {}) {
       error.status = 404
       throw error
     }
+    if (task.git === false) {
+      return {
+        taskId,
+        branches: [],
+        remotes: [],
+        gh: { ok: false, error: 'This project is not a git repository' },
+        commits: [],
+        files: [],
+      }
+    }
     const [branches, remotes, gh] = await Promise.all([
       branchesFor(task.projectRoot, signal).catch(() => []),
       remotesFor(task.projectRoot, signal).catch(() => []),
@@ -574,6 +586,7 @@ export function createGitManager(ctx, dependencies = {}) {
       let task = await store.readTask(taskId)
       if (!task) throw new Error('Task not found')
       if (task.mode === 'report') throw new Error('Report-only tasks have no Git action')
+      if (task.git === false) throw new Error('This project is not a git repository; there is no branch to review, merge, publish, or delete')
       if (action === 'review') return reviewAction(task, signal)
       if (action === 'delete-branch') return deleteAction(task, signal)
       task = await adoptReview(task, signal)

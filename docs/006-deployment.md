@@ -11,8 +11,8 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | DSH Web Host | 运行插件、Session 和面板 |
 | `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
 | 记忆 | 全局/项目记忆、全局/项目 skill、全局知识库，以及 change worker 的原始归档 |
-| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断另外读取 memory 登记的 skill 名单 |
-| Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
+| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目根读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Git Worktree 里或非 Git 项目目录里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断另外读取 memory 登记的 skill 名单 |
+| Worktree 服务 | 为每个 Git Task 创建并保留一个 Worktree；非 Git 项目不使用 |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
 | GitHub remote | 可选；发送 PR 需要，合并不需要 |
 
@@ -24,7 +24,8 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | Node.js | 24.9 或更新，跟随 DSH 引擎要求 |
 | Git | 支持 `git merge-tree --write-tree HEAD HEAD` 的版本 |
 | GitHub CLI | 发送 PR 需要；`gh auth status --hostname github.com` 必须成功 |
-| 项目 checkout | 已检出的 Git 仓库，当前有分支 |
+| 项目 checkout | Git 项目需已检出且有分支、工作区干净；普通目录也可作为项目根，直接执行 change/report |
+| 非 Git 目录 | 不需要 `.git`、分支或提交；change/report 直接在工作区执行，审查当前文件。merge、PR 和 `land` 不可用 |
 
 Bundle 自带 worktree 服务，不要与另一个挂载 worktree 服务的 bundle 同时启用。
 
@@ -131,13 +132,17 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 
 | 现象 | 原因与修法 |
 | --- | --- |
-| `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash 项目 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore` |
-| `Create the assigned project worktree before using any other tool.` | Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
+| `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash Git 项目的 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore`。非 Git 目录不会报这条 |
+| `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |
+| `Landing requires a git repository; this project is not under git` | 非 Git 项目不能推送、开 PR 或合并；去掉 `land` 后按 change 流程交付 |
+| `This project is not a git repository; work directly in the project folder` | 非 Git 任务调用了 `create_worktree`；直接在工作区修改并调用 `review_worker_commit` |
+| `Create the assigned project worktree before using any other tool.` | Git 项目的 Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
 | `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
 | `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
 | `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发；`queued` 的同名 Task 会直接返回 |
 | `The router Session is not running` | 本地合并需要 Router Session 保持运行 |
 | `Git delivery is unavailable under the current Session file policy` | 把 Router Session 设为 full access |
+| `This project is not a git repository; there is no branch to review, merge, publish, or delete` | 非 Git Task 没有 Git 动作；用 worker 的审查工具重新审查工作区 |
 | `The merge target branch "<name>" was not found` | 在合并弹窗里选择一个存在的本地分支 |
 | `The selected remote is not a single GitHub fetch/push repository` | 选择一个 fetch 和 push URL 指向同一 GitHub 仓库的 remote |
 | `The worker Session is not running; open its conversation to review the commit there` | 审查动作需要活着的 Worker Session；恢复或重新派发该 Task |
@@ -145,6 +150,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `No reviewed local commit is ready for delivery` | 先调用 `review_worker_commit` 并修完问题；合并与发送 PR 共用这条前置校验 |
 | `The worker branch no longer matches its reviewed commit` | 审查后又有提交；重新审查新 HEAD |
 | `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding` | Reviewer 没有读改动；重新运行审查，让它读 `base..head` 或改动文件 |
+| `The reviewer did not inspect the project files; read a file in the project folder before deciding` | 非 Git Reviewer 没有读项目文件；重新运行审查，让它先读工作区文件 |
 | `Merge would conflict; the target was not changed` | 把基础分支合并进 worker 分支并重新审查；插件没有改目标 |
 | `The project checkout has uncommitted changes` | 合并前提交或 stash 项目 checkout 的改动 |
 | `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | 删除分支前清理 worker Worktree |
@@ -155,7 +161,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `The task is no longer queued` | 取消前任务已获得并发名额并开始启动；刷新面板后按运行中任务处理，不能再取消 |
-| `Only settled, unpublished worktrees can be resumed` | Task 没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；重新派发 |
+| `Only settled, unpublished worktrees can be resumed` | Git 项目没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；非 Git 项目仍可用 `review-required`、`failed` 恢复；否则重新派发 |
 | `Merging is performed by a newly dispatched merge worker; this task may only push or open a pull request.` | change worker 的 `land` 只授权推送/PR；合并请求要由 router 派发 `mode=merge` 的 merge worker |
 | `merge tasks require land=true` | `mode=merge` 必须携带用户本轮对合并的明确授权；不能用缺省 `land` 启动 merge worker |
 | `The base branch cannot be a merge target` | `branches` 里包含 base branch；改成待合并的 worker 分支或任务 ID |

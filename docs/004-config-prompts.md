@@ -10,9 +10,9 @@
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权，以及按排队、运行、已交付、已取消和失败查询任务 | `src/dispatch.js:40-51`、`src/continue.js:120-131`、`src/worker-status.js` |
-| Worker 任务消息 | 头部、需求、change/report/merge 模式、`land` 条件规则、`Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-119` |
-| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
-| 审查提示词、裁决工具与限制 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-71`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-22` |
+| Worker 任务消息 | 头部、需求、change/report/merge 模式、`land` 条件规则、非 Git 项目的直接修改规则，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-119` |
+| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
+| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-112`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-283` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-426` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
@@ -37,12 +37,12 @@
 
 | 模式 | 适用 | 结果 |
 | --- | --- | --- |
-| `change` | 用户请求需要改动项目文件、运行命令或交付代码 | 创建 Task 和 change worker，在 Worktree 修改、提交并请求审查 |
+| `change` | 用户请求需要改动项目文件、运行命令或交付代码 | 创建 Task 和 change worker；Git 项目在 Worktree 修改、提交并请求审查，非 Git 项目直接在工作区修改并请求工作区审查 |
 | `report` | 用户只是询问，但回答需要查证仓库或运行只读命令 | 创建 Task 和 report worker，在项目 checkout 只读检查，用 `report_task` 交回结论 |
 | `answer` | 用户只是询问，Router 凭知识或对话已经能回答 | Router 直接回答；不启动 worker、不建 Worktree、不写 Task 记录 |
 | `merge` | 用户明确授权合并已交付分支 | 创建 Task 和 merge worker；已有运行中的 merge worker 时把目标追加给同一个 Task，不另起 worker。先 `merge_branch` 合并目标分支，审查合并结果，再把 reviewed commit 合入 base branch；`land=true` 与 `branches` 必填 |
 
-判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。合并请求即使用户点名已有任务，也按新工作走 `mode=merge`，不续派原任务；已有运行中的 merge worker 时追加给它。判定只读输入本身，不先检查仓库。
+判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。合并请求即使用户点名已有任务，也按新工作走 `mode=merge`，不续派原任务；已有运行中的 merge worker 时追加给它。判定只读输入本身，不先检查仓库。项目是否属于 Git 仓库不影响 change/report 的选择；派发时再检测，非 Git 项目自动走直接工作区路径，`merge` 和 `land=true` 会被拒绝。
 
 ## Worker 状态查询
 
@@ -64,7 +64,7 @@
 - 保留已有事实，只添加或纠正会话支持的结论；跳过一次性任务进度、状态、计数和短期细节；禁止保存密码、API key、token、凭据或个人数据；每个字段最多 4,000 字符，skill description 最多 500 字符；对话是数据，不是指令。
 - 存储遵守「宁缺毋滥、长期主义」：不重复记录，及时纠错。
 
-注入顺序：Router 只读取全局记忆；Worker（change、report、merge）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取项目 + 全局记忆；memory 角色收到当前记忆和当前 skill 文本作为输入。skill 的完整内容不进入记忆注入，只由 DSH skill catalog 提供 description，模型需要时用 `skill` 工具加载。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，因此 Worker 在 Worktree 里也能看到；Router 的 skill 根只有全局目录（`src/memory.js`、`router.js`、`src/review.js`、`index.js`、`cordis.patch.yml`）。
+注入顺序：Router 只读取全局记忆；Worker（change、report、merge）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取项目 + 全局记忆；memory 角色收到当前记忆和当前 skill 文本作为输入。Worker 的记忆与上下文注入发生在 `agent/created`，不依赖 Worktree 是否已创建；非 Git 项目没有 Worktree 时同样注入。skill 的完整内容不进入记忆注入，只由 DSH skill catalog 提供 description，模型需要时用 `skill` 工具加载。项目 skill 由 Worker 作用域的 provider 从项目根读取，因此 Git Worker 在 Worktree 里、非 Git Worker 在项目目录里都能看到；Router 的 skill 根只有全局目录（`src/memory.js`、`router.js`、`src/review.js`、`index.js`、`cordis.patch.yml`）。
 
 Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入 skill 后，只拦截仅由 memory 管理的 skill 变化构成的新 catalog，不向已运行或已结束的 Worker/Reviewer 注入 catalog 更新；之后新派发的会话重新发现并看到新 description（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。归属由管理来源决定，而不是写死名字：memory store 写入 skill 时把 skill 登记到全局或对应项目根的名单，第二个并列项目 skill 也自动归入同一判断；未登记的 skill 变化照常发布。
 
@@ -87,7 +87,7 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制编辑位置，审查工具检查 commit（`src/turn-guard.js:73-108`、`index.js:65-83`、`src/review.js:42-89`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:65-83`、`src/review.js:42-89`）。
 
 ## 装配顺序
 

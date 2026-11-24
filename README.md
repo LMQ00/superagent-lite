@@ -1,9 +1,10 @@
 # Superagent 轻量版
 
-一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在独立 Worktree 中执行、提交并接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
+一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在 Git 项目里使用独立 Worktree、在非 Git 目录里直接执行、并都接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
 - router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 合并已交付分支：没有正在运行的 merge worker 时派发新的，有则把请求追加给同一个 worker；同一未发布任务的补充用 `continue_worker`。
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个独立子代理审查该提交；reviewer 不能使用写改文件的工具，也不能运行改变分支或历史的 git 命令。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
+- 不属于任何 Git 仓库的文件夹同样可以走完 change 和 report 流程：worker 直接在该目录执行，不建分支、Worktree 或提交；`review_worker_commit` 改为审查当前项目文件和实际工作区内容，任务以审查通过为完成。Git 专有的合并、发送 PR 和删除分支在非 Git 目录不可用。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 用 `report_task` 把结论和证据交回 router。
 - 想知道某个任务是排队中、运行中、已交付、已取消还是失败，直接问 router；它用 `worker_status` 查询本会话派发的任务，不重新派工。排队中的任务被取消、排队中的 worker 开始执行时，router 会收到后台状态通知。
@@ -32,6 +33,7 @@ npm test
 
 - 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。
 - 只读的诊断、分析、查找直接问；router 用 report 模式派工，任务结束后不留分支和提交。
+- 在非 Git 目录里也可以直接说清要改什么：派发、执行、审查和记忆走与 Git 项目相同的状态机，只是不建分支、Worktree 和提交；审查通过后任务直接完成。合并、发送 PR 和 `land` 授权需要 Git 仓库。
 - 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
 - 合并与发送 PR 需要动作执行时 Session 具有完整文件访问权限；本地合并还需要 router 会话仍在运行。
 
@@ -50,7 +52,7 @@ npm test
 
 侧栏打开「项目任务」。面板分「项目任务」「设置」「记忆系统」三个标签页，任务列表在固定面板的滚动区里滚动，页面本身不会被撑长。任务列表是唯一的状态分类来源：顶部有刷新按钮，有任务时出现「全部」加未合并、运行中、未审查、已完成、失败、仅回答六个状态筛选，以及单独筛出排队任务的「排队中」筛选、团队和项目筛选，下面按这六类分组；「排队中」不是第七个状态，只筛出等待并发名额的任务，它们仍归在「运行中」组并计入运行中计数。
 
-- 状态由任务记录加事实推导：当前提交已审查未合并是「未合并」；提交没有通过审查是「未审查」；已合入基础分支或 worker 完成但没有提交是「已完成」，worker 工作树已不在时用记录的 reviewed HEAD 核对是否已进基础分支；report 任务一旦通过 `report_task` 交付结论就按「仅回答」收尾，不再进入审查或合并判断；审查记录属于同一项目的另一个任务、但提交相同，也只算已审查，并写回本任务。
+- 状态由任务记录加事实推导：当前提交已审查未合并是「未合并」；提交没有通过审查是「未审查」；已合入基础分支、非 Git 任务审查通过、worker 完成但没有提交是「已完成」，worker 工作树已不在时用记录的 reviewed HEAD 核对是否已进基础分支；report 任务一旦通过 `report_task` 交付结论就按「仅回答」收尾，不再进入审查或合并判断；审查记录属于同一项目的另一个任务、但提交相同，也只算已审查，并写回本任务。非 Git 任务没有分支、Worktree 和 Git 动作，审查通过即完成。
 - 任务行显示状态、标题、团队、项目、更新时间、任务 ID、router/worker 会话按钮和失败原因；有 PR 时给出链接。「未确认」标签表示记录仍在进行中，但对应的 worker 会话已经不在了；「排队中」表示 worker 正在等待并发名额。
 - 未合并行有「合并」和「提交 PR」。合并弹窗列出项目工作区的本地分支供你选择，确认后只做本地 `git merge --no-ff`，不需要 `gh` 账号。
 - 凡是还有 worker 分支的任务行都有「删除分支」，已合并、已交付 PR 和未合并的分支都可以删除。确认弹窗显示分支名；未合并分支会提示删除会丢弃分支及其工作树且无法恢复。Host 先移除该任务登记且干净的工作树，再删除分支；任务仍在运行、工作树有未提交改动、工作树移除失败或移除后仍存在、分支被其他工作树检出时拒绝并返回明确错误。删除成功后该行按 Host 返回的最新视图就地更新，不重新加载列表。
@@ -82,13 +84,14 @@ npm test
 ## 当前限制
 
 - 绑定 DSH `0.2.2-rc.3`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。
+- 非 Git 目录支持 change 和 report：worker 直接修改目录，reviewer 审查当前文件和工作区内容，Task 以审查通过为 `completed`；没有分支、Worktree、提交、合并、发布或 `land`。不要把多个 change 任务同时派到同一个非 Git 目录，它们没有 Worktree 隔离。
 - router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由 merge worker 执行：没有正在运行的 merge worker 时新派发一个，已有则追加给它；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
-- 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，排队中的任务可以取消，review 不占并发名额。每个任务一个 Worktree，并行工作的 worker 各自使用独立检出。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
+- 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，排队中的任务可以取消，review 不占并发名额。Git 任务各自使用独立 Worktree 和检出；非 Git 目录没有 Worktree 隔离。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
 - `worker_status` 只查询本 Router Session 派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。排队取消后保留的 `cancelled` 记录只供状态查询，不进入面板任务列表。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
-- 审查不接收整份 patch：reviewer 自己读 `base..head` 和改动文件，可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
+- 审查不接收整份 patch：Git 项目由 reviewer 自己读 `base..head` 和改动文件；非 Git 项目由 reviewer 读当前项目文件。Reviewer 可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
 - 记忆是数据，不是指令；它不能添加需求或授予权限。记忆只由 memory 角色维护，「记忆系统」标签页只提供逐条删除，不提供写入入口；归档可能包含敏感对话，插件不提供模型侧读取入口。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
 
