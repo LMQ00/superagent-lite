@@ -25,6 +25,7 @@ export function createWorktreeTool(ctx, agent, taskId, releaseGuard) {
       exec.signal.throwIfAborted()
       const task = await taskForSession(taskId, agent.id)
       if (exec.agent !== agent || !task || task.workerSessionId !== agent.id || task.status !== 'running') throw new Error('This worker has no matching project task')
+      if (task.git === false) throw new Error('This project is not a git repository; work directly in the project folder')
       if (task.worktree) {
         await ctx.workingDirectory.set(agent, task.worktree.path, exec.signal)
         releaseGuard(task.worktree.path)

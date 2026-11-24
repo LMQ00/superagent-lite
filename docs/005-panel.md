@@ -1,6 +1,6 @@
 # 005 界面
 
-在 DeepSeek Harness Web 的侧栏打开「项目任务」，面板有「项目任务」「设置」「记忆系统」三个标签页。任务标签页监督 Router、Worker 和分支；设置标签页保存 worker 模型和并发上限；记忆系统标签页只读浏览当前项目的记忆和全局知识库。任务标签页可以勾选多条记录后一次删除。三个标签页各自加载，任务列表在自己的滚动区内滚动，不把整页撑长。它建立在 [001 领域模型](001-domain.md) 到 [004 配置与提示词](004-config-prompts.md) 之上。
+在 DeepSeek Harness Web 的侧栏打开「项目任务」，面板有「项目任务」「设置」「记忆系统」三个标签页。任务标签页监督 Router、Worker 和分支；设置标签页保存 worker 模型和并发上限；记忆系统标签页浏览当前项目的记忆、全局/项目 skill 和全局知识库，并可删除单条记忆字段、memory 管理的 skill 或知识条目。任务标签页可以勾选多条记录后一次删除。三个标签页各自加载，任务列表在自己的滚动区内滚动，不把整页撑长。它建立在 [001 领域模型](001-domain.md) 到 [004 配置与提示词](004-config-prompts.md) 之上。
 
 ## 三个问题
 
@@ -17,10 +17,12 @@
 | --- | --- | --- |
 | 未合并 | 当前 worker HEAD 已审查通过且尚未合并 | 合并、提交 PR、删除分支 |
 | 运行中 | Worker、排队中的 Worker 或交付动作正在进行；排队中的 Task 带「排队中」标签，记录失联时带「未确认」标签 | 会话链接；worker 分支还在时「删除分支」禁用 |
-| 未审查 | Worker 提交了 HEAD，但没有通过的审查 | 审查、删除分支 |
-| 已完成 | 已审查的 HEAD 已合并，Worker 结束时没有可交付的提交，或非失败的 Task 的 worker 分支已被删除 | worker 分支还在时「删除分支」 |
+| 未审查 | Worker 提交了 HEAD，但没有通过的审查；非 Git 任务结束但工作区审查未通过 | 审查（仅 Git 任务）、删除分支（仅 Git 任务） |
+| 已完成 | 已审查的 HEAD 已合并，Worker 结束时没有可交付的提交，非 Git 任务审查通过，或非失败 Task 的 worker 分支已被删除 | worker 分支还在时「删除分支」 |
 | 失败 | Worker 回合、交付动作或 Task 失败 | 会话链接；显示保存的失败原因；worker 分支还在时「删除分支」 |
 | 仅回答 | report 任务交回了报告 | 会话链接 |
+
+非 Git 任务没有分支、Worktree、提交和 `git` 字段视图，因此没有合并、提交 PR、审查、删除分支这些 Git 动作；审查通过后行状态直接是「已完成」。面板读取时依旧从任务记录和审查事实推导状态，不新增第七个状态。
 
 面板读取 Task 时会修正过期的 `review-required`、`delivery-blocked` 或 `failed`：当前 HEAD 已审查时改为 `awaiting-merge`；也会采纳同一 Project 的另一个 Task 为同一 commit 记录的通关审查。
 
@@ -35,66 +37,66 @@
 | 任务筛选 | 仅「项目任务」标签页：「全部」加六个状态筛选项和计数，再加「排队中」筛选项和计数；团队、项目下拉框缩小同一批任务。选中「排队中」时列表只保留排队中的 Task，并按「排队中」一个分组显示 |
 | 任务列表 | 仅「项目任务」标签页：每个非空状态一个标题和计数，顺序同上；组内是 Task 行，行首复选框用于批量删除，有 worker 分支的行有「删除分支」，「排队中」行另有「取消」；选中「排队中」筛选时这些标签和按钮保持不变。列表在自己的滚动区内滚动 |
 | 设置 | 仅「设置」标签页：DSH 当前默认模型、worker 模型的服务商/模型/推理强度、并发 worker 上限和保存按钮 |
-| 记忆系统 | 仅「记忆系统」标签页：项目下拉框，全局记忆的用户画像，项目记忆的责任和定位，全局知识库条目及更新时间 |
-| 提示 | 任务标签页显示加载失败、空列表、无结果、动作错误或完成提示；有勾选时显示「已选择 N」「删除所选」和「清除选择」。设置标签页显示加载失败、校验错误和保存成功提示。记忆系统标签页显示加载失败、未保存字段、没有可确定项目的提示和空知识库 |
-| 弹窗 | 合并、提交 PR、删除分支、删除任务或批量删除的窗口，一次只开一个 |
+| 记忆系统 | 仅「记忆系统」标签页：项目下拉框，全局记忆的用户画像，项目记忆的责任和定位，memory 管理的全局/项目 skill，全局知识库条目及更新时间；有内容的字段、skill 和条目带行内「删除」 |
+| 提示 | 任务标签页显示加载失败、空列表、无结果、动作错误或完成提示；有勾选时显示「已选择 N」「删除所选」和「清除选择」。设置标签页显示加载失败、校验错误和保存成功提示。记忆系统标签页显示加载失败、未保存字段、没有可确定项目的提示、空知识库和删除结果 |
+| 弹窗 | 合并、提交 PR、删除分支、删除任务、批量删除或删除记忆内容的窗口，一次只开一个 |
 
-加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空任务和设置标签页的旧提示与勾选，并重新加载任务和设置；记忆系统标签页在选中时读取，在该标签页刷新会重新读取。面板不做常规自动刷新；任务列表里还有「排队中」的任务时，面板每 3 秒静默轮询任务列表（不进入加载态），名额释放后该行就地转为运行中，选择的筛选保持不变（`client.js:326-377`、`client.js:412-445`）。
+加载中、空列表和筛选无结果各有独立文字。刷新按钮中止进行中的加载、清空任务和设置标签页的旧提示与勾选，并重新加载任务和设置；记忆系统标签页在选中时读取，在该标签页刷新会重新读取。面板不做常规自动刷新；任务列表里还有「排队中」的任务时，面板每 3 秒静默轮询任务列表（不进入加载态），名额释放后该行就地转为运行中，选择的筛选保持不变（`client.js:351`、`client.js:453-483`）。
 
 ## 单条记录怎么读
 
 | 部分 | 行为 |
 | --- | --- |
-| 选择 | Task 标题前的复选框；运行中且 Worker Session 仍活着的 Task 不可勾选（`client.js:503-552`） |
-| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，「排队中」表示正在等待并发名额，两者都不是第七个状态（`client.js:500-505`、`client.js:768`） |
+| 选择 | Task 标题前的复选框；运行中且 Worker Session 仍活着的 Task 不可勾选（`client.js:856-922`） |
+| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，「排队中」表示正在等待并发名额，两者都不是第七个状态（`client.js:541-551`、`client.js:885-886`） |
 | 标题 | 标题；没有标题时显示 Task ID |
 | 团队与项目 | Team 名和项目根 |
 | 更新时间 | 存储的 `updatedAt`，缺失时用 `createdAt`，按本地时间 |
 | 失败原因 | 失败 Task 上显示保存的失败文本 |
 | ID | 16 位 Task ID |
 | Router 会话 | 按 Session ID 打开 |
-| Worker 会话 | 用父、子 Session ID 打开（`client.js:638-640`） |
-| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:223-232`） |
+| Worker 会话 | 用父、子 Session ID 打开（`client.js:891`） |
+| Pull request | 在新标签打开；只渲染 `https://github.com/<owner>/<repo>/pull/<number>` 形式（`client.js:266-276`） |
 
 会话按钮打不开时显示打开失败提示。没有 Worker Session 的 Task 不显示 Worker 按钮；面板没有会话打开能力时，标签显示为文本。
 
 ## 行内动作
 
-按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。合并和删除分支成功后关闭弹窗，并用 Host 返回的最新任务视图就地更新该行，不重新加载列表、不离开面板；取消排队成功后只移除该行，也不重新加载列表；其他动作成功时关闭弹窗并重新加载列表。成功都显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:720-747`）。
+按钮前置条件不满足时禁用，原因放在 `title` 提示里。动作执行期间行内显示「处理中…」，按钮保持禁用。合并和删除分支成功后关闭弹窗，并用 Host 返回的最新任务视图就地更新该行，不重新加载列表、不离开面板；取消排队成功后只移除该行，也不重新加载列表；其他动作成功时关闭弹窗并重新加载列表。成功都显示 Host 返回的消息；失败时显示 Host 的错误文本，没有消息时显示「操作失败。」（`client.js:828-855`）。
 
 ### 合并
 
-打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff --log`，合并提交写明 worker 分支与任务标题，并记录分支上的功能性 commit 摘要；不需要 `gh` 账号，完成后 checkout 回到原来的分支。Host 在响应里返回合并后的任务视图，面板据此就地把该行改为已完成（`client.js:577-731`、`src/merge.js:30-109`、`src/git-actions.js:414-442`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge`（已有运行中的 merge worker 时追加给它），合入的是该 worker 的 reviewed merge commit。
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff --log`，合并提交写明 worker 分支与任务标题，并记录分支上的功能性 commit 摘要；不需要 `gh` 账号，完成后 checkout 回到原来的分支。Host 在响应里返回合并后的任务视图，面板据此就地把该行改为已完成（`client.js:796-967`、`src/merge.js:30-109`、`src/git-actions.js:414-442`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge`（已有运行中的 merge worker 时追加给它），合入的是该 worker 的 reviewed merge commit。
 
 按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏、HEAD 移动或任务已离开可交付状态都会带原因拒绝（`src/git-actions.js:308-316`、`src/delivery.js:7-19`）。
 
 ### 提交 PR
 
-打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:577-608`、`client.js:714-722`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:796-855`、`client.js:824-827`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
 
 当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
 ### 审查
 
-从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:499-512`、`client.js:681-684`、`src/git-actions.js:398-419`）。
+从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:902-905`、`client.js:709-722`、`src/git-actions.js:398-419`）。
 
 ### 删除分支
 
-凡是任务记录里还有 worker 分支的行都显示「删除分支」，不要求分支已合并：已合并、已发布 PR 和未合并的分支都可以删除。任务处于运行中（`queued`、`starting`、`running`、`resuming`、`publishing`、`merging`）时按钮禁用，原因放在 `title`。打开确认弹窗显示分支名；未合并的分支额外提示删除会丢弃分支及其工作树且不可恢复；确认弹窗只读任务行里的分支信息，不读取分支历史。确认后 Host 拒绝仍在运行的任务、有未提交改动的工作树、被其他工作树检出的分支、工作树移除失败以及移除后仍存在的工作树，并返回明确错误；其余情况先移除该 Task 的干净 Worktree，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`。删除后未失败的 Task 按已完成显示，失败 Task 保持失败；Host 返回该行最新视图，面板就地更新并隐藏按钮，不重新加载列表（`client.js:679-687`、`client.js:798-801`、`client.js:828-829`、`src/git-actions.js:288-293`、`src/git-actions.js:341-342`、`src/git-actions.js:502-521`、`src/merge.js:112-170`）。
+凡是任务记录里还有 worker 分支的行都显示「删除分支」，不要求分支已合并：已合并、已发布 PR 和未合并的分支都可以删除。任务处于运行中（`queued`、`starting`、`running`、`resuming`、`publishing`、`merging`）时按钮禁用，原因放在 `title`。打开确认弹窗显示分支名；未合并的分支额外提示删除会丢弃分支及其工作树且不可恢复；确认弹窗只读任务行里的分支信息，不读取分支历史。确认后 Host 拒绝仍在运行的任务、有未提交改动的工作树、被其他工作树检出的分支、工作树移除失败以及移除后仍存在的工作树，并返回明确错误；其余情况先移除该 Task 的干净 Worktree，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`。删除后未失败的 Task 按已完成显示，失败 Task 保持失败；Host 返回该行最新视图，面板就地更新并隐藏按钮，不重新加载列表（`client.js:796-802`、`client.js:936-938`、`client.js:906-910`、`src/git-actions.js:288-293`、`src/git-actions.js:341-342`、`src/git-actions.js:502-521`、`src/merge.js:112-170`）。
 
 ### 取消排队
 
-只有「排队中」的 Task 行显示「取消」，其他状态没有这个按钮。点击后不打开确认弹窗，直接向 `/superagent-lite/tasks` 发送 `DELETE`；成功后该行立即从列表和批量选择中移除，显示「已取消排队任务。」，不刷新页面、不重新加载列表；在「排队中」筛选下操作也一样，移除后该筛选显示空状态。服务端在 Task 锁内复核状态仍为 `queued` 才移除活动记录和会话映射，并留下一条面板不显示的 `cancelled` 墓碑供 Router 的 `worker_status` 查询；已经离开队列时返回错误并保留该行（`client.js:452-466`、`client.js:689-693`、`src/board.js:11-40`、`src/task-store.js:122-144`、`src/worker-status.js`）。
+只有「排队中」的 Task 行显示「取消」，其他状态没有这个按钮。点击后不打开确认弹窗，直接向 `/superagent-lite/tasks` 发送 `DELETE`；成功后该行立即从列表和批量选择中移除，显示「已取消排队任务。」，不刷新页面、不重新加载列表；在「排队中」筛选下操作也一样，移除后该筛选显示空状态。服务端在 Task 锁内复核状态仍为 `queued` 才移除活动记录和会话映射，并留下一条面板不显示的 `cancelled` 墓碑供 Router 的 `worker_status` 查询；已经离开队列时返回错误并保留该行（`client.js:662-677`、`client.js:911-914`、`src/board.js:11-40`、`src/task-store.js:122-144`、`src/worker-status.js`）。
 
 ### 删除任务
 
-每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支或 Worktree（`client.js:577-634`、`client.js:694-698`、`src/board.js:11-48`、`src/task-store.js:103-121`）。
+每行都显示「删除任务」。Task 处于运行中且 Worker Session 还活着时按钮禁用；「未确认」的运行中 Task 没有活着的 Worker，可以删除。点击后打开确认弹窗，确认后发送 `DELETE /superagent-lite/tasks?taskId=<id>`，移除任务记录和 worker 会话映射，不删除 worker 分支或 Worktree（`client.js:796-855`、`client.js:915-920`、`src/board.js:11-48`、`src/task-store.js:103-121`）。
 
 合并或发布正在执行（存储状态为 `merging` 或 `publishing`）时，服务端拒绝删除；空 ID 或未知 ID 分别返回 400 和 404。
 
 ### 批量删除
 
-每条 Task 前都有复选框。勾选后列表上方出现「已选择 N」「删除所选」和「清除选择」；点「删除所选」打开一次确认弹窗，确认后逐条调用 `DELETE /superagent-lite/tasks?taskId=<id>`。运行中且 Worker Session 仍活着的 Task 复选框禁用，不能进入批量选择；「未确认」的运行中 Task 可以勾选（`client.js:290-291`、`client.js:385-393`、`client.js:748-769`）。
+每条 Task 前都有复选框。勾选后列表上方出现「已选择 N」「删除所选」和「清除选择」；点「删除所选」打开一次确认弹窗，确认后逐条调用 `DELETE /superagent-lite/tasks?taskId=<id>`。运行中且 Worker Session 仍活着的 Task 复选框禁用，不能进入批量选择；「未确认」的运行中 Task 可以勾选（`client.js:345-346`、`client.js:531-543`、`client.js:971-999`）。
 
 成功的记录立即从列表移除并显示完成提示；部分失败时确认弹窗保留，展示 Host 返回的错误，成功的记录已经移除，失败项保持勾选，关闭弹窗后错误也显示在列表上方。批量删除任务不删除 worker 分支或 Worktree。排队中的 Task 也可以逐行用「取消」立即移除。
 
@@ -110,32 +112,35 @@
 | 并发 worker 上限 | 1–16，默认 3；超出的新 Task 显示「排队中」，有空闲名额后按创建顺序启动；review 是 worker 的子代理，不占额外名额（`src/launch-queue.js`） |
 | 保存 | 只影响之后启动的 worker；已有 worker 保持原模型。失败原因显示在保存按钮上方 |
 
-bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里；设置页不编辑提示词。记忆没有编辑入口：全局/项目记忆、skill 和全局知识库只由 memory 角色维护，记忆系统标签页只读展示记忆与知识库，Worker、Reviewer 和 memory 角色通过 `knowledge_query` / `knowledge_get` 读取。
+bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里；设置页不编辑提示词。记忆没有写入或编辑入口：全局/项目记忆、memory 管理的 skill 和全局知识库由 memory 角色维护，记忆系统标签页只能逐条删除；Worker、Reviewer 和 memory 角色通过 `knowledge_query` / `knowledge_get` 读取。
 
 ## 记忆系统
 
-「记忆系统」标签页只读展示记忆，不提供写入入口。写入仍只由 memory 角色在 change 任务收尾时完成。
+「记忆系统」标签页展示记忆、memory 管理的 skill 和全局知识库，并允许安装 owner 删除单条内容；写入仍只由 memory 角色在 change 任务收尾时完成。
 
 | 项 | 行为 |
 | --- | --- |
-| 项目 | 下拉框列出任务记录里的项目根，默认选中最近更新的任务所属项目；没有任务可确定项目时只显示全局记忆和全局知识库并给出提示 |
-| 全局记忆 | 用户画像（`userProfile`）；未保存的字段显示「未保存」 |
-| 项目记忆 | 责任（`responsibilities`）和定位（`positioning`），按项目根隔离 |
+| 项目 | 下拉框列出任务记录里的项目根，默认选中最近更新的任务所属项目；没有任务可确定项目时只显示全局记忆、全局 skill 和全局知识库并给出提示 |
+| 全局记忆 | 用户画像（`userProfile`）；未保存的字段显示「未保存」；有内容时行内「删除」 |
+| 项目记忆 | 责任（`responsibilities`）和定位（`positioning`），按项目根隔离；有内容时行内「删除」 |
+| 全局/项目 skill | 按名字列出由 memory 管理的 skill（frontmatter 带 `author: memory`，旧固定名字在迁移前也显示），显示名字、description 和内容；每个 skill 有「删除」按钮，确认后调用 `DELETE /superagent-lite/memory?kind=skill&scope=…&name=…`（项目 skill 再带 `projectRoot`），只移除该 skill 的目录和 `SKILL.md`，就地更新当前标签页，不重新加载列表、不刷新页面 |
+| 知识库 | 全局的，不随项目切换；按条目显示文本和更新时间，带条目计数；没有条目时显示空状态。内容在标签页自己的滚动区内滚动；有内容时行内「删除」 |
 | 知识库 | 全局的，不随项目切换；按条目显示文本和更新时间，带条目计数；没有条目时显示空状态。内容在标签页自己的滚动区内滚动 |
+| 删除 | 行内「删除」打开确认弹窗，写明要删除的字段、skill 或条目；确认后发送 `DELETE /superagent-lite/memory`，成功后只更新当前标签页里的数据、显示完成提示，不重新加载标签页、不刷新页面 |
 | 刷新 | 标签页选中时读取；在该标签页刷新重新读取，切换项目立即重新读取，不刷新页面、不离开面板 |
-| 权限 | 只有安装 owner 能读取；端点 `/superagent-lite/memory` 只接受 GET |
+| 权限 | 只有安装 owner 能读取和删除；端点 `/superagent-lite/memory` 接受 GET 和 DELETE，非 owner 返回 403；DELETE 支持 `kind=memory`/`skill`/`knowledge`：未知 kind/scope/field、skill 缺 `name`、知识缺 `id`、非法项目根或项目作用域缺绝对 `projectRoot` 返回 400；存储读取或删除失败返回 409 |
 
-记忆和知识都读取自 `~/.dsh/superagent-lite/memory/`（`src/memory-store.js`）。面板不写回这些文件。skill 不在此标签页展示：它们只通过 skill catalog 和 `skill` 工具加载。
+记忆和知识读取自 `~/.dsh/superagent-lite/memory/`，skill 读取自全局 skill 根和 `<项目根>/.dsh/skills/<skill名>/SKILL.md`（`src/memory-store.js`）。删除记忆字段会清空该字段；删除 skill 会移除该 skill 的目录和 `SKILL.md`，不动其他 skill；删除知识条目会从知识库文件移除，之后的 `knowledge_query` 不再返回它。删除全局记忆后 Router 注入的全局记忆缓存随之刷新。面板不新增或编辑这些文件。
 
 ## 设计原则
 
 1. **一套状态系统。** 六个任务状态负责分类；没有第二个 Git 页签或状态列表重复它们。Git 动作属于任务行及其弹窗（`src/status.js:6`）。
 2. **只回答三个问题。** 每个区块对应一个问题；不改变决定的数量或行去掉。
-3. **监督而不是静默交付。** 每次刷新只发只读 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR、删除分支、删除任务和取消排队只在用户明确确认的动作里写（`src/board.js:7-55`、`src/git-actions.js:276-380`、`src/git-actions.js:502-521`）。
+3. **监督而不是静默交付。** 每次刷新只发只读 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR、删除分支、删除任务、取消排队和删除记忆内容只在用户明确确认的动作里写（`src/board.js:7-55`、`src/git-actions.js:276-380`、`src/git-actions.js:502-521`、`src/memory-panel.js`）。
 4. **一行一个动作并给出原因。** 按钮禁用时说明缺什么，用户不必翻文档才知道为什么。
 5. **诚实状态。** Worker Session 不在时显示「未确认」；已合并显示「已完成」；已审查未合并显示「未合并」；缺审查显示「未审查」。
 6. **链接而不复制。** 会话在对应 Session 里，审查在 GitHub 上，面板只给链接。
-7. **安全目标。** 只跟随同源面板请求和 GitHub PR URL，其他协议不渲染（`client.js:231-238`）。
+7. **安全目标。** 只跟随同源面板请求和 GitHub PR URL，其他协议不渲染（`client.js:266-276`）。
 8. **显式刷新，排队例外。** 面板在打开和点击刷新时加载，不做常规轮询；只有列表里还有「排队中」的 Task 时，才静默轮询任务列表，让名额释放后的行就地转为运行中。
 9. **仅 owner。** 不是安装 owner 的请求拿不到任务数据或记忆数据（`src/board.js:7-11`、`src/memory-panel.js`）。
-10. **记忆只读。** 记忆系统标签页只读取并展示记忆和全局知识库，不调用写入路径；记忆仍只由 memory 角色维护（`src/memory-panel.js`、`src/memory.js`）。
+10. **记忆由 owner 删除。** 记忆系统标签页只读取内容并删除用户明确确认的单条记忆、memory 管理的 skill 或知识；新增和编辑仍只由 memory 角色完成（`src/memory-panel.js`、`src/memory.js`）。

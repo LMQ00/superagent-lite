@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 
 // The reviewer reads the change itself, so the prompt carries no patch. This
 // module defines that change as the worktree plus base..head. The reviewer may
@@ -14,7 +14,7 @@ const WRAPPERS = new Set([
 const GIT_OPTION_VALUES = new Set(['-c', '-C', '--namespace', '--exec-path', '--config-env', '--git-dir', '--work-tree'])
 const BLOCKED_GIT_SUBCOMMANDS = new Set([
   'am', 'branch', 'checkout', 'cherry-pick', 'commit', 'commit-tree', 'fetch',
-  'filter-branch', 'merge', 'pull', 'push', 'rebase', 'replace', 'reset',
+  'filter-branch', 'init', 'merge', 'pull', 'push', 'rebase', 'replace', 'reset',
   'revert', 'stash', 'switch', 'symbolic-ref', 'tag', 'update-ref', 'worktree',
 ])
 const PATCH_FLAGS = new Set(['-p', '-u', '--patch', '--patch-with-stat', '--raw'])
@@ -123,7 +123,7 @@ function gitSubcommand(tokens, start) {
 function gitDenial(tokens, start) {
   const { subcommand } = gitSubcommand(tokens, start)
   if (subcommand && BLOCKED_GIT_SUBCOMMANDS.has(subcommand)) {
-    return `Review scope: the reviewer may not change git branches or history; "git ${subcommand}" is refused.`
+    return `Review scope: the reviewer may not create or change git branches, history, or repository state; "git ${subcommand}" is refused.`
   }
   return undefined
 }
@@ -168,15 +168,23 @@ function inspectCommand(command) {
   return undefined
 }
 
-export function createReviewScope({ worktree, baseCommit, headCommit, changedFiles = [] }) {
+export function createReviewScope({ worktree, baseCommit, headCommit, changedFiles = [], workspace = false }) {
   const root = resolve(worktree)
   const changed = new Set(changedFiles.map(file => resolve(root, file)))
   const evidence = { diff: false, file: false }
 
+  function insideRoot(file) {
+    if (typeof file !== 'string' || !file) return false
+    const path = resolve(root, file)
+    return path === root || path.startsWith(`${root}${sep}`)
+  }
+
   function revisionRole(token) {
     if (token === 'HEAD') return 'head'
-    if (token === baseCommit || (token.length >= 7 && baseCommit.startsWith(token))) return 'base'
-    if (token === headCommit || (token.length >= 7 && headCommit.startsWith(token))) return 'head'
+    if (typeof baseCommit === 'string' &&
+        (token === baseCommit || (token.length >= 7 && baseCommit.startsWith(token)))) return 'base'
+    if (typeof headCommit === 'string' &&
+        (token === headCommit || (token.length >= 7 && headCommit.startsWith(token)))) return 'head'
     return undefined
   }
 
@@ -268,10 +276,13 @@ export function createReviewScope({ worktree, baseCommit, headCommit, changedFil
         return
       }
       if (name === 'read' || name === 'read_image') {
-        if (typeof input?.file_path === 'string' && changed.has(resolve(root, input.file_path))) evidence.file = true
+        const file = input?.file_path
+        if (typeof file === 'string' &&
+            (workspace ? insideRoot(file) : changed.has(resolve(root, file)))) evidence.file = true
         return
       }
-      if (name === 'grep' && typeof input?.path === 'string' && changed.has(resolve(root, input.path))) {
+      if (name === 'grep' && typeof input?.path === 'string' &&
+          (workspace ? insideRoot(input.path) : changed.has(resolve(root, input.path)))) {
         evidence.file = true
       }
     },

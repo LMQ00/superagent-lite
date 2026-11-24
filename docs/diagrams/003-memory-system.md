@@ -52,8 +52,8 @@ flowchart TB
 | --- | --- |
 | Global memory | `memory/global.json`, field `userProfile` (`src/memory-store.js`) |
 | Project memory | `memory/projects/<sha256(projectRoot)>.json`, fields `responsibilities` and `positioning` (`src/memory-store.js`) |
-| Shared skill | `~/.agents/skills/superagent-shared-memory/SKILL.md`; description only in the skill catalog |
-| Project skill | `<projectRoot>/.dsh/skills/superagent-project-memory/SKILL.md`; a worker-scoped provider reads it from the project checkout so the Worktree worker and reviewer see its description in the skill catalog. Any skill memory writes under the global or project skill root is registered as memory-owned for catalog stability |
+| Shared skill | `~/.agents/skills/<skillName>/SKILL.md` with `author: memory`; one directory per skill, description only in the skill catalog; the legacy `superagent-shared-memory` keeps working |
+| Project skill | `<projectRoot>/.dsh/skills/<skillName>/SKILL.md` with `author: memory`; a worker-scoped provider reads the memory-managed project skills from the project checkout so the Worktree worker and reviewer see their descriptions in the skill catalog. Skill files are the ownership record: new, edited, or deleted skills authored by memory do not hot-update a published catalog; a missing author is treated as an ordinary skill. The legacy `superagent-project-memory` keeps working |
 | Knowledge base | `memory/knowledge.json`, queried and edited through `knowledge_query`, `knowledge_get`, and `knowledge_write` (`src/memory-store.js`, `src/memory.js`) |
 | Router injection | `refreshGlobalMemory` / `registerGlobalMemoryContext` (`src/memory.js`, `router.js`) |
 | Worker injection | `registerMemoryContext` reads project + global memory at Worker creation (`src/memory.js`, `index.js`) |

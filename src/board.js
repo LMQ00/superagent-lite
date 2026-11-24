@@ -67,7 +67,7 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git, r
         id, title, teamId, projectRoot, mode, workerSessionId, parentSessionId, prUrl,
         land: land === true,
         updatedAt: updatedAt ?? createdAt,
-        status: view?.status ?? panelStatus({ status, mode }, { reviewed: record.review?.approved === true }),
+        status: view?.status ?? panelStatus({ status, mode, report: record.report }, { reviewed: record.review?.approved === true }),
         ...(status === 'queued' ? { queued: true } : {}),
         ...(unconfirmed ? { unconfirmed: true } : {}),
         ...(land === true && typeof landAuthorizedAt === 'string' ? { landAuthorizedAt } : {}),

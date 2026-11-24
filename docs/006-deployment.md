@@ -11,8 +11,8 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | DSH Web Host | 运行插件、Session 和面板 |
 | `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
 | 记忆 | 全局/项目记忆、全局/项目 skill、全局知识库，以及 change worker 的原始归档 |
-| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断另外读取 memory 登记的 skill 名单 |
-| Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
+| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/<skill名>/SKILL.md`，让 Git Worktree 里或非 Git 项目目录里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断读取这些 skill 的 `author` frontmatter |
+| Worktree 服务 | 为每个 Git Task 创建并保留一个 Worktree；非 Git 项目不使用 |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
 | GitHub remote | 可选；发送 PR 需要，合并不需要 |
 
@@ -24,7 +24,8 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | Node.js | 24.9 或更新，跟随 DSH 引擎要求 |
 | Git | 支持 `git merge-tree --write-tree HEAD HEAD` 的版本 |
 | GitHub CLI | 发送 PR 需要；`gh auth status --hostname github.com` 必须成功 |
-| 项目 checkout | 已检出的 Git 仓库，当前有分支 |
+| 项目 checkout | Git 项目需已检出且有分支、工作区干净；普通目录也可作为项目根，直接执行 change/report |
+| 非 Git 目录 | 不需要 `.git`、分支或提交；change/report 直接在工作区执行，审查当前文件。merge、PR 和 `land` 不可用 |
 
 Bundle 自带 worktree 服务，不要与另一个挂载 worktree 服务的 bundle 同时启用。
 
@@ -86,20 +87,20 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 排队变化 | 排队中的 Worker 开始执行、排队中的 Task 被取消时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。取消会在 `tasks/cancelled/` 留下墓碑供 `worker_status` 查询，面板列表仍移除该行 |
-| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/` 下 memory 登记为它管理的目录 |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和全局知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/` |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、记忆读取、Git 动作、任务删除或排队取消成功 |
-| `400` | 任务 ID、JSON 请求体或项目根不对 |
+| `200` | 列表、记忆读取或删除、Git 动作、任务删除或排队取消成功 |
+| `400` | 任务 ID、JSON 请求体、项目根或记忆删除目标（kind/scope/field/name/id）不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
 | `404` | Git 详情、任务删除或排队取消找不到 Task |
 | `405` | 方法不被该端点接受 |
-| `409` | Git 动作被拒绝或失败、任务删除或排队取消被拒绝，或记忆读取失败 |
+| `409` | Git 动作被拒绝或失败、任务删除或排队取消被拒绝，或记忆读取/删除失败 |
 | `413` | Git 动作请求体超过 4 KB |
 | `415` | 动作请求体不是 `application/json` |
 
@@ -123,7 +124,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:60-74`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:60-74`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -131,13 +132,17 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 
 | 现象 | 原因与修法 |
 | --- | --- |
-| `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash 项目 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore` |
-| `Create the assigned project worktree before using any other tool.` | Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
+| `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash Git 项目的 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore`。非 Git 目录不会报这条 |
+| `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |
+| `Landing requires a git repository; this project is not under git` | 非 Git 项目不能推送、开 PR 或合并；去掉 `land` 后按 change 流程交付 |
+| `This project is not a git repository; work directly in the project folder` | 非 Git 任务调用了 `create_worktree`；直接在工作区修改并调用 `review_worker_commit` |
+| `Create the assigned project worktree before using any other tool.` | Git 项目的 Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
 | `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
 | `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
 | `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发；`queued` 的同名 Task 会直接返回 |
 | `The router Session is not running` | 本地合并需要 Router Session 保持运行 |
 | `Git delivery is unavailable under the current Session file policy` | 把 Router Session 设为 full access |
+| `This project is not a git repository; there is no branch to review, merge, publish, or delete` | 非 Git Task 没有 Git 动作；用 worker 的审查工具重新审查工作区 |
 | `The merge target branch "<name>" was not found` | 在合并弹窗里选择一个存在的本地分支 |
 | `The selected remote is not a single GitHub fetch/push repository` | 选择一个 fetch 和 push URL 指向同一 GitHub 仓库的 remote |
 | `The worker Session is not running; open its conversation to review the commit there` | 审查动作需要活着的 Worker Session；恢复或重新派发该 Task |
@@ -145,6 +150,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `No reviewed local commit is ready for delivery` | 先调用 `review_worker_commit` 并修完问题；合并与发送 PR 共用这条前置校验 |
 | `The worker branch no longer matches its reviewed commit` | 审查后又有提交；重新审查新 HEAD |
 | `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding` | Reviewer 没有读改动；重新运行审查，让它读 `base..head` 或改动文件 |
+| `The reviewer did not inspect the project files; read a file in the project folder before deciding` | 非 Git Reviewer 没有读项目文件；重新运行审查，让它先读工作区文件 |
 | `Merge would conflict; the target was not changed` | 把基础分支合并进 worker 分支并重新审查；插件没有改目标 |
 | `The project checkout has uncommitted changes` | 合并前提交或 stash 项目 checkout 的改动 |
 | `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | 删除分支前清理 worker Worktree |
@@ -155,7 +161,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `The task is no longer queued` | 取消前任务已获得并发名额并开始启动；刷新面板后按运行中任务处理，不能再取消 |
-| `Only settled, unpublished worktrees can be resumed` | Task 没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；重新派发 |
+| `Only settled, unpublished worktrees can be resumed` | Git 项目没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；非 Git 项目仍可用 `review-required`、`failed` 恢复；否则重新派发 |
 | `Merging is performed by a newly dispatched merge worker; this task may only push or open a pull request.` | change worker 的 `land` 只授权推送/PR；合并请求要由 router 派发 `mode=merge` 的 merge worker |
 | `merge tasks require land=true` | `mode=merge` 必须携带用户本轮对合并的明确授权；不能用缺省 `land` 启动 merge worker |
 | `The base branch cannot be a merge target` | `branches` 里包含 base branch；改成待合并的 worker 分支或任务 ID |

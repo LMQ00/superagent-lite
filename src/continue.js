@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readTask, updateTask } from './task-store.js'
-import { grantLanding, landingAuthorizationRule, landingRule, revokeLanding } from './landing.js'
+import { grantLanding, landingAuthorizationRule, landingRule, nonGitLandingRule, revokeLanding } from './landing.js'
 import { validateLandFlag } from './validation.js'
 
 function hasCompactionCheckpoint(session) {
@@ -32,7 +32,38 @@ async function requirementsMayBeLost(ctx, sessionId, worker, signal) {
  * follow-up as its single authoritative instruction. The original requirements
  * are replayed only when compaction may have removed them.
  */
-function resumingPrompt(record, text, replayRequirements, land) {
+function resumingPrompt(record, text, replayRequirements, land, git = record.git !== false) {
+  if (!git) {
+    const lines = [
+      `Task ID: ${record.id}`,
+      `Project folder: ${record.projectRoot} (this project is not a git repository)`,
+      '',
+      'Rules:',
+      '- Apply this follow-up only within the task\'s existing goal. If it is a different task or conflicts with an existing constraint, do not apply it and report BLOCKED with the mismatch instead of requesting another review.',
+      '- Work directly in the project folder; do not create a worktree and do not initialize a git repository.',
+      '- Do not redo completed work or repeat the dispatch setup phases. If the follow-up applies, call review_worker_commit when the change is complete; the reviewer inspects the current project files.',
+      `- ${nonGitLandingRule()}`,
+      `- ${landingAuthorizationRule()}`,
+      '- When the turn ends, call message_router once with COMPLETED, INCOMPLETE, or BLOCKED, naming the task id, checks actually run, and remaining risk.',
+      '',
+    ]
+    if (replayRequirements) {
+      lines.push(
+        'Requirements (replayed because this session\'s earlier context was compacted):',
+        record.task,
+        '',
+      )
+    }
+    lines.push(
+      'Follow-up (the only authoritative instruction for this turn):',
+      text,
+      '',
+      replayRequirements
+        ? 'This follow-up is the only authoritative instruction for this turn. The requirements replayed above are the task\'s original requirements; do not redo completed work.'
+        : 'This follow-up is the only authoritative instruction for this turn. The original requirements are in the earlier conversation; do not redo completed work.',
+    )
+    return lines.join('\n')
+  }
   const { path, branch, baseCommit, sourceBranch } = record.worktree ?? {}
   const commit = baseCommit ?? record.baseCommit
   const base = record.baseBranch ?? sourceBranch
@@ -137,6 +168,7 @@ export function createContinueTool(ctx) {
       const record = await readTask(taskId)
       if (!record || record.parentSessionId !== parent.id) throw new Error('Task does not belong to this router Session')
       const requestedLand = validateLandFlag(land)
+      if (record.git === false && requestedLand) throw new Error('Landing requires a git repository; this project is not under git')
       const granted = requestedLand && record.land !== true
       const effectiveLand = record.land === true || requestedLand
       const worker = ctx.agents?.get(record.workerSessionId)
@@ -146,7 +178,7 @@ export function createContinueTool(ctx) {
         try {
           await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
             type: 'text',
-            text: `Requirements update for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it; keep working on the current task and include the unapplied follow-up in your final report. Otherwise apply it to your current work; restart only if the change requires it. ${landingRule(effectiveLand, record.baseBranch)} ${landingAuthorizationRule()}
+            text: `Requirements update for the same task. First decide whether it belongs to this task. Apply an addition or change within the task's goal; if it is a different task or conflicts with an existing constraint, do not apply it; keep working on the current task and include the unapplied follow-up in your final report. Otherwise apply it to your current work; restart only if the change requires it. ${record.git === false ? nonGitLandingRule() : landingRule(effectiveLand, record.baseBranch)} ${landingAuthorizationRule()}
 
 Update:
 ${text}`,
@@ -161,7 +193,7 @@ ${text}`,
       const settled = record.status !== 'running'
       if (settled) {
         await updateTask(taskId, current => {
-          if (!current.worktree || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
+          if ((!current.worktree && current.git !== false) || !['awaiting-merge', 'review-required', 'failed'].includes(current.status)) {
             throw new Error('Only settled, unpublished worktrees can be resumed')
           }
           return { status: 'resuming', ...(granted ? landingGrantFields() : {}) }
@@ -175,7 +207,7 @@ ${text}`,
       try {
         await ctx.subagents.sendMessage(parent, record.workerSessionId, [{
           type: 'text',
-          text: resumingPrompt(record, text, replayRequirements, effectiveLand),
+          text: resumingPrompt(record, text, replayRequirements, effectiveLand, record.git !== false),
         }], { signal: exec.signal })
       } catch (error) {
         if (followUpId) await dropFollowUp(ctx, taskId, followUpId)

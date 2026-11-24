@@ -46,13 +46,20 @@ window.__ModuleLoader__.load({
         saveSettings: 'Save', settingsInvalid: 'Enter a provider and model, or leave all three model fields blank.',
         queued: 'Queued',
         memoryTab: 'Memory', memoryTitle: 'Memory',
-        memoryIntro: 'Read-only view of saved project memory and the global knowledge base. The memory role maintains it when a task ends.',
+        memoryIntro: 'View and delete saved project memory, memory-managed skills and the global knowledge base. The memory role maintains them when a task ends.',
         memoryProjectLabel: 'Project', memoryGlobal: 'Global memory', memoryProject: 'Project memory',
         memoryKnowledge: 'Global knowledge base', memoryUserProfile: 'User profile',
         memoryResponsibilities: 'Responsibilities', memoryPositioning: 'Positioning',
+        memoryGlobalSkills: 'Global skills', memoryProjectSkills: 'Project skills',
         memoryNotSaved: 'Not saved', memoryEmptyKnowledge: 'No knowledge entries yet.',
         memoryLoadFailed: 'Could not load memory. Try refreshing.',
         memoryNoProject: 'No task identifies a project yet; only global memory and knowledge are shown.',
+        memoryDelete: 'Delete', memoryDeleteTitle: 'Delete memory content',
+        memoryDeleteHint: 'The selected content is removed from memory storage and cannot be restored.',
+        memoryDeleteFieldHint: 'The saved memory field is cleared.',
+        memoryDeleteSkillHint: 'Later sessions no longer see this skill:',
+        memoryDeleteKnowledgeHint: 'The entry is removed from the knowledge base, so queries no longer return it.',
+        memoryDeleted: 'Memory content deleted.', memoryDeleteFailed: 'Could not delete the memory content.',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -96,13 +103,20 @@ window.__ModuleLoader__.load({
         saveSettings: '保存', settingsInvalid: '请填写服务商和模型，或把三个模型字段都留空。',
         queued: '排队中',
         memoryTab: '记忆系统', memoryTitle: '记忆系统',
-        memoryIntro: '只读查看保存的项目记忆和全局知识库。记忆由 memory 角色在任务收尾时维护。',
+        memoryIntro: '查看并删除保存的项目记忆、由 memory 管理的 skill 和全局知识库。记忆由 memory 角色在任务收尾时写入。',
         memoryProjectLabel: '项目', memoryGlobal: '全局记忆', memoryProject: '项目记忆',
         memoryKnowledge: '全局知识库', memoryUserProfile: '用户画像',
         memoryResponsibilities: '责任', memoryPositioning: '定位',
+        memoryGlobalSkills: '全局 skill', memoryProjectSkills: '项目 skill',
         memoryNotSaved: '未保存', memoryEmptyKnowledge: '暂无知识库条目。',
         memoryLoadFailed: '无法加载记忆，请重试。',
         memoryNoProject: '当前没有任务可确定项目，只显示全局记忆和知识库。',
+        memoryDelete: '删除', memoryDeleteTitle: '删除记忆内容',
+        memoryDeleteHint: '所选内容会从记忆存储中删除，且无法恢复。',
+        memoryDeleteFieldHint: '该记忆字段会被清空。',
+        memoryDeleteSkillHint: '之后新派发的会话不再看到该 skill：',
+        memoryDeleteKnowledgeHint: '该条目会从知识库删除，之后的查询不再返回它。',
+        memoryDeleted: '记忆内容已删除。', memoryDeleteFailed: '无法删除记忆内容，请重试。',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -195,12 +209,18 @@ window.__ModuleLoader__.load({
       .sl-worker-settings__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
       .sl-memory-field{display:flex;flex-direction:column;gap:4px;padding:12px 8px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
       .sl-memory-field:last-child{border-bottom:0}
+      .sl-memory-field__head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
       .sl-memory-field__label{margin:0;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-tertiary)}
       .sl-memory-field__value{margin:0;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
       .sl-memory-entry{display:flex;flex-direction:column;gap:4px;padding:10px 8px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
       .sl-memory-entry:last-child{border-bottom:0}
-      .sl-memory-entry__text{margin:0;font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+      .sl-memory-entry__head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}
+      .sl-memory-entry__body{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0}
+      .sl-memory-entry__name{margin:0;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
+      .sl-memory-entry__text{flex:1;min-width:0;margin:0;font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+      .sl-memory-entry__content{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-caption);white-space:pre-wrap;overflow-wrap:anywhere}
       .sl-memory-entry__meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
+      .sl-memory-skills{display:flex;flex-direction:column;gap:4px;padding:8px 8px 0}
       .sl-input{box-sizing:border-box;height:28px;min-width:180px;max-width:100%;padding:0 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}
       .sl-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
       .sl-check{flex:none;width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
@@ -316,7 +336,12 @@ window.__ModuleLoader__.load({
       const [settingsNotice, setSettingsNotice] = useState('')
       const [memoryProject, setMemoryProject] = useState('')
       const [memoryPhase, setMemoryPhase] = useState('loading')
-      const [memory, setMemory] = useState({ global: {}, knowledge: [] })
+      const [memory, setMemory] = useState({ global: {}, knowledge: [], skills: { global: [], project: [] } })
+      const [memoryError, setMemoryError] = useState('')
+      const [memoryNotice, setMemoryNotice] = useState('')
+      const [memoryDialog, setMemoryDialog] = useState(null)
+      const [memoryDialogError, setMemoryDialogError] = useState('')
+      const [memoryPending, setMemoryPending] = useState(false)
       const [selectedTasks, setSelectedTasks] = useState([])
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
@@ -382,6 +407,8 @@ window.__ModuleLoader__.load({
         if (tab !== 'memory' || phase === 'loading') return () => {}
         const controller = new AbortController()
         setMemoryPhase('loading')
+        setMemoryError('')
+        setMemoryNotice('')
         async function load() {
           try {
             const query = memoryProject ? `?projectRoot=${encodeURIComponent(memoryProject)}` : ''
@@ -394,10 +421,19 @@ window.__ModuleLoader__.load({
               throw new Error('Invalid memory view')
             }
             if (controller.signal.aborted) return
+            const skills = value.skills && typeof value.skills === 'object' ? value.skills : {}
+            const skillList = list => (Array.isArray(list) ? list : [])
+              .filter(skill => skill && typeof skill.name === 'string' && typeof skill.description === 'string')
+              .map(skill => ({
+                name: skill.name,
+                description: skill.description,
+                content: typeof skill.content === 'string' ? skill.content : '',
+              }))
             setMemory({
               global: value.global,
               project: value.project && typeof value.project === 'object' ? value.project : undefined,
               knowledge: value.knowledge.filter(entry => entry && typeof entry.id === 'string' && typeof entry.text === 'string'),
+              skills: { global: skillList(skills.global), project: skillList(skills.project) },
             })
             setMemoryPhase('ready')
           } catch {
@@ -473,6 +509,11 @@ window.__ModuleLoader__.load({
         setSettingsNotice('')
         setSettingsPending(false)
         setMemoryPhase('loading')
+        setMemoryError('')
+        setMemoryNotice('')
+        setMemoryDialog(null)
+        setMemoryDialogError('')
+        setMemoryPending(false)
         setOpenFailed(false)
         setError('')
         setNotice('')
@@ -554,6 +595,69 @@ window.__ModuleLoader__.load({
         }
         if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
         return value
+      }
+      const memoryDeleteUrl = target => {
+        const url = new URL('/superagent-lite/memory', 'http://localhost')
+        url.searchParams.set('kind', target.kind)
+        if (target.scope) url.searchParams.set('scope', target.scope)
+        if (target.field) url.searchParams.set('field', target.field)
+        if (target.id) url.searchParams.set('id', target.id)
+        if (target.name) url.searchParams.set('name', target.name)
+        if (target.projectRoot) url.searchParams.set('projectRoot', target.projectRoot)
+        return `${url.pathname}${url.search}`
+      }
+      const openMemoryDialog = target => {
+        setMemoryError('')
+        setMemoryNotice('')
+        setMemoryDialogError('')
+        setMemoryDialog(target)
+      }
+      const confirmMemoryDelete = async () => {
+        if (!memoryDialog) return
+        const target = memoryDialog
+        setMemoryPending(true)
+        setMemoryDialogError('')
+        try {
+          const response = await fetch(memoryDeleteUrl(target), {
+            method: 'DELETE', credentials: 'same-origin', cache: 'no-store',
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) {
+            throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('memoryDeleteFailed'))
+          }
+          setMemory(current => {
+            if (target.kind === 'knowledge') {
+              return { ...current, knowledge: (current.knowledge ?? []).filter(entry => entry.id !== target.id) }
+            }
+            if (target.kind === 'skill') {
+              return {
+                ...current,
+                skills: {
+                  ...current.skills,
+                  [target.scope]: (current.skills?.[target.scope] ?? []).filter(skill => skill.name !== target.name),
+                },
+              }
+            }
+            if (target.scope === 'global') {
+              return { ...current, global: { ...current.global, [target.field]: '' } }
+            }
+            return { ...current, project: current.project ? { ...current.project, [target.field]: '' } : current.project }
+          })
+          setMemoryDialog(null)
+          setMemoryNotice(t('memoryDeleted'))
+        } catch (actionError) {
+          const message = typeof actionError?.message === 'string' && actionError.message
+            ? actionError.message : t('memoryDeleteFailed')
+          setMemoryError(message)
+          setMemoryDialogError(message)
+        } finally {
+          setMemoryPending(false)
+        }
       }
       const cancelQueued = async task => {
         setPending(`${task.id}:cancel`)
@@ -978,13 +1082,34 @@ window.__ModuleLoader__.load({
       const memoryView = tab === 'memory'
       const memoryTabId = `${headingId}-memory-tab`
       const memoryProjects = optionsFor('projectRoot')
-      const memoryField = (label, value) => h('div', { className: 'sl-memory-field' },
-        h('h3', { className: 'sl-memory-field__label' }, t(label)),
+      const memoryDeleteButton = target => h('button', {
+        type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+        title: `${t('memoryDelete')}: ${target.label}`,
+        'aria-label': `${t('memoryDelete')}: ${target.label}`,
+        disabled: memoryPending,
+        onClick: () => openMemoryDialog(target),
+      }, icon('trash'), t('memoryDelete'))
+      const memoryField = (label, value, target) => h('div', { className: 'sl-memory-field' },
+        h('div', { className: 'sl-memory-field__head' },
+          h('h3', { className: 'sl-memory-field__label' }, t(label)),
+          value && target && memoryDeleteButton(target)),
         h('p', { className: value ? 'sl-memory-field__value' : 'sl-hint' }, value || t('memoryNotSaved')))
+      const memorySkillEntry = (skill, scope) => h('li', { key: skill.name, className: 'sl-memory-entry' },
+        h('div', { className: 'sl-memory-entry__head' },
+          h('div', { className: 'sl-memory-entry__body' },
+            h('p', { className: 'sl-memory-entry__name' }, skill.name),
+            h('p', { className: 'sl-memory-entry__text' }, skill.description),
+            skill.content && h('p', { className: 'sl-memory-entry__content' }, skill.content)),
+          memoryDeleteButton({
+            kind: 'skill', scope, name: skill.name, label: skill.name,
+            ...(scope === 'project' ? { projectRoot: memoryProject } : {}),
+          })))
       const memoryEntry = entry => {
         const updated = displayTime(entry.updatedAt)
         return h('li', { key: entry.id, className: 'sl-memory-entry' },
-          h('p', { className: 'sl-memory-entry__text' }, entry.text),
+          h('div', { className: 'sl-memory-entry__head' },
+            h('p', { className: 'sl-memory-entry__text' }, entry.text),
+            memoryDeleteButton({ kind: 'knowledge', id: entry.id, label: `#${entry.id}` })),
           updated && h('div', { className: 'sl-memory-entry__meta' },
             h('span', { className: 'sl-lv' },
               h('span', { className: 'sl-lv__label' }, t('updated')),
@@ -994,6 +1119,9 @@ window.__ModuleLoader__.load({
         const global = memory.global ?? {}
         const project = memory.project
         const knowledge = Array.isArray(memory.knowledge) ? memory.knowledge : []
+        const skills = memory.skills ?? {}
+        const globalSkills = Array.isArray(skills.global) ? skills.global : []
+        const projectSkills = Array.isArray(skills.project) ? skills.project : []
         return h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
           memoryProjects.length > 0 && h('div', { className: 'sl-filters' },
             h('label', { className: 'sl-field' },
@@ -1004,22 +1132,59 @@ window.__ModuleLoader__.load({
               }, ...memoryProjects.map(root => h('option', { key: root, value: root }, root))))),
           memoryPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
           memoryPhase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('memoryLoadFailed')),
+          memoryError && h('p', { className: 'sl-error', role: 'alert' }, memoryError),
+          memoryNotice && h('p', { className: 'sl-notice', role: 'status' }, memoryNotice),
           memoryPhase === 'ready' && !project && h('p', { className: 'sl-hint' }, t('memoryNoProject')),
           memoryPhase === 'ready' && h('div', { className: 'sl-scroll' },
             h('div', { className: 'sl-groups' },
               h('section', { className: 'sl-group' },
                 h('h2', { className: 'sl-group__title' }, t('memoryGlobal')),
-                memoryField('memoryUserProfile', typeof global.userProfile === 'string' ? global.userProfile : '')),
+                memoryField('memoryUserProfile', typeof global.userProfile === 'string' ? global.userProfile : '',
+                  { kind: 'memory', scope: 'global', field: 'userProfile', label: t('memoryUserProfile') }),
+                globalSkills.length > 0 && h('div', { className: 'sl-memory-skills' },
+                  h('h3', { className: 'sl-memory-field__label' }, t('memoryGlobalSkills')),
+                  h('ul', { className: 'sl-list' },
+                    ...globalSkills.map(skill => memorySkillEntry(skill, 'global'))))),
               project && h('section', { className: 'sl-group' },
                 h('h2', { className: 'sl-group__title' }, t('memoryProject')),
-                memoryField('memoryResponsibilities', typeof project.responsibilities === 'string' ? project.responsibilities : ''),
-                memoryField('memoryPositioning', typeof project.positioning === 'string' ? project.positioning : '')),
+                memoryField('memoryResponsibilities', typeof project.responsibilities === 'string' ? project.responsibilities : '',
+                  { kind: 'memory', scope: 'project', projectRoot: memoryProject, field: 'responsibilities', label: t('memoryResponsibilities') }),
+                memoryField('memoryPositioning', typeof project.positioning === 'string' ? project.positioning : '',
+                  { kind: 'memory', scope: 'project', projectRoot: memoryProject, field: 'positioning', label: t('memoryPositioning') }),
+                projectSkills.length > 0 && h('div', { className: 'sl-memory-skills' },
+                  h('h3', { className: 'sl-memory-field__label' }, t('memoryProjectSkills')),
+                  h('ul', { className: 'sl-list' },
+                    ...projectSkills.map(skill => memorySkillEntry(skill, 'project'))))),
               h('section', { className: 'sl-group' },
                 h('h2', { className: 'sl-group__title' }, t('memoryKnowledge'),
                   h('span', { className: 'sl-group__count' }, String(knowledge.length))),
                 knowledge.length === 0
                   ? h('p', { className: 'sl-hint', role: 'status' }, t('memoryEmptyKnowledge'))
                   : h('ul', { className: 'sl-list' }, ...knowledge.map(memoryEntry))))))
+      }
+      const memoryDialogView = () => {
+        if (!memoryDialog) return null
+        const target = memoryDialog
+        const hint = target.kind === 'knowledge' ? t('memoryDeleteKnowledgeHint')
+          : target.kind === 'skill' ? t('memoryDeleteSkillHint') : t('memoryDeleteFieldHint')
+        return h('div', { className: 'sl-modal-backdrop' },
+          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('memoryDeleteTitle') },
+            h('h2', null, t('memoryDeleteTitle')),
+            h('p', null, t('memoryDeleteHint')),
+            h('p', null, hint, ' ', h('code', null, target.label)),
+            memoryDialogError && h('p', { role: 'alert', className: 'sl-error' }, memoryDialogError),
+            h('div', { className: 'sl-modal__actions' },
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline', disabled: memoryPending,
+                onClick: () => {
+                  setMemoryDialog(null)
+                  setMemoryDialogError('')
+                },
+              }, t('cancel')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--primary', disabled: memoryPending,
+                onClick: () => void confirmMemoryDelete(),
+              }, t('confirmDelete')))))
       }
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
@@ -1067,7 +1232,8 @@ window.__ModuleLoader__.load({
               list)
             : settingsView ? settingsViewPanel() : memoryViewPanel()),
         dialogView(),
-        batchDialog())
+        batchDialog(),
+        memoryDialogView())
     }
 
     function PanelIcon({ size }) {

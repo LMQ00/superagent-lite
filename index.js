@@ -16,19 +16,19 @@ import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import {
-  archiveWorkerTurn, createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool, memorySkillNames,
-  registerMemoryContext, registerProjectSkillProvider, runMemoryExtraction,
+  archiveWorkerTurn, createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool,
+  memoryAuthoredSkillNames, registerMemoryContext, registerProjectSkillProvider, runMemoryExtraction,
 } from './src/memory.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
-    ownedSkills: async agent => {
+    authoredSkills: async agent => {
       const parent = agent.session?.header?.parentSession
       const task = await taskForSession(undefined, agent.id)
         ?? (parent === undefined ? undefined : await taskForSession(undefined, parent))
-      return memorySkillNames(task?.projectRoot)
+      return memoryAuthoredSkillNames(task?.projectRoot)
     },
   })
   ctx.on('agent/pre-step', catalogGuard.preStep)
@@ -99,9 +99,23 @@ export async function apply(ctx) {
     if (!landingState(task.id)) initLanding(task)
     const active = ['starting', 'resuming', 'running'].includes(task.status)
     if (task.status === 'starting' || task.status === 'resuming') await updateTask(task.id, { status: 'running' })
-    const state = { frozen: !active, path: task.worktree?.path }
     const reportOnly = task.mode === 'report'
     const mergeMode = task.mode === 'merge'
+    const state = { frozen: !active, path: task.git === false && !reportOnly ? task.projectRoot : task.worktree?.path }
+    const projectSkill = (() => {
+      try {
+        return registerProjectSkillProvider(agent.ctx, task.projectRoot)
+      } catch (error) {
+        ctx.logger.warn(`superagent-lite project skill: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+    })()
+    const memory = !state.frozen
+      ? await registerMemoryContext(agent.ctx, task.projectRoot).catch(error => {
+        ctx.logger.warn(`superagent-lite memory context: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      })
+      : undefined
     const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
     const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
     const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write', 'knowledge_query', 'knowledge_get', 'skill'])
@@ -133,7 +147,7 @@ export async function apply(ctx) {
       return
     })
     const checkout = agent.ctx.tools.register(createWorktreeTool(ctx, agent, task.id, path => { state.path = path }), {
-      when: () => !state.frozen && !reportOnly,
+      when: () => !state.frozen && !reportOnly && task.git !== false,
     })
     const merge = agent.ctx.tools.register(createMergeTool(ctx, agent, task.id), {
       when: ({ agent: candidate }) => candidate === agent && !state.frozen && mergeMode && inCheckout(),
@@ -148,14 +162,6 @@ export async function apply(ctx) {
     const knowledgeGet = agent.ctx.tools.register(createKnowledgeGetTool(), {
       when: ({ agent: candidate }) => candidate === agent,
     })
-    const projectSkill = (() => {
-      try {
-        return registerProjectSkillProvider(agent.ctx, task.projectRoot)
-      } catch (error) {
-        ctx.logger.warn(`superagent-lite project skill: ${error instanceof Error ? error.message : String(error)}`)
-        return undefined
-      }
-    })()
     let memoryAttempted = false
     const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
       if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
@@ -170,12 +176,6 @@ export async function apply(ctx) {
     const report = agent.ctx.tools.register(createReportTool(ctx, agent, task.id, () => !state.frozen, () => { state.frozen = true }), {
       when: () => reportOnly && !state.frozen,
     })
-    const memory = !state.frozen
-      ? await registerMemoryContext(agent.ctx, task.projectRoot).catch(error => {
-        ctx.logger.warn(`superagent-lite memory context: ${error instanceof Error ? error.message : String(error)}`)
-        return undefined
-      })
-      : undefined
     workers.set(agent.id, {
       taskId: task.id, state, session: agent.session,
       dispose: () => { memory?.(); projectSkill?.(); knowledge(); knowledgeGet(); report(); message(); review(); merge(); checkout(); guard() },
@@ -217,6 +217,16 @@ export async function apply(ctx) {
         const stopped = { stopReason: info.stopReason, finishedAt: new Date().toISOString() }
         if (task.mode === 'report') {
           await publish({ ...stopped, status: 'failed', failure: 'Report-only task ended without report_task' })
+          return
+        }
+        if (task.git === false) {
+          if (info.stopReason !== 'completed') {
+            await publish({ ...stopped, status: 'failed' })
+            return
+          }
+          await publish(task.review?.approved === true
+            ? { ...stopped, status: 'completed' }
+            : { ...stopped, status: 'review-required' })
           return
         }
         if (info.stopReason !== 'completed' || !task.worktree) {
