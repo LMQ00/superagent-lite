@@ -447,14 +447,17 @@ window.__ModuleLoader__.load({
       const optionsFor = key => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
         .sort((a, b) => a.localeCompare(b))
       const scoped = tasks.filter(task => (!team || task.teamId === team) && (!project || task.projectRoot === project))
+      const queuedCount = scoped.filter(task => task.queued === true).length
       const categoryCounts = CATEGORY_ORDER.reduce((counts, key) => {
         counts[key] = scoped.filter(task => task.status === key).length
         return counts
       }, {})
-      const shown = category ? scoped.filter(task => task.status === category) : scoped
-      const groups = CATEGORY_ORDER
-        .filter(key => !category || key === category)
-        .map(key => ({ key, tasks: shown.filter(task => task.status === key) }))
+      // "Queued" is a filter over the running status, not a seventh panel
+      // status: the Running count and group still include queued Tasks.
+      const matchesCategory = (task, key) => key === 'queued' ? task.queued === true : task.status === key
+      const shown = category ? scoped.filter(task => matchesCategory(task, category)) : scoped
+      const groups = (category ? [category] : CATEGORY_ORDER)
+        .map(key => ({ key, tasks: shown.filter(task => matchesCategory(task, key)) }))
         .filter(group => group.tasks.length > 0)
 
       const deletableTask = task => task.queued === true || task.status !== 'running' || task.unconfirmed === true
@@ -493,6 +496,7 @@ window.__ModuleLoader__.load({
         setDialog(null)
       }
       const statusLabel = status => t(Object.hasOwn(dictionaries.en, `status.${status}`) ? `status.${status}` : 'status.failed')
+      const filterLabel = key => key === 'queued' ? t('queued') : statusLabel(key)
       const statusMark = status => {
         const tone = statusTone(status)
         return h('span', { className: 'sl-stage', 'data-state': tone },
@@ -877,7 +881,11 @@ window.__ModuleLoader__.load({
           ...CATEGORY_ORDER.map(key => h('button', {
             key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
             onClick: () => setCategory(key),
-          }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
+          }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key])))),
+          h('button', {
+            type: 'button', className: 'sl-filter', 'aria-pressed': category === 'queued',
+            onClick: () => setCategory('queued'),
+          }, t('queued'), h('span', { className: 'sl-filter__count' }, String(queuedCount)))),
         h('div', { className: 'sl-scope' },
           filter('team', 'allTeams', 'teamId', team, setTeam),
           filter('project', 'allProjects', 'projectRoot', project, setProject)))
@@ -894,7 +902,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'sl-groups' },
           ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
             h('h2', { className: 'sl-group__title' },
-              statusLabel(group.key),
+              filterLabel(group.key),
               h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
             h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow))))))
 
