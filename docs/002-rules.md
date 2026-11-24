@@ -107,8 +107,8 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 | 作用域 | 内容 | 写入者 | 读者 |
 | --- | --- | --- | --- |
-| 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer |
-| 项目 | `responsibilities`、`positioning`、项目 skill、知识库 | memory 角色 | Worker、Reviewer |
+| 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（只读） |
+| 项目 | `responsibilities`、`positioning`、项目 skill、知识库 | memory 角色 | Worker、Reviewer、面板（只读） |
 
 - 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；知识库在 `~/.dsh/superagent-lite/memory/knowledge/<sha256(项目根)>.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
 - 不同项目的项目记忆、项目 skill 和知识库互相不可见；全局记忆和全局 skill 所有项目共享（`src/memory-store.js`）。
@@ -120,6 +120,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - memory 角色只在 change worker 的最终报告后触发一次，读取完整原始会话；最终报告工具的参数不进入 transcript（`src/memory.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；`knowledge_write` 只对 memory 角色开放，`knowledge_query` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
+- 面板的「记忆系统」标签页经 owner-only `GET /superagent-lite/memory` 只读读取全局记忆、所选项目的项目记忆和知识库；没有写入接口，记忆仍只由 memory 角色维护（`src/memory-panel.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
 - 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口（`src/memory.js`、`src/memory-store.js`）。
 

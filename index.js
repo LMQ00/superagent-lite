@@ -10,6 +10,7 @@ import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
+import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import {
@@ -38,6 +39,10 @@ export async function apply(ctx) {
           ctx.logger.warn(`superagent-lite worker queue: ${error instanceof Error ? error.message : String(error)}`)
         }),
       }),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/memory',
+      handler: createMemoryPanelHandler(web.connection),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)

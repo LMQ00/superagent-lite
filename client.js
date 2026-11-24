@@ -43,6 +43,14 @@ window.__ModuleLoader__.load({
         maxWorkers: 'Concurrent workers', maxWorkersHint: 'Tasks beyond the limit wait in the queue. Reviews do not count.',
         saveSettings: 'Save', settingsInvalid: 'Enter a provider and model, or leave all three model fields blank.',
         queued: 'Queued',
+        memoryTab: 'Memory', memoryTitle: 'Memory',
+        memoryIntro: 'Read-only view of saved project memory and knowledge. The memory role maintains it when a task ends.',
+        memoryProjectLabel: 'Project', memoryGlobal: 'Global memory', memoryProject: 'Project memory',
+        memoryKnowledge: 'Knowledge base', memoryUserProfile: 'User profile',
+        memoryResponsibilities: 'Responsibilities', memoryPositioning: 'Positioning',
+        memoryNotSaved: 'Not saved', memoryEmptyKnowledge: 'No knowledge entries yet.',
+        memoryLoadFailed: 'Could not load memory. Try refreshing.',
+        memoryNoProject: 'No task identifies a project yet; only global memory is shown.',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -83,6 +91,14 @@ window.__ModuleLoader__.load({
         maxWorkers: '并发 worker 上限', maxWorkersHint: '超过上限的任务排队等待；review 不计入并发。',
         saveSettings: '保存', settingsInvalid: '请填写服务商和模型，或把三个模型字段都留空。',
         queued: '排队中',
+        memoryTab: '记忆系统', memoryTitle: '记忆系统',
+        memoryIntro: '只读查看保存的项目记忆和知识库。记忆由 memory 角色在任务收尾时维护。',
+        memoryProjectLabel: '项目', memoryGlobal: '全局记忆', memoryProject: '项目记忆',
+        memoryKnowledge: '知识库', memoryUserProfile: '用户画像',
+        memoryResponsibilities: '责任', memoryPositioning: '定位',
+        memoryNotSaved: '未保存', memoryEmptyKnowledge: '暂无知识库条目。',
+        memoryLoadFailed: '无法加载记忆，请重试。',
+        memoryNoProject: '当前没有任务可确定项目，只显示全局记忆。',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -173,6 +189,14 @@ window.__ModuleLoader__.load({
       .sl-worker-settings__field label{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
       .sl-worker-settings__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
       .sl-worker-settings__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .sl-memory-field{display:flex;flex-direction:column;gap:4px;padding:12px 8px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-memory-field:last-child{border-bottom:0}
+      .sl-memory-field__label{margin:0;font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-tertiary)}
+      .sl-memory-field__value{margin:0;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+      .sl-memory-entry{display:flex;flex-direction:column;gap:4px;padding:10px 8px;border-bottom:0.5px solid var(--dsw-alias-border-l3)}
+      .sl-memory-entry:last-child{border-bottom:0}
+      .sl-memory-entry__text{margin:0;font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere}
+      .sl-memory-entry__meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
       .sl-input{box-sizing:border-box;height:28px;min-width:180px;max-width:100%;padding:0 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}
       .sl-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
       .sl-check{flex:none;width:14px;height:14px;margin:0;accent-color:var(--dsw-alias-brand-primary);cursor:pointer}
@@ -284,6 +308,9 @@ window.__ModuleLoader__.load({
       const [settingsPending, setSettingsPending] = useState(false)
       const [settingsError, setSettingsError] = useState('')
       const [settingsNotice, setSettingsNotice] = useState('')
+      const [memoryProject, setMemoryProject] = useState('')
+      const [memoryPhase, setMemoryPhase] = useState('loading')
+      const [memory, setMemory] = useState({ global: {}, knowledge: [] })
       const [selectedTasks, setSelectedTasks] = useState([])
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
@@ -308,6 +335,8 @@ window.__ModuleLoader__.load({
             setTasks(rows)
             setTeam(current => rows.some(task => task.teamId === current) ? current : '')
             setProject(current => rows.some(task => task.projectRoot === current) ? current : '')
+            setMemoryProject(current => rows.some(task => task.projectRoot === current)
+              ? current : (rows.find(task => typeof task.projectRoot === 'string' && task.projectRoot)?.projectRoot ?? ''))
             setPhase('ready')
           } catch {
             if (!controller.signal.aborted) {
@@ -342,6 +371,36 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [revision])
 
+      useEffect(() => {
+        if (phase === 'loading') return () => {}
+        const controller = new AbortController()
+        setMemoryPhase('loading')
+        async function load() {
+          try {
+            const query = memoryProject ? `?projectRoot=${encodeURIComponent(memoryProject)}` : ''
+            const response = await fetch(`/superagent-lite/memory${query}`, {
+              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            })
+            if (!response.ok) throw new Error('Memory unavailable')
+            const value = await response.json()
+            if (!value || typeof value.global !== 'object' || value.global === null || !Array.isArray(value.knowledge)) {
+              throw new Error('Invalid memory view')
+            }
+            if (controller.signal.aborted) return
+            setMemory({
+              global: value.global,
+              project: value.project && typeof value.project === 'object' ? value.project : undefined,
+              knowledge: value.knowledge.filter(entry => entry && typeof entry.id === 'string' && typeof entry.text === 'string'),
+            })
+            setMemoryPhase('ready')
+          } catch {
+            if (!controller.signal.aborted) setMemoryPhase('error')
+          }
+        }
+        void load()
+        return () => controller.abort()
+      }, [revision, phase, memoryProject])
+
       const optionsFor = key => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
         .sort((a, b) => a.localeCompare(b))
       const scoped = tasks.filter(task => (!team || task.teamId === team) && (!project || task.projectRoot === project))
@@ -365,6 +424,7 @@ window.__ModuleLoader__.load({
         setSettingsError('')
         setSettingsNotice('')
         setSettingsPending(false)
+        setMemoryPhase('loading')
         setOpenFailed(false)
         setError('')
         setNotice('')
@@ -829,18 +889,66 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'sl-btn sl-btn--primary', disabled: settingsPending,
               onClick: () => void saveSettings(),
             }, t('saveSettings')))))
+      const memoryView = tab === 'memory'
+      const memoryTabId = `${headingId}-memory-tab`
+      const memoryProjects = optionsFor('projectRoot')
+      const memoryField = (label, value) => h('div', { className: 'sl-memory-field' },
+        h('h3', { className: 'sl-memory-field__label' }, t(label)),
+        h('p', { className: value ? 'sl-memory-field__value' : 'sl-hint' }, value || t('memoryNotSaved')))
+      const memoryEntry = entry => {
+        const updated = displayTime(entry.updatedAt)
+        return h('li', { key: entry.id, className: 'sl-memory-entry' },
+          h('p', { className: 'sl-memory-entry__text' }, entry.text),
+          updated && h('div', { className: 'sl-memory-entry__meta' },
+            h('span', { className: 'sl-lv' },
+              h('span', { className: 'sl-lv__label' }, t('updated')),
+              h('span', { className: 'sl-lv__value' }, updated))))
+      }
+      const memoryViewPanel = () => {
+        const global = memory.global ?? {}
+        const project = memory.project
+        const knowledge = Array.isArray(memory.knowledge) ? memory.knowledge : []
+        return h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
+          memoryProjects.length > 0 && h('div', { className: 'sl-filters' },
+            h('label', { className: 'sl-field' },
+              h('span', null, t('memoryProjectLabel')),
+              h('select', {
+                className: 'sl-select', value: memoryProject,
+                onChange: event => setMemoryProject(event.target.value),
+              }, ...memoryProjects.map(root => h('option', { key: root, value: root }, root))))),
+          memoryPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+          memoryPhase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('memoryLoadFailed')),
+          memoryPhase === 'ready' && !project && h('p', { className: 'sl-hint' }, t('memoryNoProject')),
+          memoryPhase === 'ready' && h('div', { className: 'sl-scroll' },
+            h('div', { className: 'sl-groups' },
+              h('section', { className: 'sl-group' },
+                h('h2', { className: 'sl-group__title' }, t('memoryGlobal')),
+                memoryField('memoryUserProfile', typeof global.userProfile === 'string' ? global.userProfile : '')),
+              project && h('section', { className: 'sl-group' },
+                h('h2', { className: 'sl-group__title' }, t('memoryProject')),
+                memoryField('memoryResponsibilities', typeof project.responsibilities === 'string' ? project.responsibilities : ''),
+                memoryField('memoryPositioning', typeof project.positioning === 'string' ? project.positioning : '')),
+              h('section', { className: 'sl-group' },
+                h('h2', { className: 'sl-group__title' }, t('memoryKnowledge'),
+                  h('span', { className: 'sl-group__count' }, String(knowledge.length))),
+                knowledge.length === 0
+                  ? h('p', { className: 'sl-hint', role: 'status' }, t('memoryEmptyKnowledge'))
+                  : h('ul', { className: 'sl-list' }, ...knowledge.map(memoryEntry))))))
+      }
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
-              h('h1', { id: headingId }, t(taskView ? 'title' : 'workerSettingsTitle')),
-              h('p', { className: 'sl-intro' }, t(taskView ? 'intro' : 'workerSettingsIntro'))),
+              h('h1', { id: headingId },
+                t(taskView ? 'title' : settingsView ? 'workerSettingsTitle' : 'memoryTitle')),
+              h('p', { className: 'sl-intro' },
+                t(taskView ? 'intro' : settingsView ? 'workerSettingsIntro' : 'memoryIntro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
                 onClick: refresh,
-                disabled: taskView ? phase === 'loading' : settingsPhase === 'loading',
+                disabled: taskView ? phase === 'loading' : settingsView ? settingsPhase === 'loading' : memoryPhase === 'loading',
               }, icon('refresh'), t('refresh')))),
           h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
             h('button', {
@@ -852,7 +960,12 @@ window.__ModuleLoader__.load({
               id: settingsTabId, type: 'button', role: 'tab', className: 'sl-tab',
               'aria-selected': settingsView,
               onClick: () => setTab('settings'),
-            }, t('workerSettingsTitle'))),
+            }, t('workerSettingsTitle')),
+            h('button', {
+              id: memoryTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': memoryView,
+              onClick: () => setTab('memory'),
+            }, t('memoryTab'))),
           taskView
             ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
               filters,
@@ -866,7 +979,7 @@ window.__ModuleLoader__.load({
               phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
                 h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
               list)
-            : settingsViewPanel()),
+            : settingsView ? settingsViewPanel() : memoryViewPanel()),
         dialogView(),
         batchDialog())
     }
