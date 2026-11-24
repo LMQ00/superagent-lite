@@ -84,7 +84,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
-| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
+| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/` |
 | 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker 和 Reviewer 用 `knowledge_query` 查询项目知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
@@ -140,13 +140,17 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The merge target branch "<name>" was not found` | 在合并弹窗里选择一个存在的本地分支 |
 | `The selected remote is not a single GitHub fetch/push repository` | 选择一个 fetch 和 push URL 指向同一 GitHub 仓库的 remote |
 | `The worker Session is not running; open its conversation to review the commit there` | 审查动作需要活着的 Worker Session；恢复或重新派发该 Task |
-| `Delete the worker branch only after the task is merged` | 先合并 reviewed HEAD，再删除分支 |
+| `The task is still running; stop its worker before deleting the branch` | 等 Task 结束工作、分支不再被运行中的 Worker 占用后再删除分支 |
 | `No reviewed local commit is ready for delivery` | 先调用 `review_worker_commit` 并修完问题；合并与发送 PR 共用这条前置校验 |
 | `The worker branch no longer matches its reviewed commit` | 审查后又有提交；重新审查新 HEAD |
 | `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding` | Reviewer 没有读改动；重新运行审查，让它读 `base..head` 或改动文件 |
 | `Merge would conflict; the target was not changed` | 把基础分支合并进 worker 分支并重新审查；插件没有改目标 |
 | `The project checkout has uncommitted changes` | 合并前提交或 stash 项目 checkout 的改动 |
 | `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | 删除分支前清理 worker Worktree |
+| `The worktree at <path> is not on the worker branch <branch>; remove it before deleting the branch` | 登记的工作树已切到别的分支；先移除该工作树再删除分支 |
+| `The worker branch is still checked out in the worktree at <path>; remove it before deleting the branch` | 分支被其他工作树检出；先移除那个工作树再删除分支 |
+| `The worker worktree at <path> still exists; remove it before deleting the branch` | `git worktree remove` 后工作树仍在；手动清理后再重试 |
+| `Could not remove the worker worktree at <path>: ...` | 工作树移除失败；按错误信息处理占用或权限问题后重试 |
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `The task is no longer queued` | 取消前任务已获得并发名额并开始启动；刷新面板后按运行中任务处理，不能再取消 |

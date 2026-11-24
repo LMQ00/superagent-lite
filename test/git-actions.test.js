@@ -6,7 +6,7 @@ import test, { after } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { checksRollup, createGitManager, pullRequestUrl } from '../src/git-actions.js'
-import { mergeWorkerBranch } from '../src/merge.js'
+import { deleteWorkerBranch, mergeWorkerBranch } from '../src/merge.js'
 
 const run = promisify(execFile)
 const signal = new AbortController().signal
@@ -106,6 +106,31 @@ function context() {
           collected: {
             stdout: { readFrom: () => ({ text: stdout, lossy: false }) },
             stderr: { readFrom: () => ({ text: stderr }) },
+          },
+        }
+      },
+    },
+  }
+}
+
+function scriptedContext(script) {
+  const calls = []
+  return {
+    calls,
+    subprocess: {
+      async resolveExecutable(name) { return name },
+      spawn({ argv }) {
+        const args = argv.slice(1)
+        let index = 0
+        while (args[index] === '-c') index += 2
+        const command = args.slice(index)
+        calls.push(command)
+        const value = script(command)
+        return {
+          done: Promise.resolve({ exitCode: value.exitCode ?? 0 }),
+          collected: {
+            stdout: { readFrom: () => ({ text: value.stdout ?? '' }) },
+            stderr: { readFrom: () => ({ text: value.stderr ?? '' }) },
           },
         }
       },
@@ -457,10 +482,125 @@ test('a branch deleted after a merged Pull request does not need to be an ancest
   await assert.rejects(git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo))
 })
 
-test('deleting a branch before the merge is refused', async () => {
+test('a delivered branch with an open pull request can be deleted', async () => {
   const facts = await setupRepo()
-  const store = taskStore([recordFor(facts, { status: 'awaiting-merge' })])
-  await assert.rejects(managerFor(store).perform(taskId, 'delete-branch', {}, signal), /only after the task is merged/)
+  const record = recordFor(facts, { status: 'awaiting-ci', prUrl })
+  const store = taskStore([record])
+  const gh = async () => JSON.stringify({
+    state: 'OPEN', headRefOid: facts.workerHead, headRefName: 'sl-feature', baseRefName: 'main',
+    isCrossRepository: false, isDraft: false, author: { login: 'dsh' }, comments: 0, reviews: 0,
+    statusCheckRollup: [], mergeable: 'MERGEABLE',
+  })
+  const manager = managerFor(store, { gh })
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'unmerged')
+  assert.equal(view.git.pr.state, 'OPEN')
+  assert.equal(view.git.canDelete, true)
+  const removed = await manager.perform(taskId, 'delete-branch', {}, signal)
+  assert.equal(removed.deleted, true)
+  assert.equal(removed.view.status, 'completed')
+  await assert.rejects(git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo))
+})
+
+test('deleting an unmerged worker branch removes its worktree and settles the row as completed', async () => {
+  const facts = await setupRepo()
+  const record = recordFor(facts)
+  const store = taskStore([record])
+  const manager = managerFor(store)
+  const view = (await manager.list([record], signal)).get(taskId)
+  assert.equal(view.status, 'unmerged')
+  assert.equal(view.git.canDelete, true)
+  assert.equal(view.git.deleteReason, undefined)
+
+  const removed = await manager.perform(taskId, 'delete-branch', {}, signal)
+  assert.equal(removed.deleted, true)
+  assert.equal(removed.status, 'awaiting-merge')
+  assert.equal(removed.view.status, 'completed')
+  assert.equal(removed.view.git, undefined)
+  await assert.rejects(git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo))
+  assert.equal((await git(['worktree', 'list', '--porcelain'], facts.repo)).includes(facts.worktree), false)
+  const stored = await store.readTask(taskId)
+  assert.equal(stored.worktree, undefined)
+  assert.equal(stored.branchDeletedAt.length > 0, true)
+  assert.equal(stored.status, 'awaiting-merge')
+})
+
+test('deleting the branch of a running task is refused with a clear reason', async () => {
+  const facts = await setupRepo()
+  const store = taskStore([recordFor(facts, { status: 'running' })])
+  const manager = managerFor(store)
+  const view = (await manager.list([recordFor(facts, { status: 'running' })], signal)).get(taskId)
+  assert.equal(view.status, 'running')
+  assert.equal(view.git.canDelete, false)
+  assert.equal(view.git.deleteReason, 'The task is still running; wait for it to finish before deleting the branch')
+  await assert.rejects(
+    manager.perform(taskId, 'delete-branch', {}, signal),
+    /still running/,
+  )
+  assert.equal((await store.readTask(taskId)).worktree.branch, 'sl-feature')
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo)).length > 0)
+})
+
+test('deleting a branch whose worktree has uncommitted changes is refused', async () => {
+  const facts = await setupRepo()
+  await writeFile(join(facts.worktree, 'notes.txt'), 'uncommitted\n')
+  const store = taskStore([recordFor(facts)])
+  await assert.rejects(
+    managerFor(store).perform(taskId, 'delete-branch', {}, signal),
+    /worktree has uncommitted changes/,
+  )
+  assert.equal((await store.readTask(taskId)).worktree.branch, 'sl-feature')
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo)).length > 0)
+})
+
+test('deleting a branch checked out by another worktree is refused', async () => {
+  const facts = await setupRepo()
+  const other = join(facts.root, 'other-holder')
+  await git(['worktree', 'add', '-b', 'sl-other', other, facts.baseCommit], facts.repo)
+  const record = recordFor(facts, {
+    worktree: { path: join(facts.root, 'missing-worktree'), branch: 'sl-other', baseCommit: facts.baseCommit },
+  })
+  const store = taskStore([record])
+  await assert.rejects(
+    managerFor(store).perform(taskId, 'delete-branch', {}, signal),
+    /still checked out in the worktree at/,
+  )
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/sl-other'], facts.repo)).length > 0)
+})
+
+test('deleting a branch refuses a worktree that survives removal', async () => {
+  const facts = await setupRepo()
+  const record = recordFor(facts)
+  const listing = `worktree ${facts.worktree}\nHEAD ${facts.workerHead}\nbranch refs/heads/sl-feature\n`
+  const ctx = scriptedContext(command => {
+    if (command[0] === 'rev-parse') return { stdout: facts.workerHead }
+    if (command[0] === 'worktree' && command[1] === 'list') return { stdout: listing }
+    if (command[0] === 'worktree' && command[1] === 'remove') return {}
+    if (command[0] === 'status') return { stdout: '' }
+    if (command[0] === 'branch') return {}
+    throw new Error(`unexpected git ${command.join(' ')}`)
+  })
+  await assert.rejects(
+    deleteWorkerBranch(ctx, record, signal, async () => {}),
+    /still exists; remove it before deleting the branch/,
+  )
+  assert.deepEqual(ctx.calls.slice(0, 4), [
+    ['rev-parse', '--verify', '--quiet', 'refs/heads/sl-feature^{commit}'],
+    ['worktree', 'list', '--porcelain'],
+    ['status', '--porcelain', '--untracked-files=all'],
+    ['worktree', 'remove', facts.worktree],
+  ])
+})
+
+test('a deleted worker branch keeps a failed task failed', async () => {
+  const record = {
+    id: taskId, title: 'Change', mode: 'change', parentSessionId: 'router', projectRoot: '/missing', baseCommit: 'a'.repeat(40),
+    baseBranch: 'main', workerSessionId: 'worker', status: 'interrupted', review: undefined,
+    worktree: undefined, branchDeletedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const view = (await managerFor(taskStore([record])).list([record], signal)).get(taskId)
+  assert.equal(view.status, 'failed')
+  assert.equal(view.git, undefined)
 })
 
 test('merges for one Project root are serialized across tasks and restore the checkout', async () => {

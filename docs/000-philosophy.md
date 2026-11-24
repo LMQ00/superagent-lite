@@ -25,7 +25,7 @@ Superagent 轻量版把项目工作拆成一条固定链路：用户输入先在
 
 ## 对运维的责任
 
-- **Router Session 的文件策略就是交付权限。** 合并、发送 PR、审查和删除分支都要求 `danger-full-access`；否则动作被拒绝（`src/git-actions.js:106-110`）。
+- **Router Session 的文件策略就是交付权限。** 合并、发送 PR、审查和删除分支都要求 `danger-full-access`；否则动作被拒绝（`src/git-actions.js:109-114`）。
 - **账号由运维提供。** 发送 PR 使用本机 `gh` 的登录态，推送使用所选 remote 的 push URL（`src/github.js:1-137`、`src/git-actions.js:439-480`）。
 - **运行记录要备份。** Task 在 `~/.dsh/superagent-lite/tasks/`，记忆在 `~/.dsh/superagent-lite/memory/`，归档在 `~/.dsh/superagent-lite/task/archive/`；升级前备份这些文件。
 - **Worktree 要保留。** 合并和恢复依赖 worker 分支与 Worktree，因此 worktree 服务配置 `retainOnArchive: true`（`cordis.patch.yml:1-7`）。

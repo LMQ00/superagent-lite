@@ -52,7 +52,7 @@
 | 落地 | change/report 派发或续派发时携带 `land=true` | change worker 可推送指派分支、开 PR；只限指派分支与 reviewed HEAD | 否；未携带时不推送、不开 PR、不合并 |
 | 合并 | 用户直接指示时由 router 派发 `mode=merge`：没有运行中的 merge worker 就新派发，已有则追加；面板任务行的合并操作 | merge worker 先把 `mergeBranches` 合入自己的 worktree 分支并审查合并结果，再把 reviewed commit 本地合入 base branch；面板直接把 reviewed HEAD 合入所选分支，不需要 `gh` | 否；需要明确授权、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要任务已结束 Worker 工作、审查通过的 HEAD、`gh` 账号、GitHub remote 和 full access |
-| 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
+| 删除分支 | 用户在仍有 worker 分支的 Task 行点击「删除分支」 | 删除 worker 分支；登记且干净的 Worktree 一并移除 | 否；需要明确点击，运行中的 Task、脏 Worktree、被其他 Worktree 检出的分支和无法移除的 Worktree 拒绝 |
 | 取消排队 | 安装 owner 在「排队中」的 Task 行点击「取消」 | 原子地只移除仍为 `queued` 的 Task 记录和会话映射，之后不会再被派发；任务已离开队列时拒绝 | 否；需要明确点击，运行中或已交付的 Task 没有入口 |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支和 Worktree | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
 | 修改设置 | owner 在面板「设置」保存 | 保存 worker 模型和并发上限，只影响之后启动的 worker | 否；需要 owner 明确点击 |
@@ -100,8 +100,8 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 审查针对已提交的 diff；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:24-29`）。
 - Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:6-34`、`src/review.js:125-140`）。Reviewer 可以用 `knowledge_query` 查询项目知识，但不能写入。
 - 工具拿到裁决后，还要确认 Reviewer 实际读过改动、Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`（`src/review.js:109-122`）。
-- 面板的 `review` 动作对 `unreviewed` 的 Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:386-407`）。
-- 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:254-269`）。
+- 面板的 `review` 动作对 `unreviewed` 的 Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:401-423`）。
+- 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:257-274`、`src/git-actions.js:291-303`）。
 - 审查没有通过不直接改 Task 状态；Worker 修完再提交、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`（`index.js:136-139`）。
 
 ## 记忆规则
@@ -151,8 +151,8 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 | --- | --- |
 | 状态 | Task 已结束 Worker 工作（`awaiting-merge` 或 `awaiting-ci`）（`src/delivery.js:7-13`） |
 | 审查 | `review.approved === true`，且 worker 分支当前 HEAD 等于 `review.head`（`src/delivery.js:7-13`） |
-| 文件策略 | 动作执行时解析出的 Session 文件策略必须是 `danger-full-access`（`src/git-actions.js:106-110`） |
-| 任务模式 | report 任务没有 Git 操作（`src/git-actions.js:541`） |
+| 文件策略 | 动作执行时解析出的 Session 文件策略必须是 `danger-full-access`（`src/git-actions.js:110-114`） |
+| 任务模式 | report 任务没有 Git 操作（`src/git-actions.js:568`） |
 | Task 记录 | 面板 Git 动作端点只接受 16 位任务 ID 和 `merge`、`publish`、`review`、`delete-branch`；任务删除和排队取消走 `/superagent-lite/tasks` 的 `DELETE`（`src/board.js:106-162`、`src/board.js:14-55`） |
 
 合并与发送 PR 共用 `deliverableHead`：状态、Worktree、审查和 HEAD 按同一套判定；执行前再用 `assertStillDeliverable` 复核状态与 Review。发送 PR 只额外要求 `gh auth status --hostname github.com` 成功，且所选 remote 指向 GitHub 仓库；写权限由 push 本身验证（`src/delivery.js:7-19`、`src/git-actions.js:427-439`）。
@@ -161,7 +161,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 合并始终是本地合并，GitHub 项目也一样；插件不再通过 `gh pr merge` 合并 PR。
 
-1. 由用户直接指示后 router 派发的 `mode=merge` 任务（运行中的 merge worker 会收到追加目标）、面板任务行的合并动作触发。merge worker 先用 `merge_branch` 把目标分支合入自己的 worktree 分支、审查合并结果，再按本流程合入 base branch；面板动作通过 Task 的 Router Session 解析文件策略（`src/merge-tool.js:13-64`、`src/git-actions.js:106-110`）。
+1. 由用户直接指示后 router 派发的 `mode=merge` 任务（运行中的 merge worker 会收到追加目标）、面板任务行的合并动作触发。merge worker 先用 `merge_branch` 把目标分支合入自己的 worktree 分支、审查合并结果，再按本流程合入 base branch；面板动作通过 Task 的 Router Session 解析文件策略（`src/merge-tool.js:13-64`、`src/git-actions.js:110-114`）。
 2. Task 必须已结束 Worker 工作，有 worker 分支和 Worktree，`review.approved === true`，且当前 HEAD 等于 `review.head`（`src/delivery.js:7-13`）。
 3. 目标分支必须是合法的本地分支名，且不能是 worker 分支本身（`src/merge.js:35-38`）。
 4. 项目 checkout 必须干净（除 `?? .agents/worktrees/.gitignore` 外），并且检出一个分支（`src/git-actions.js:201-209`、`src/merge.js:46-48`）。
@@ -186,15 +186,15 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 ### 审查、删除分支、取消排队与删除任务
 
-- 面板的 `review` 动作对未合并、HEAD 未审查且有提交的 Task 运行一次独立审查；Worker Session 必须还活着。通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:390-412`）。
-- 面板的 `delete-branch` 只用于 `merged` 的 Task。Worktree 已登记且干净时先 `git worktree remove`，再 `git branch -D`；随后记录 `branchDeletedAt` 并清空 `worktree`（`src/merge.js:113-142`）。
+- 面板的 `review` 动作对未合并、HEAD 未审查且有提交的 Task 运行一次独立审查；Worker Session 必须还活着。通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:401-423`）。
+- 面板的 `delete-branch` 适用于仍有 worker 分支的 Task，不要求已合并。运行中（`queued`、`starting`、`running`、`resuming`、`publishing`、`merging`）的 Task 拒绝；Worktree 已登记且干净时先 `git worktree remove`，仍有未提交改动、被其他 Worktree 检出、移除失败或移除后仍存在时拒绝并返回错误；随后 `git branch -D`，记录 `branchDeletedAt` 并清空 `worktree`（`src/merge.js:121-170`）。删除后非失败的 Task 面板显示为已完成，失败 Task 保持失败；Host 响应带回最新行视图，供面板就地更新（`src/git-actions.js:288-293`、`src/git-actions.js:502-521`）。
 - 面板的「取消」只出现在「排队中」的 Task 行，向 `/superagent-lite/tasks` 发送 `DELETE`；服务端在 Task 锁内复核状态仍为 `queued` 后原子移除记录和会话映射，已经离开队列时返回 `409`，不启动 Worker（`src/board.js:11-40`、`src/task-store.js:122-144`）。
 - 面板的「删除任务」向 `/superagent-lite/tasks` 发送 `DELETE`，只接受 owner 和 16 位任务 ID。Worker Session 还活着的运行中 Task、正在合并或发布的 Task 被拒绝；其余 Task 删除记录和 worker 会话映射，分支和 Worktree 保留（`src/board.js:11-48`、`src/task-store.js:103-121`）。
-- 读取面板时会采纳同一 Project 的另一个 Task 为同一 commit 记录的通过审查，把 reviewed HEAD 写回本 Task（`src/git-actions.js:255-299`）。
+- 读取面板时会采纳同一 Project 的另一个 Task 为同一 commit 记录的通过审查，把 reviewed HEAD 写回本 Task（`src/git-actions.js:257-274`、`src/git-actions.js:291-303`）。
 
 ### 并发与幂等
 
-- 面板的 merge、publish、review 和 delete-branch 按 Task ID 串行；同一 Task 的重复动作不会并行执行（`src/git-actions.js:83-92`、`src/git-actions.js:537-547`）。
+- 面板的 merge、publish、review 和 delete-branch 按 Task ID 串行；同一 Task 的重复动作不会并行执行（`src/git-actions.js:85-94`、`src/git-actions.js:562-577`）。
 - 删除 Task 与同一 Task 的状态写入在 `src/task-store.js` 中按记录串行，先读后删；第二次删除返回未找到（`src/task-store.js:103-121`）。
 - 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:138`、`src/board.js:157`）。
 
@@ -202,7 +202,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-87`、`src/review.js:56-71`、`src/continue.js:136`）。
 
-Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:560-579`、`src/merge.js:23-43`）。
+Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:562-577`、`src/merge.js:24-44`）。
 
 ## 不完成时
 
