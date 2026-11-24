@@ -75,6 +75,17 @@ export async function memoryPromptForProject(projectRoot) {
   return memoryText(await store.readMemory(projectRoot))
 }
 
+// The panel shows saved memory and knowledge read-only; without a project it
+// can still show the global scope, which is shared by every project.
+export async function readMemoryView(projectRoot) {
+  const [global, project, knowledge] = await Promise.all([
+    store.readGlobal(),
+    projectRoot === undefined ? undefined : store.readProject(projectRoot),
+    projectRoot === undefined ? [] : store.readKnowledge(projectRoot),
+  ])
+  return project === undefined ? { global, knowledge } : { global, project, knowledge }
+}
+
 export async function registerMemoryContext(ctx, projectRoot) {
   const text = await memoryPromptForProject(projectRoot)
   return ctx.systemPrompt.context({

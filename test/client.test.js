@@ -200,9 +200,10 @@ test('keeps the task list scrollable beside the settings tab', async () => {
   await flush()
   const tree = board.render()
   const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
-  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置'])
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置', '记忆系统'])
   assert.equal(tabs[0].props['aria-selected'], true)
   assert.equal(tabs[1].props['aria-selected'], false)
+  assert.equal(tabs[2].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
@@ -271,6 +272,128 @@ test('the settings tab edits the worker model and concurrency limit', async () =
     maxWorkers: 2,
   })
   assert.match(text(board.render()), /设置已保存/)
+  board.dispose()
+})
+
+test('the memory tab browses global memory, project memory and knowledge read-only', async () => {
+  const requests = []
+  const tasks = [
+    task({ id: 'a', projectRoot: '/two', updatedAt: '2026-02-01T00:00:00.000Z' }),
+    task({ id: 'b', projectRoot: '/one', updatedAt: '2026-01-01T00:00:00.000Z' }),
+  ]
+  const views = {
+    '/one': {
+      global: { userProfile: 'Prefers Chinese reports.' },
+      project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
+      knowledge: [{
+        id: 'k1', text: 'Run npm test before reporting.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      }],
+    },
+    '/two': {
+      global: { userProfile: 'Prefers Chinese reports.' },
+      project: { projectRoot: '/two', responsibilities: 'Watch the second project.', positioning: '' },
+      knowledge: [],
+    },
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      const root = new URL(path, 'http://localhost').searchParams.get('projectRoot')
+      return { ok: true, json: async () => views[root] }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '记忆系统').props.onClick()
+  tree = board.render()
+  // The memory view loads when its tab is first selected.
+  assert.equal(tab(tree, '记忆系统').props['aria-selected'], true)
+  assert.match(text(tree), /正在加载任务/)
+  await flush()
+  tree = board.render()
+  assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
+  assert.equal(tab(tree, '设置').props['aria-selected'], false)
+  assert.match(text(tree), /只读查看保存的项目记忆和知识库/)
+  assert.match(text(tree), /全局记忆/)
+  assert.match(text(tree), /用户画像/)
+  assert.match(text(tree), /Prefers Chinese reports/)
+  assert.match(text(tree), /项目记忆/)
+  assert.match(text(tree), /责任/)
+  assert.match(text(tree), /Watch the second project/)
+  assert.match(text(tree), /定位/)
+  assert.match(text(tree), /未保存/)
+  assert.match(text(tree), /知识库0/)
+  assert.match(text(tree), /暂无知识库条目/)
+  // The most recently updated task's project is the current project.
+  const projectSelect = nodes(tree).find(node => node.type === 'select')
+  assert.equal(projectSelect.props.value, '/two')
+  // Read-only: no inputs, textareas or write controls on the memory tab.
+  assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 0)
+  assert.equal(nodes(tree).filter(node => node.type === 'button' && ['保存', '写入', '删除'].includes(text(node))).length, 0)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'tabpanel').length, 1)
+
+  projectSelect.props.onChange({ target: { value: '/one' } })
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Keep the board accurate/)
+  assert.match(text(tree), /Local-first tools/)
+  assert.doesNotMatch(text(tree), /未保存/)
+  assert.match(text(tree), /知识库1/)
+  assert.match(text(tree), /Run npm test before reporting/)
+  assert.match(text(tree), /更新时间/)
+  const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))
+  assert.deepEqual(memoryRequests.map(request => new URL(request.path, 'http://localhost').searchParams.get('projectRoot')),
+    ['/two', '/one'])
+  for (const request of memoryRequests) {
+    assert.equal(request.options.method, 'GET')
+    assert.equal(request.options.credentials, 'same-origin')
+    assert.equal(request.options.cache, 'no-store')
+    assert.ok(request.options.signal)
+  }
+  board.dispose()
+  assert.ok(requests.every(request => request.options.signal.aborted))
+})
+
+test('the memory tab reports a load failure and can retry from the same panel', async () => {
+  let fail = true
+  const board = setup({
+    fetch: async path => {
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task()] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      return fail
+        ? { ok: false }
+        : {
+            ok: true,
+            json: async () => ({ global: { userProfile: 'Recovered.' }, project: { responsibilities: 'R' }, knowledge: [] }),
+          }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, 'Memory').props.onClick()
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Could not load memory/)
+  fail = false
+  button(tree, 'Refresh').props.onClick()
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Recovered/)
   board.dispose()
 })
 

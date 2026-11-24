@@ -198,6 +198,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
 | `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、提取流程、知识查询/写入工具和轮次归档。 |
 | `src/memory-store.js` | 保存全局/项目记忆、项目知识库、全局/项目 skill 文件和原始归档，并执行字段校验与原子写入。 |
+| `src/memory-panel.js` | 提供 owner-only 只读记忆端点，返回全局记忆、所请求项目的记忆和知识库条目。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务。 |
@@ -226,6 +227,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/memory.test.js` | memory 角色提示词、全局 + 项目提取、skill 写入、纠正覆盖、空结果、transcript 上限、知识工具、注入文本、归档和 schema。 |
 | `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、知识库去重/纠正/删除、skill 文件、归档和损坏文件拒绝。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档和提取失败不影响报告。 |
+| `test/memory-panel.test.js` | 记忆只读端点的 owner 准入、项目根校验、全局/项目记忆与知识库返回和读取失败。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
@@ -288,6 +290,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
 | `/superagent-lite/worker-settings` | `GET`、`POST` | 读取 worker 设置和模型目录，或保存 worker 模型与并发上限 |
+| `/superagent-lite/memory` | `GET` | 只读返回全局记忆、所选项目的项目记忆和知识库条目 |
 
 | 接口 | 值 |
 | --- | --- |
