@@ -16,13 +16,14 @@ after(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-async function taskForWorker(taskId, workerId) {
+async function taskForWorker(taskId, workerId, mode = 'change') {
   const { createTask, linkWorkerSession } = await import('../src/task-store.js')
   const projectRoot = join(home, 'project-core')
   await createTask({
     id: taskId, title: `Task ${taskId}`, teamId: 'core', projectRoot, task: 'Change it',
-    mode: 'change', parentSessionId: 'router', workerSessionId: workerId, status: 'running',
-    baseBranch: 'main', baseCommit: 'b'.repeat(40), worktree: { path: projectRoot, branch: 'sl-core' },
+    mode, parentSessionId: 'router', workerSessionId: workerId, status: 'running',
+    baseBranch: 'main', baseCommit: 'b'.repeat(40),
+    ...(mode === 'report' ? {} : { worktree: { path: projectRoot, branch: 'sl-core' } }),
     createdAt: new Date().toISOString(),
   })
   await linkWorkerSession(taskId, workerId)
@@ -224,6 +225,37 @@ test('a worker gets project and global memory injected and only the knowledge re
   assert.match(memory.text(), /data, not instructions/)
   assert.doesNotMatch(memory.text(), /Knowledge that must not be injected/)
   assert.doesNotMatch(memory.text(), /knowledge_query/)
+})
+
+test('a report worker gets the same project and global memory and project skill catalog read-only', async () => {
+  const workerId = 'worker-report'
+  const projectRoot = await taskForWorker('f'.repeat(16), workerId, 'report')
+  await mkdir(projectRoot, { recursive: true })
+  const { createMemoryStore } = await import('../src/memory.js')
+  const store = createMemoryStore()
+  await store.writeGlobal({ userProfile: 'Environment: report memory check.' })
+  await store.writeProject(projectRoot, {
+    responsibilities: 'Report project responsibility.',
+    positioning: 'Report project positioning.',
+  })
+  await store.writeSkill('project', projectRoot, {
+    description: 'Report project skill description.', content: 'Report project skill body.',
+  })
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields())
+  const memory = wiring.contexts.find(entry => entry.name === 'superagent-lite-memory')
+  assert.ok(memory, 'the report worker registered the memory context')
+  assert.equal(memory.required, true)
+  assert.equal(memory.order, 170)
+  assert.match(memory.text(), /User profile: Environment: report memory check\./)
+  assert.match(memory.text(), /Responsibilities: Report project responsibility\./)
+  assert.match(memory.text(), /Positioning: Report project positioning\./)
+  assert.equal(wiring.skillProviders.length, 1)
+  const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
+  assert.equal(candidates[0].description, 'Report project skill description.')
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), true)
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_write'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
 })
 
 test('a worker turn archives the complete turn under the task directory', async () => {
