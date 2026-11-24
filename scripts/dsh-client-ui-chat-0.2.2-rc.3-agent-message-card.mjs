@@ -10,8 +10,9 @@
  * through three non-`user` sources:
  *
  * - `agent-message`: dispatch, review and memory requests, follow-ups and reports;
- * - `subagent-settled`: the runtime notice that a worker or helper settled;
- * - `superagent-lite-reminder`: the dispatch guard's system reminder.
+ * - `subagent-settled`: the runtime notice that a spawned worker settled;
+ * - `superagent-lite-*`: the dispatch guard's system reminder today, and any
+ *   later plugin-owned status notice.
  *
  * This patch keeps the existing card chrome for those sources whether they woke
  * the Turn or were steered into it, and suppresses the "triggered this response"
@@ -46,11 +47,6 @@ const VERSION = '0.2.2-rc.3'
 const MESSAGE = 'src/client/conversation-nodes/message.ts'
 const TRIGGER_VIEW = 'src/client/chat/TurnTriggerNodeView.tsx'
 const CLIENT_BUNDLE = 'lib/client.js'
-
-// Durable source kinds the plugin delivers to the router. Role messages, the
-// runtime's settled-role notice and the plugin's system reminder all describe a
-// message a reader should expand, so they share the task-card chrome.
-const CARDED_KINDS_SNIPPET = "['agent-message', 'subagent-settled', 'superagent-lite-reminder']"
 
 // Every entry lists the pristine snippet first. A second `old` variant is the
 // snippet written by the earlier agent-message-only patch, so applying over that
@@ -88,12 +84,13 @@ const PATCHES = [
 `,
     ],
     new: `      && context.state.waking === true
-    // Role messages, settled-role notices and system reminders are recorded
-    // messages, not injected context rows; all use the turn-trigger card chrome.
+    // Role messages, settled-role notices and every plugin-owned
+    // (superagent-lite-*) notice are recorded messages, not context rows.
     const cardedNotice = context.state.kind === 'context'
       && context.start?.event.type === 'user/message'
-      && ${CARDED_KINDS_SNIPPET}
-        .includes(context.start.event.data.source.kind)
+      && (context.start.event.data.source.kind === 'agent-message'
+        || context.start.event.data.source.kind === 'subagent-settled'
+        || context.start.event.data.source.kind.startsWith('superagent-lite-'))
     // Human input claimed for Step 1 opens an exchange; Notice-woken Turns and
 `,
   },
@@ -132,7 +129,7 @@ const PATCHES = [
       'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,waking?`turn-trigger`:context.state.kind,',
       'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const agentCard=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.start.event.data.source.kind===`agent-message`;const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,(waking||agentCard)?`turn-trigger`:context.state.kind,',
     ],
-    new: 'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const cardedNotice=context.state.kind===`context`&&context.start?.event.type===`user/message`&&[`agent-message`,`subagent-settled`,`superagent-lite-reminder`].includes(context.start.event.data.source.kind);const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,(waking||cardedNotice)?`turn-trigger`:context.state.kind,',
+    new: 'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const cardedNotice=context.state.kind===`context`&&context.start?.event.type===`user/message`&&(context.start.event.data.source.kind===`agent-message`||context.start.event.data.source.kind===`subagent-settled`||context.start.event.data.source.kind.startsWith(`superagent-lite-`));const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,(waking||cardedNotice)?`turn-trigger`:context.state.kind,',
   },
   {
     file: CLIENT_BUNDLE,

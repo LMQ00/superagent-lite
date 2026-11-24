@@ -4,7 +4,7 @@
 installed Chat client renders a card only for records that open the Turn. A
 record steered into a running router Turn falls back to the plain
 `上下文注入 · <kind>` context row. The patch below makes every role message,
-settled-role status notification and plugin system reminder use the existing
+settled-role status notification and plugin-owned notice use the existing
 task-card chrome, whether it woke the Turn or was steered into it. The patch is
 idempotent, upgrades the earlier agent-message-only patch, and can be reverted.
 
@@ -44,7 +44,7 @@ does not touch any of these contents.
   timestamp, chevron, and an expandable body. `turnTriggerDetails` maps
   `agent-message` to `收到任务消息`, `subagent-settled` to the matching
   completed/aborted/error/token/refusal title, and an unrecognized source such as
-  the plugin reminder to the generic `收到执行请求`.
+  the plugin's `superagent-lite-*` reminder to the generic `收到执行请求`.
 - `context` renders through `ContextInjectionRow`: the `上下文注入` header, the
   source kind beside it, and a form-specific body.
 - A record that wakes the Turn already became a card. The missing case is a
@@ -57,7 +57,7 @@ does not touch any of these contents.
 
 | File | Change |
 | --- | --- |
-| `src/client/conversation-nodes/message.ts` | `agent-message`, `subagent-settled` and `superagent-lite-reminder` also select `turn-trigger` when they did not wake the Turn; the `turn-trigger` data type keeps the optional `waking` flag. |
+| `src/client/conversation-nodes/message.ts` | `agent-message`, `subagent-settled` and every `superagent-lite-*` notice also select `turn-trigger` when they did not wake the Turn; the `turn-trigger` data type keeps the optional `waking` flag. |
 | `src/client/chat/TurnTriggerNodeView.tsx` | The `这条通知触发了本轮回复。` explanation is shown only when `waking !== false`, because a steered message did not open the Turn. |
 | `lib/client.js` | The same three edits in the runtime bundle the browser actually loads. |
 
@@ -65,7 +65,9 @@ No delivery semantics change: every message still arrives at the same point and
 the model sees the same content. The only source change is the helper prompt,
 which records the worker as the `agent-message` sender instead of plain `user`
 input; its text is untouched. The reminder keeps its `superagent-lite-reminder`
-source, so the dispatch guard still does not count it as user input. Other
+source, so the dispatch guard still does not count it as user input; the
+`superagent-lite-*` rule would also card a later plugin-owned status notice
+without another Chat patch. Other
 injected context (`runtime-context`, `skill-catalog`, `working-directory`,
 `agent-instructions`, ...) keeps its compact context row, and a `subagent-settled`
 notice keeps its own card title. A review or memory helper's result is a tool
