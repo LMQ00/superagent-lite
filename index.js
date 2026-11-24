@@ -10,6 +10,7 @@ import { createDispatchGuard } from './src/turn-guard.js'
 import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
+import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import {
@@ -20,6 +21,8 @@ import {
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
+  const catalogGuard = createWorkerSkillCatalogGuard(ctx)
+  ctx.on('agent/pre-step', catalogGuard.preStep)
   const gitManager = createGitManager(ctx)
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
@@ -166,6 +169,7 @@ export async function apply(ctx) {
     const worker = workers.get(agent.id)
     worker?.dispose()
     workers.delete(agent.id)
+    catalogGuard.forget(agent.id)
     if (worker) forgetLanding(worker.taskId)
     dispatchGuard.dispose(agent.session.id)
     if (!lifetime.signal.aborted) track(pumpWorkers(ctx))

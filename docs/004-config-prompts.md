@@ -60,6 +60,8 @@
 
 注入顺序：Router 只读取全局记忆；Worker 创建时读取项目 + 全局记忆，Reviewer 每次审查时读取项目 + 全局记忆；memory 角色收到当前记忆和当前 skill 文本作为输入。skill 的完整内容不进入记忆注入，只由 DSH skill catalog 提供 description，模型需要时用 `skill` 工具加载。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，因此 Worker 在 Worktree 里也能看到；Router 的 skill 根只有全局目录（`src/memory.js`、`router.js`、`src/review.js`、`index.js`、`cordis.patch.yml`）。
 
+Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入全局/项目 skill 后，只拦截仅由 `superagent-shared-memory`、`superagent-project-memory` 变化构成的新 catalog，不向已运行或已结束的 Worker/Reviewer 注入 catalog 更新；之后新派发的会话重新发现并看到新 description（`src/skill-catalog.js`、`index.js`）。
+
 ## 回复规则
 
 Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
@@ -117,8 +119,8 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | `src/` 里的 persona 和工具文字 | 下一次拼装的文本 | Session 或 Worker 创建时，以及之后的回合 |
 | `client.js` 面板字典 | 新的面板文案 | 客户端 bundle 加载时 |
 | Worker 设置 | `~/.dsh/superagent-lite/worker-settings.json` 中的 `workerModel` 和 `maxWorkers` | 启动新 worker 时读取；面板保存后立即影响之后的派发 |
-| 全局记忆与共享 skill | `~/.dsh/superagent-lite/memory/global.json` 中的 `userProfile`，以及 `~/.agents/skills/superagent-shared-memory/SKILL.md` | Router 插件装载时、memory 角色写入后；Worker 和 Reviewer 创建时 |
-| 项目记忆与项目 skill | `~/.dsh/superagent-lite/memory/projects/<hash>.json` 中的 `responsibilities` 和 `positioning`，以及 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md` | Worker 创建时、Reviewer 每次审查前 |
+| 全局记忆与共享 skill | `~/.dsh/superagent-lite/memory/global.json` 中的 `userProfile`，以及 `~/.agents/skills/superagent-shared-memory/SKILL.md` | Router 插件装载时；Worker 和 Reviewer 创建时读取 catalog；已运行会话不热更新 |
+| 项目记忆与项目 skill | `~/.dsh/superagent-lite/memory/projects/<hash>.json` 中的 `responsibilities` 和 `positioning`，以及 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md` | Worker 创建时、Reviewer 每次审查前读取；已运行的 Worker/Reviewer 会话不热更新 catalog |
 | 项目知识库 | `~/.dsh/superagent-lite/memory/knowledge/<hash>.json` | `knowledge_query` 每次查询时读取；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` | 每个 Worker 回合 `turn/end` 时写入；模型工具没有读取入口 |
 

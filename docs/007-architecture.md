@@ -205,6 +205,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/review-scope.js` | 记录 Reviewer 是否读过改动，并拒绝会改变 git 分支或历史的命令。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射。 |
 | `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
+| `src/skill-catalog.js` | 稳定已运行 Worker/Reviewer 会话的 skill catalog，拦截只由 memory skill 变化构成的 catalog 更新。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发决定并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
 | `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
@@ -225,7 +226,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
 | `test/memory.test.js` | memory 角色提示词、全局 + 项目提取、skill 写入、纠正覆盖、空结果、transcript 上限、知识工具、注入文本、归档和 schema。 |
 | `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、知识库去重/纠正/删除、skill 文件、归档和损坏文件拒绝。 |
-| `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档和提取失败不影响报告。 |
+| `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写 skill 后已结束 Worker 不再收到 catalog 更新。 |
+| `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话拦截全局/项目 memory skill 的 catalog 更新，其他 skill 变化和 Router 会话不受影响。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |

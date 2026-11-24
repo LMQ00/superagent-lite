@@ -54,7 +54,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
     agents: { get() {} },
-    agentPresets: { composedPreset() {} },
+    agentPresets: { composedPreset: () => 'superagent-lite-worker' },
     workingDirectory: { get: () => projectRoot },
     subagents: {
       async startActivation(spec) {
@@ -146,6 +146,34 @@ test('the final report triggers the memory role, saves memory and writes skills'
   assert.deepEqual(await store.readSkill('project', projectRoot), {
     description: 'Run the project tests.', content: 'Run npm test before reporting.',
   })
+})
+
+test('a finished worker is not shown a catalog update caused by its own memory skill write', async () => {
+  const workerId = 'worker-catalog'
+  const projectRoot = await taskForWorker('ab'.repeat(8), workerId)
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields({
+    projectSkillDescription: 'Run the project tests.',
+    projectSkillContent: 'Run npm test before reporting.',
+  }))
+  const catalog = (entries, update = false) => ({
+    id: 'catalog',
+    source: { kind: 'skill-catalog', form: 'catalog', ...update ? { update: true } : {}, entries },
+  })
+  const preStep = wiring.listeners.get('agent/pre-step')
+  const initial = catalog([{ name: 'find-skills', description: 'Find skills.' }])
+  const entered = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [initial] }))
+  assert.deepEqual(entered.messages, [initial])
+
+  await wiring.message().execute({
+    message: 'Done. Review approved; tests pass.',
+  }, { agent: wiring.agent, signal: new AbortController().signal })
+
+  const update = catalog([
+    { name: 'find-skills', description: 'Find skills.' },
+    { name: 'superagent-project-memory', description: 'Run the project tests.' },
+  ], true)
+  const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [update] }))
+  assert.deepEqual(decision.messages, [])
 })
 
 test('a worker gets project and global memory injected and only the knowledge query tool', async () => {
