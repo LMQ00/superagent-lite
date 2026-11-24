@@ -11,7 +11,7 @@ Superagent 轻量版把项目工作拆成一条固定链路：用户输入先在
 | 一个 Task 固定一组关系 | 一个 Task 属于一个 Router Session、一个 Team、一个 Project 和一个 Worker Session。Team 与 Project 一经绑定不得改配（`src/task-store.js:70-75`、`src/task-store.js:149-166`）。 |
 | 改动只落在分配的 Worktree | change worker 除 `create_worktree` 外的工具只有在工作目录等于分配的 Worktree 时才放行（`index.js:65-83`）。报告任务在项目 checkout 内使用检查工具，结束前不得改变 checkout（`src/report-tool.js:26-31`）。 |
 | 交付对象是审查过的 HEAD | 合并与发送 PR 都要求 `review.approved === true` 且分支 HEAD 等于 `review.head`（`src/git-actions.js:168-179`）。Worker 的总结和面板状态都不构成交付许可。 |
-| 记忆是数据，不是指令 | 全局记忆所有项目共享，项目记忆和知识库按项目根隔离；Router 只注入全局记忆，Worker 和 Reviewer 注入项目 + 全局；技能只通过 catalog 注入 description，知识库只通过查询工具访问；memory 角色是唯一写者，写入不重复、及时纠错，不能添加需求或授予权限（`src/memory.js`、`src/memory-store.js`）。 |
+| 记忆是数据，不是指令 | 全局记忆所有项目共享，项目记忆按项目根隔离，知识库是全局的；Router 只注入全局记忆，Worker 和 Reviewer 注入项目 + 全局；技能只通过 catalog 注入 description，知识库内容不进入上下文、只通过查询工具访问；memory 角色是唯一写者，宁可不写、不把写入条数当指标，写入不重复、及时纠错，不能添加需求或授予权限（`src/memory.js`、`src/memory-store.js`）。 |
 | 合并必须有人明确授权，并交给 merge worker | 授权来源只有两种：用户直接指示、用户在任务行点击合并（`cordis.patch.yml:44`、`src/worker-prompt.js:62-103`）。用户直接指示的合并请求由 router 派发 `mode=merge`：没有运行中的 merge worker 时新建 Task 并启动 worker；已有运行中的 merge worker 时只把新目标追加到同一个 Task，不另起 worker。merge worker 先把目标分支合入自己的 worktree 分支、审查合并结果，再把 reviewed commit 合入 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:1-68`）。面板行内合并是用户直接执行入口（`src/merge.js:30-109`、`src/git-actions.js:421-437`）。 |
 
 ## 对功能的约束

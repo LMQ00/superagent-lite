@@ -10,7 +10,7 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | --- | --- |
 | DSH Web Host | 运行插件、Session 和面板 |
 | `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
-| 记忆 | 全局/项目记忆、全局/项目 skill、项目知识库，以及 change worker 的原始归档 |
+| 记忆 | 全局/项目记忆、全局/项目 skill、全局知识库，以及 change worker 的原始归档 |
 | 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description |
 | Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
@@ -86,7 +86,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/` |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker 和 Reviewer 用 `knowledge_query` 查询项目知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和全局知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
@@ -111,7 +111,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 需要合并或发送 PR 时，把 Router Session 设为 full access。
 6. 先问一个只读问题：Router 应直接回答，不启动 Worker。
 7. 再要求一个小的文件改动：面板应把审查通过的 Task 显示为「未合并」，并出现「合并」和「提交 PR」；如果审查未通过，先显示「未审查」。
-8. 完成一个 change 任务：memory 角色会更新全局/项目记忆和 skill；下一个 Worker 和 Reviewer 的提示词自动带上这些内容，Worker 可以用 `knowledge_query` 读取项目知识。
+8. 完成一个 change 任务：memory 角色会更新全局/项目记忆和 skill，并可能写入全局知识库；下一个 Worker 和 Reviewer 的提示词自动带上这些内容，Worker 和 Reviewer 可以用 `knowledge_query` / `knowledge_get` 读取全局知识。
 
 ## 升级
 

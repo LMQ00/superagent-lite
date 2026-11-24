@@ -278,7 +278,7 @@ test('the settings tab edits the worker model and concurrency limit', async () =
   board.dispose()
 })
 
-test('the memory tab browses global memory, project memory and knowledge read-only', async () => {
+test('the memory tab browses global memory, project memory and global knowledge read-only', async () => {
   const requests = []
   const tasks = [
     task({ id: 'a', projectRoot: '/two', updatedAt: '2026-02-01T00:00:00.000Z' }),
@@ -289,14 +289,17 @@ test('the memory tab browses global memory, project memory and knowledge read-on
       global: { userProfile: 'Prefers Chinese reports.' },
       project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
       knowledge: [{
-        id: 'k1', text: 'Run npm test before reporting.',
+        id: '1', text: 'Run npm test before reporting.',
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
       }],
     },
     '/two': {
       global: { userProfile: 'Prefers Chinese reports.' },
       project: { projectRoot: '/two', responsibilities: 'Watch the second project.', positioning: '' },
-      knowledge: [],
+      knowledge: [{
+        id: '1', text: 'Run npm test before reporting.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      }],
     },
   }
   const board = setup({
@@ -322,7 +325,7 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   tree = board.render()
   assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
   assert.equal(tab(tree, '设置').props['aria-selected'], false)
-  assert.match(text(tree), /只读查看保存的项目记忆和知识库/)
+  assert.match(text(tree), /只读查看保存的项目记忆和全局知识库/)
   assert.match(text(tree), /全局记忆/)
   assert.match(text(tree), /用户画像/)
   assert.match(text(tree), /Prefers Chinese reports/)
@@ -331,8 +334,8 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   assert.match(text(tree), /Watch the second project/)
   assert.match(text(tree), /定位/)
   assert.match(text(tree), /未保存/)
-  assert.match(text(tree), /知识库0/)
-  assert.match(text(tree), /暂无知识库条目/)
+  assert.match(text(tree), /全局知识库1/)
+  assert.match(text(tree), /Run npm test before reporting/)
   // The most recently updated task's project is the current project.
   const projectSelect = nodes(tree).find(node => node.type === 'select')
   assert.equal(projectSelect.props.value, '/two')
@@ -348,7 +351,7 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   assert.match(text(tree), /Keep the board accurate/)
   assert.match(text(tree), /Local-first tools/)
   assert.doesNotMatch(text(tree), /未保存/)
-  assert.match(text(tree), /知识库1/)
+  assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   assert.match(text(tree), /更新时间/)
   const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))

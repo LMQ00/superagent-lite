@@ -93,6 +93,7 @@ test('the memory helper guard allows read-only inspection and confines its shell
   for (const name of [
     'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh',
     'read_page', 'web_fetch', 'web_search', 'x_search', 'job_output', 'job_list',
+    'knowledge_query', 'knowledge_get',
   ]) {
     assert.equal(check({ name }), undefined, name)
   }
@@ -181,7 +182,7 @@ test('the reviewer guard only refuses write/edit tools', () => {
     'read', 'read_image', 'glob', 'grep', 'read_page', 'web_fetch', 'web_search',
     'x_search', 'job_output', 'job_list', 'job_kill', 'present', 'skill',
     'todo_write', 'working_directory', 'create_worktree', 'review_worker_commit',
-    'message_router', 'submit_review', 'knowledge_query',
+    'message_router', 'submit_review', 'knowledge_query', 'knowledge_get',
   ]) {
     assert.equal(check({ name }), undefined, name)
   }
