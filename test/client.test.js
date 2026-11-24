@@ -5,7 +5,9 @@ import test from 'node:test'
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 
-function setup({ fetch, openSession, language = 'en' }) {
+function setup({ fetch, openSession, language = 'en', timers = {} }) {
+  const schedule = timers.setTimeout ?? setTimeout
+  const cancel = timers.clearTimeout ?? clearTimeout
   let definition
   let dictionary
   const slots = new Map()
@@ -32,12 +34,13 @@ function setup({ fetch, openSession, language = 'en' }) {
       const previous = effects[index]
       if (previous && previous.dependencies.length === dependencies.length &&
           previous.dependencies.every((value, position) => Object.is(value, dependencies[position]))) return
-      previous?.dispose()
+      previous?.dispose?.()
       effects[index] = { dependencies, dispose: effect() }
     },
   }
   runInContext(source, createContext({
     window: { __ModuleLoader__: { load(value) { definition = value } } }, fetch, AbortController, URL,
+    setTimeout: schedule, clearTimeout: cancel,
   }))
   const plugin = definition.factory(name => {
     assert.equal(name, 'react')
@@ -80,7 +83,7 @@ function setup({ fetch, openSession, language = 'en' }) {
       return main.Component({ t: ctx.locale.bind(), ...main.options.inject() })
     },
     dispose() {
-      for (const { dispose } of effects) dispose()
+      for (const { dispose } of effects) dispose?.()
       for (const dispose of applyDisposers.reverse()) dispose()
       assert.equal(slots.size, 0)
       assert.equal(localeDisposed, true)
@@ -437,6 +440,52 @@ test('reports a load error and can refresh without workspace navigation', async 
   tree = board.render()
   assert.match(text(tree), /Not confirmed/)
   assert.equal(nodes(tree).find(node => text(node) === 'Worker session').type, 'span')
+  board.dispose()
+})
+
+test('a queued task carries its own label and becomes running in place when a slot opens', async () => {
+  const requests = []
+  const scheduled = []
+  const cleared = []
+  const responses = [
+    [task({ status: 'running', queued: true })],
+    [task({ status: 'running' })],
+  ]
+  let loads = 0
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') {
+        const tasks = responses[Math.min(loads++, responses.length - 1)]
+        return { ok: true, json: async () => ({ tasks }) }
+      }
+      return { ok: true, json: async () => ({ settings: { maxWorkers: 1 }, limits: { maxWorkers: { min: 1, max: 16 } } }) }
+    },
+    timers: {
+      setTimeout(callback, delay) { scheduled.push({ callback, delay }); return scheduled.length },
+      clearTimeout(id) { cleared.push(id) },
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /排队中/)
+  assert.doesNotMatch(text(tree), /未确认/)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
+  assert.equal(scheduled.length, 1)
+  assert.equal(scheduled[0].delay, 3000)
+
+  await scheduled[0].callback()
+  await flush()
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /排队中/)
+  assert.doesNotMatch(text(tree), /正在加载任务/)
+  assert.match(text(tree), /运行中/)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 2)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').at(-1).options.credentials, 'same-origin')
+  assert.deepEqual(cleared, [1])
   board.dispose()
 })
 
