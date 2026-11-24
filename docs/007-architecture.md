@@ -32,7 +32,7 @@ flowchart TB
   W -->|每轮 turn/end| AR[(原始归档)]
   ME -.->|读取原始会话| W
   ME --> MS[src/memory-store.js]
-  MS --> MF[(全局 + 项目记忆、skill、知识库)]
+  MS --> MF[(全局 + 项目记忆、skill、全局知识库)]
   MS -.->|项目 + 全局注入| W
   MS -.->|全局注入| R
   MS -.->|审查时注入| RV
@@ -42,7 +42,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query`（`index.js`）。它为已认领的 Reviewer 注册 `submit_review` 和 `knowledge_query`，为 memory 角色注册 `knowledge_query` 与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/worker-settings` 三个路由。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。启动队列在 Task 结束和 Worker 释放名额时调用 `pumpWorkers`。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git` 和 `/superagent-lite/worker-settings` 三个路由。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。启动队列在 Task 结束和 Worker 释放名额时调用 `pumpWorkers`。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`。`session/event` 把事件交给派发守卫，并在 Worker 的 `turn/end` 触发原始归档。它不决定路由，也不编辑项目文件。
 
@@ -52,11 +52,11 @@ Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `
 
 ### `src/memory.js`
 
-定义记忆字段、注入文本、memory 角色提示词、提取流程、知识查询/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 角色读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript；知识库通过 `knowledge_query` / `knowledge_write` 访问，只有 memory 角色能写（`src/memory.js`）。
+定义记忆字段、注入文本、memory 角色提示词、提取流程、全局知识库查询/读取/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 角色读取 Worker 的会话记录，但最终报告工具的参数不进入 transcript；知识库通过 `knowledge_query` / `knowledge_get` 读取、通过 `knowledge_write` 写入，只有 memory 角色能写（`src/memory.js`）。
 
 ### `src/memory-store.js`
 
-保存全局记忆、项目记忆、项目知识库、全局/项目 skill 文件和原始归档；项目 skill 目录同时写入 `.git/info/exclude`，避免弄脏项目 checkout。Worker 和 Reviewer 创建时会在各自 scope 注册一个 project-skill provider，从项目 checkout 读取项目 skill，供 catalog 使用。全局记忆是一个 JSON 文档；项目记忆、知识库按规范化项目根哈希分文件；字段校验上限 4,000 字符，skill description 最多 500 字符，知识条目最多 200 条；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；skill 写成 DSH 兼容的 `SKILL.md`；归档位于 `task/archive/`（`src/memory-store.js`）。
+保存全局记忆、项目记忆、全局知识库、全局/项目 skill 文件和原始归档；项目 skill 目录同时写入 `.git/info/exclude`，避免弄脏项目 checkout。Worker 和 Reviewer 创建时会在各自 scope 注册一个 project-skill provider，从项目 checkout 读取项目 skill，供 catalog 使用。全局记忆和知识库各是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符，skill description 最多 500 字符，知识条目最多 200 条；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；skill 写成 DSH 兼容的 `SKILL.md`；归档位于 `task/archive/`（`src/memory-store.js`）。
 
 ### `src/task-store.js`
 
@@ -98,7 +98,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/helper-guard.js`
 
-维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-23`、`src/helper-guard.js:76-117`）。
+维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-23`、`src/helper-guard.js:76-117`）。
 
 ### `src/delivery.js`
 
@@ -138,7 +138,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch、cancel-queued 和 delete-task 动作，并支持勾选多条任务后批量删除。取消排队只对 `queued` 行出现，成功后直接移除该行，不弹窗、不重新加载列表。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。记忆系统标签页只读展示全局/项目记忆和知识库；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。面板不显示设置分组（`client.js:1-923`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch、cancel-queued 和 delete-task 动作，并支持勾选多条任务后批量删除。取消排队只对 `queued` 行出现，成功后直接移除该行，不弹窗、不重新加载列表。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。记忆系统标签页只读展示全局/项目记忆和全局知识库；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。面板不显示设置分组（`client.js:1-923`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
@@ -196,9 +196,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型。 |
 | `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
-| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、提取流程、知识查询/写入工具和轮次归档。 |
-| `src/memory-store.js` | 保存全局/项目记忆、项目知识库、全局/项目 skill 文件和原始归档，并执行字段校验与原子写入。 |
-| `src/memory-panel.js` | 提供 owner-only 只读记忆端点，返回全局记忆、所请求项目的记忆和知识库条目。 |
+| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、提取流程、全局知识库查询/读取/写入工具和轮次归档。 |
+| `src/memory-store.js` | 保存全局/项目记忆、全局知识库、全局/项目 skill 文件和原始归档，并执行字段校验与原子写入。 |
+| `src/memory-panel.js` | 提供 owner-only 只读记忆端点，返回全局记忆、所请求项目的记忆和全局知识库条目。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务。 |
@@ -226,9 +226,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/helper-guard.test.js` | helper 认领、记忆只读工具与 shell 限制、Reviewer 只禁写改工具。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
 | `test/memory.test.js` | memory 角色提示词、全局 + 项目提取、skill 写入、纠正覆盖、空结果、transcript 上限、知识工具、注入文本、归档和 schema。 |
-| `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、知识库去重/纠正/删除、skill 文件、归档和损坏文件拒绝。 |
+| `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、全局知识库去重/片段/纠正/删除、skill 文件、归档和损坏文件拒绝。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写 skill 后已结束 Worker 不再收到 catalog 更新。 |
-| `test/memory-panel.test.js` | 记忆只读端点的 owner 准入、项目根校验、全局/项目记忆与知识库返回和读取失败。 |
+| `test/memory-panel.test.js` | 记忆只读端点的 owner 准入、项目根校验、全局/项目记忆与全局知识库返回和读取失败。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话拦截全局/项目 memory skill 的 catalog 更新，其他 skill 变化和 Router 会话不受影响。 |
 | `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
@@ -264,7 +264,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | Worktree | `<project>/.agents/worktrees/` | worktree 服务 |
 | 全局记忆 | `memory/global.json` | `src/memory.js` 经 `src/memory-store.js` |
 | 项目记忆 | `memory/projects/<sha256(projectRoot)>.json` | `src/memory.js` 经 `src/memory-store.js` |
-| 项目知识库 | `memory/knowledge/<sha256(projectRoot)>.json` | `knowledge_write` 经 `src/memory-store.js` |
+| 全局知识库 | `memory/knowledge.json` | `knowledge_write` 经 `src/memory-store.js` |
 | 全局 skill | `~/.agents/skills/superagent-shared-memory/SKILL.md` | `src/memory.js` 经 `src/memory-store.js` |
 | 项目 skill | `<project>/.dsh/skills/superagent-project-memory/SKILL.md` | `src/memory.js` 经 `src/memory-store.js` |
 | 原始归档 | `task/archive/<sha256(sessionId+seq)>.json` | `index.js` 的 `session/event` 经 `src/memory.js` |
@@ -282,8 +282,9 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
 | `message_router` | Worker | 把最终结论发给 Router；送达后触发 change 任务的 memory 提取 |
-| `knowledge_query` | Worker、Reviewer、memory 角色 | 查询项目知识库；只读 |
-| `knowledge_write` | memory 角色 | 新增、纠正或删除项目知识；只有 memory 角色可见 |
+| `knowledge_query` | Worker、Reviewer、memory 角色 | 按关键词查询全局知识库，返回编号和匹配关键词前后的上下文片段；只读 |
+| `knowledge_get` | Worker、Reviewer、memory 角色 | 按 `knowledge_query` 返回的编号读取完整知识条目；只读 |
+| `knowledge_write` | memory 角色 | 新增、纠正或删除全局知识；只有 memory 角色可见 |
 
 | 端点 | 方法 | 用途 |
 | --- | --- | --- |
@@ -292,7 +293,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `/superagent-lite/git` | `GET` | 返回一个 Task 的提交、改动文件、本地分支、remote 和 `gh` 账号 |
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
 | `/superagent-lite/worker-settings` | `GET`、`POST` | 读取 worker 设置和模型目录，或保存 worker 模型与并发上限 |
-| `/superagent-lite/memory` | `GET` | 只读返回全局记忆、所选项目的项目记忆和知识库条目 |
+| `/superagent-lite/memory` | `GET` | 只读返回全局记忆、所选项目的项目记忆和全局知识库条目 |
 
 | 接口 | 值 |
 | --- | --- |

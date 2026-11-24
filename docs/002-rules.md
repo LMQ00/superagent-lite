@@ -56,7 +56,7 @@
 | 取消排队 | 安装 owner 在「排队中」的 Task 行点击「取消」 | 原子地只移除仍为 `queued` 的 Task 记录和会话映射，之后不会再被派发；任务已离开队列时拒绝 | 否；需要明确点击，运行中或已交付的 Task 没有入口 |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支和 Worktree | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
 | 修改设置 | owner 在面板「设置」保存 | 保存 worker 模型和并发上限，只影响之后启动的 worker | 否；需要 owner 明确点击 |
-| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | memory 角色读取 Worker 原始会话，写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
+| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | memory 角色读取 Worker 原始会话，写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
 
 ## 准入
 
@@ -87,7 +87,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:121`、`index.js:98`）。
 - Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:65-83`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
 - `review_worker_commit` 和 `message_router` 只在 Worker 活跃且位于 Worktree 时可用；`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:65-98`）。
-- report worker 在项目 checkout 中只能使用 `read`、`glob`、`grep`、`read_image`、`bash`、`todo_write`、`knowledge_query`、`skill`，并以 `report_task` 结束；其他工具被拒绝（`index.js:67-73`）。
+- report worker 在项目 checkout 中只能使用 `read`、`glob`、`grep`、`read_image`、`bash`、`todo_write`、`knowledge_query`、`knowledge_get`、`skill`，并以 `report_task` 结束；其他工具被拒绝（`index.js:67-73`）。
 - `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:21-31`）。
 - `message_router` 的报告 1–4,000 字符；Worker 在工作结束时发一次，不发过程进度。`COMPLETED` 只用于已审查且相关检查通过的实现，需要等待的任务不能报 `COMPLETED`（`src/message-router.js:6-25`）。
 - 不属于本 Task 的 follow-up 不执行，并在最终报告里说明。运行中的 Task 仍然完整时报告 `COMPLETED` 并带上未应用的 follow-up；恢复后的 Task 的 follow-up 不属于本 Task 时报告 `BLOCKED`（`src/worker-prompt.js:61-68`）。
@@ -98,7 +98,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree，delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
 - Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:56-71`）。
 - 审查针对已提交的 diff；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:24-29`）。
-- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:6-34`、`src/review.js:125-140`）。Reviewer 可以用 `knowledge_query` 查询项目知识，但不能写入。
+- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:6-34`、`src/review.js:125-140`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局知识，但不能写入。
 - 工具拿到裁决后，还要确认 Reviewer 实际读过改动、Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`（`src/review.js:109-122`）。
 - 面板的 `review` 动作对 `unreviewed` 的 Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:386-407`）。
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:254-269`）。
@@ -109,20 +109,22 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 | 作用域 | 内容 | 写入者 | 读者 |
 | --- | --- | --- | --- |
 | 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（只读） |
-| 项目 | `responsibilities`、`positioning`、项目 skill、知识库 | memory 角色 | Worker、Reviewer、面板（只读） |
+| 项目 | `responsibilities`、`positioning`、项目 skill | memory 角色 | Worker、Reviewer、面板（只读） |
+| 全局知识库 | 可复用、广泛适用的知识 | memory 角色（`knowledge_write`） | Worker、Reviewer、memory 角色（`knowledge_query` / `knowledge_get`）、面板（只读） |
 
-- 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；知识库在 `~/.dsh/superagent-lite/memory/knowledge/<sha256(项目根)>.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
-- 不同项目的项目记忆、项目 skill 和知识库互相不可见；全局记忆和全局 skill 所有项目共享（`src/memory-store.js`）。
+- 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；全局知识库在 `~/.dsh/superagent-lite/memory/knowledge.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
+- 不同项目的项目记忆和项目 skill 互相不可见；全局记忆、全局 skill 和知识库所有项目共享（`src/memory-store.js`）。
 - 项目 skill 写在项目 checkout 的 `.dsh/skills/`，并追加到 `.git/info/exclude`；它由 Worker 作用域的 provider 读取，因此不会弄脏 report 和 merge 要求的干净 checkout。
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-- 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库不整体注入，只通过 `knowledge_query` 查询（`src/memory.js`、`cordis.patch.yml`）。
+- 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收只由 memory skill 变化引起的 catalog 更新，因此不会在最终报告后继续行动（`src/skill-catalog.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
 - memory 角色只在 change worker 的最终报告后触发一次，读取完整原始会话；最终报告工具的参数不进入 transcript（`src/memory.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
-- 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；`knowledge_write` 只对 memory 角色开放，`knowledge_query` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
-- 面板的「记忆系统」标签页经 owner-only `GET /superagent-lite/memory` 只读读取全局记忆、所选项目的项目记忆和知识库；没有写入接口，记忆仍只由 memory 角色维护（`src/memory-panel.js`）。
+- 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
+- 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
+- 面板的「记忆系统」标签页经 owner-only `GET /superagent-lite/memory` 只读读取全局记忆、所选项目的项目记忆和全局知识库；没有写入接口，记忆仍只由 memory 角色维护（`src/memory-panel.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
 - 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口（`src/memory.js`、`src/memory-store.js`）。
 

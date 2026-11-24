@@ -58,7 +58,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | 深度 | `ctx.subagents.resolveMaxDepth()` |
 | 首条消息 | `buildWorkerPrompt` 生成的任务消息 |
 
-Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:149-166`）。同一事件安装工具守卫、注册 Worker 工具和 `knowledge_query`，并把项目 + 全局记忆注册为必需的运行时上下文（`index.js:51-145`、`src/memory.js`）。
+Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:149-166`）。同一事件安装工具守卫、注册 Worker 工具和知识库查询工具，并把项目 + 全局记忆注册为必需的运行时上下文（`index.js:51-145`、`src/memory.js`）。
 
 Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
@@ -83,7 +83,7 @@ memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为
 | 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
 | 输入 | Worker 的完整对话记录（含各轮 follow-up）：`[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长保留首尾 |
 | 输出 | 全局 `userProfile`、`sharedSkillDescription`/`sharedSkillContent`；项目 `responsibilities`、`positioning`、`projectSkillDescription`/`projectSkillContent`；每个字段最多 4,000 字符，skill description 最多 500 字符 |
-| 知识库 | 用 `knowledge_query` 查询；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
+| 知识库 | 用 `knowledge_query` 按关键词查编号和上下文片段，再用 `knowledge_get` 按编号取完整条目；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
 | 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |
 | 写入 | 只覆盖非空且与当前值不同的字段；skill 需要 description 和 content 都非空；全局写 `memory/global.json`，项目写 `memory/projects/<hash>.json`，skill 写对应的 `SKILL.md` |
 | 空结果 | 没有非空更新时不写；触发失败只记录警告，不阻塞最终报告 |

@@ -110,7 +110,7 @@ test('the memory panel reads the default store without exposing write paths', as
     global: { userProfile: 'Prefers concise answers.' },
     project: { responsibilities: 'Keep the panel accurate.', positioning: 'Small local plugin.' },
   })
-  await store.addKnowledge(projectRoot, 'Run npm test before reporting.')
+  await store.addKnowledge('Run npm test before reporting.')
   const handler = createMemoryPanelHandler(owner())
   const result = await request(handler, 'GET', `/superagent-lite/memory?projectRoot=${encodeURIComponent(projectRoot)}`)
   const body = JSON.parse(result.body)
@@ -124,5 +124,5 @@ test('the memory panel reads the default store without exposing write paths', as
 
   const globalOnly = JSON.parse((await request(handler)).body)
   assert.deepEqual(globalOnly.global, { userProfile: 'Prefers concise answers.' })
-  assert.deepEqual(globalOnly.knowledge, [])
+  assert.deepEqual(globalOnly.knowledge, body.knowledge)
 })

@@ -128,6 +128,7 @@ test('a report-only task completes through report_task without a branch, commit,
   assert.equal(guard({ name: 'read' }), undefined)
   assert.equal(guard({ name: 'bash' }), undefined)
   assert.equal(guard({ name: 'knowledge_query' }), undefined)
+  assert.equal(guard({ name: 'knowledge_get' }), undefined)
   assert.equal(guard({ name: 'skill' }), undefined)
   assert.match(guard({ name: 'bash', arguments: { command: 'git push origin main' } }), /Landing is not authorized/)
   assert.match(guard({ name: 'bash', arguments: { command: 'git merge HEAD' } }), /Landing is not authorized/)

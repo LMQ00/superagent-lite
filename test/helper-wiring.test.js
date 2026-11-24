@@ -93,5 +93,5 @@ test('agent/created registers submit_review for a claimed reviewer only', async 
   }
   expectHelper('worker', { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) })
   await listeners.get('agent/created')({ agent: reviewer })
-  assert.deepEqual(tools.map(tool => tool.name), ['submit_review'])
+  assert.deepEqual(tools.map(tool => tool.name), ['submit_review', 'knowledge_query', 'knowledge_get'])
 })

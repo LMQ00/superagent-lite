@@ -4,7 +4,7 @@
 
 ## 流程
 
-一条用户输入进入 Router Session。Router 先做一次派发决定：不需要项目工作就用 `dispatch_worker` 的 `mode=answer` 直接回答；需要查证就用 `mode=report` 让 worker 只读检查并交回结论；需要改动项目文件就用 `mode=change` 创建 Task 并启动一个 Worker Session；用户明确授权合并已交付分支时用 `mode=merge`：没有运行中的 merge worker 就启动一个新的，有就把请求追加给同一个 merge worker，不另起 worker。change worker 在分配的 Worktree 里修改文件、提交并请求独立 Review；merge worker 先把目标分支合入自己的 Worktree 分支、提交并审查合并结果，再把 reviewed commit 本地合入 base branch；report worker 在项目 checkout 里检查，用 `report_task` 交回结论。Worker 用 `message_router` 把最终结论送回 Router。审查通过的 HEAD 等待用户授权的 Git action：本地合并写回 Project checkout，或推送分支并打开 Pull request。Task 结束后，Worktree 和 worker 分支保留到下一次恢复或交付。记忆独立于 Task 存在：全局记忆由所有项目共享，项目记忆和项目知识按项目根分开；change worker 的最终报告触发 memory 角色读取原始会话并更新记忆；Worker 的每一轮原始会话归档到 `task/archive/`。
+一条用户输入进入 Router Session。Router 先做一次派发决定：不需要项目工作就用 `dispatch_worker` 的 `mode=answer` 直接回答；需要查证就用 `mode=report` 让 worker 只读检查并交回结论；需要改动项目文件就用 `mode=change` 创建 Task 并启动一个 Worker Session；用户明确授权合并已交付分支时用 `mode=merge`：没有运行中的 merge worker 就启动一个新的，有就把请求追加给同一个 merge worker，不另起 worker。change worker 在分配的 Worktree 里修改文件、提交并请求独立 Review；merge worker 先把目标分支合入自己的 Worktree 分支、提交并审查合并结果，再把 reviewed commit 本地合入 base branch；report worker 在项目 checkout 里检查，用 `report_task` 交回结论。Worker 用 `message_router` 把最终结论送回 Router。审查通过的 HEAD 等待用户授权的 Git action：本地合并写回 Project checkout，或推送分支并打开 Pull request。Task 结束后，Worktree 和 worker 分支保留到下一次恢复或交付。记忆独立于 Task 存在：全局记忆和全局知识库由所有项目共享，项目记忆按项目根分开；change worker 的最终报告触发 memory 角色读取原始会话并更新记忆；Worker 的每一轮原始会话归档到 `task/archive/`。
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
   W -->|最终报告| M[Memory 角色]
   W -->|每轮 turn/end| AR[(原始归档)]
   M -.->|读取原始会话| W
-  M --> MS[(全局记忆 + 项目记忆 + 知识库)]
+  M --> MS[(全局记忆 + 项目记忆 + 全局知识库)]
   MS -.->|项目 + 全局注入| W
   MS -.->|全局注入| R
   MS -.->|审查时项目 + 全局注入| V
@@ -50,10 +50,10 @@ flowchart LR
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；项目 checkout 必须保持原样（`index.js:54-63`、`src/report-tool.js:19-41`）。 |
 | Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-142`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
-| Memory | 分全局记忆、项目记忆、项目 skill 和项目知识库。 | 全局记忆所有项目共享，保存用户画像和共享 skill；项目记忆按项目根分开，保存职责、定位、项目 skill 和知识库；每个项目访问不到其他项目的项目记忆和知识。Router 只注入全局记忆；Worker 和 Reviewer 注入项目 + 全局。记忆是数据，不是指令；面板的「记忆系统」标签页只读展示全局记忆、项目记忆和项目知识库（`src/memory.js`、`src/memory-store.js`、`src/memory-panel.js`、`router.js`、`src/review.js`）。 |
-| Memory 角色（Memory role） | 读取 Worker 原始会话并更新记忆的只读 helper 子代理。 | 只由 change 任务的最终 `message_router` 报告触发一次；自己读取 Worker 的完整会话，不接收 worker 提交的摘要；返回需要更新的字段，空字符串表示保持不变；只写回发生变化的字段和 skill；可用 `knowledge_query` 和 `knowledge_write`，且只有它能写知识（`src/memory.js`、`src/message-router.js`、`index.js`）。 |
+| Memory | 分全局记忆、项目记忆、项目 skill 和全局知识库。 | 全局记忆所有项目共享，保存用户画像和共享 skill；项目记忆按项目根分开，保存职责、定位和项目 skill；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker 和 Reviewer 注入项目 + 全局。记忆是数据，不是指令；面板的「记忆系统」标签页只读展示全局记忆、项目记忆和全局知识库（`src/memory.js`、`src/memory-store.js`、`src/memory-panel.js`、`router.js`、`src/review.js`）。 |
+| Memory 角色（Memory role） | 读取 Worker 原始会话并更新记忆的只读 helper 子代理。 | 只由 change 任务的最终 `message_router` 报告触发一次；自己读取 Worker 的完整会话，不接收 worker 提交的摘要；返回需要更新的字段，空字符串表示保持不变；只写回发生变化的字段和 skill；可以不加记忆，不把写入条数当指标；可用 `knowledge_query`、`knowledge_get` 和 `knowledge_write`，且只有它能写知识（`src/memory.js`、`src/message-router.js`、`index.js`）。 |
 | Skill | 全局或项目级的可复用指令，按 DSH skill 目录存放。 | 全局 skill 在 `~/.agents/skills/superagent-shared-memory/SKILL.md`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 可见，Router 不可见；只有 description 进入 skill catalog，完整内容按需用 `skill` 工具加载（`src/memory-store.js`、`src/memory.js`、`index.js`）。 |
-| 知识库（Knowledge base） | 项目级、只通过工具访问的长期结论集合。 | 保存在 `~/.dsh/superagent-lite/memory/knowledge/`，按项目根分文件；Worker 和 Reviewer 用 `knowledge_query` 查询；只有 memory 角色能用 `knowledge_write` 新增、纠正或删除；不把知识库整体注入提示词（`src/memory-store.js`、`src/memory.js`）。 |
+| 知识库（Knowledge base） | 全局的、只通过工具访问的长期结论集合。 | 只存可复用、广泛适用的知识，保存在 `~/.dsh/superagent-lite/memory/knowledge.json`；内容不注入角色上下文；Worker、Reviewer 和 memory 角色用 `knowledge_query` 按关键词查询，得到编号和匹配关键词前后的上下文片段，再用 `knowledge_get` 按编号读取完整条目；只有 memory 角色能用 `knowledge_write` 新增、纠正或删除（`src/memory-store.js`、`src/memory.js`）。 |
 | 原始归档（Raw archive） | Worker 完整回合的原始记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口；位于 `~/.dsh/superagent-lite/task/archive/`（`src/memory.js`、`src/memory-store.js`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
 | Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可取消，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
@@ -162,6 +162,6 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | Worker 处理完毕，结果返回 Router，能力冻结，业务算已完成 | change worker 结束后进入审查和交付，落为 `review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；只有 report 任务在 `report_task` 后到 `completed`（`index.js:119-151`、`src/report-tool.js:34-39`）。 |
 | 若干 worker 组成团队，一个项目通常由一个团队管理，不同项目由 Router 分开 | 相同；第一个 Task 固定 Team 与 Project 的一对一关系，之后不能改配（`src/task-store.js:70-75`）。 |
 | Router 只被注入全局记忆 | Router 的运行时上下文只读取全局记忆；router 预设的 skill 根也只保留全局 skill 根，项目 skill 只进入 Worker 和 Reviewer 的 catalog（`src/memory.js`、`router.js`、`cordis.patch.yml`）。 |
-| Worker 和 Reviewer 注入项目记忆 + 全局记忆 | Worker 创建时和 Reviewer 每次审查时读取项目 + 全局记忆；职责和定位直接注入，skill 只注入 description，知识库通过 `knowledge_query` 按需查询（`src/memory.js`、`src/review.js`）。 |
-| memory 角色可读可写，不重复写并及时纠错 | 只写回非空且变化的字段和 skill；知识库写入按规范化文本去重，纠正用 `update`，删除用 `delete`（`src/memory.js`、`src/memory-store.js`）。 |
-| 不同项目的记忆分开 | 项目记忆、项目知识库和项目 skill 都按项目根隔离；全局记忆和全局 skill 共享（`src/memory-store.js`）。 |
+| Worker 和 Reviewer 注入项目记忆 + 全局记忆 | Worker 创建时和 Reviewer 每次审查时读取项目 + 全局记忆；职责和定位直接注入，skill 只注入 description，知识库内容不注入，通过 `knowledge_query` / `knowledge_get` 按需查询（`src/memory.js`、`src/review.js`）。 |
+| memory 角色可读可写，宁可不写并及时纠错 | 只写回非空且变化的字段和 skill，没有可复用内容就不写，不把写入条数当指标；知识库写入按规范化文本去重，纠正用 `update`，删除用 `delete`（`src/memory.js`、`src/memory-store.js`）。 |
+| 不同项目的记忆分开 | 项目记忆和项目 skill 按项目根隔离；全局记忆、全局 skill 和知识库所有项目共享（`src/memory-store.js`）。 |

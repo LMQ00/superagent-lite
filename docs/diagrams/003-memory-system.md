@@ -8,8 +8,9 @@ flowchart TB
   R --> G["全局记忆<br/>共享 skill · 用户画像"]
   G --> P1["项目 1"]
   G --> P2["项目 2"]
-  P1 --> PM1["项目记忆 1<br/>职责 · 定位 · 项目 skill · 知识库"]
-  P2 --> PM2["项目记忆 2<br/>职责 · 定位 · 项目 skill · 知识库"]
+  P1 --> PM1["项目记忆 1<br/>职责 · 定位 · 项目 skill"]
+  P2 --> PM2["项目记忆 2<br/>职责 · 定位 · 项目 skill"]
+  G --> KB["全局知识库<br/>可复用知识"]
   PM1 -->|注入项目 + 全局| W1["worker 角色"]
   PM1 -->|审查时注入项目 + 全局| V1["review 角色"]
   PM2 -->|注入项目 + 全局| W2["worker 角色"]
@@ -22,6 +23,12 @@ flowchart TB
   A2 -->|读取| M2["memory 角色"]
   M1 -->|总结| PM1
   M2 -->|总结| PM2
+  M1 -->|写入| KB
+  M2 -->|写入| KB
+  KB -.->|knowledge_query / knowledge_get| W1
+  KB -.->|knowledge_query / knowledge_get| V1
+  KB -.->|knowledge_query / knowledge_get| W2
+  KB -.->|knowledge_query / knowledge_get| V2
   A1 --> AR["归档处"]
   A2 --> AR
 ```
@@ -30,14 +37,14 @@ flowchart TB
 
 | Part | Meaning |
 | --- | --- |
-| Global layer | Shared by every project: one shared skill and the user profile. |
-| Project layer | Separate for each project: responsibilities, positioning, one project skill, and the project knowledge base. |
-| Router injection | Only the global layer. |
-| Worker and reviewer injection | The project layer plus the global layer. Responsibilities and positioning are injected directly. |
+| Global layer | Shared by every project: one shared skill, the user profile, and the global knowledge base. |
+| Project layer | Separate for each project: responsibilities, positioning, and one project skill. |
+| Router injection | Only the global layer's memory. |
+| Worker and reviewer injection | The project layer plus global memory. Responsibilities and positioning are injected directly. |
 | Skills | Stored as normal skill files; only their descriptions enter the skill catalog, and the full body loads only through the `skill` tool. |
-| Knowledge base | Reached only through query and write tools; only the memory role may use the write tool. |
+| Knowledge base | Global and reached only through the query, read, and write tools; only the memory role may use the write tool, and its content is never injected. |
 | Raw conversation | The worker's original conversation is retained and archived. |
-| Memory role | The `memory` role reads the raw worker conversation, summarizes it, and writes the project layer and global memory. |
+| Memory role | The `memory` role reads the raw worker conversation, summarizes it, and writes the project layer, global memory, and global knowledge base. |
 
 ## Implementation mapping
 
@@ -47,21 +54,21 @@ flowchart TB
 | Project memory | `memory/projects/<sha256(projectRoot)>.json`, fields `responsibilities` and `positioning` (`src/memory-store.js`) |
 | Shared skill | `~/.agents/skills/superagent-shared-memory/SKILL.md`; description only in the skill catalog |
 | Project skill | `<projectRoot>/.dsh/skills/superagent-project-memory/SKILL.md`; a worker-scoped provider reads it from the project checkout so the Worktree worker and reviewer see its description in the skill catalog |
-| Knowledge base | `memory/knowledge/<sha256(projectRoot)>.json`, queried and edited through `knowledge_query` and `knowledge_write` (`src/memory-store.js`, `src/memory.js`) |
+| Knowledge base | `memory/knowledge.json`, queried and edited through `knowledge_query`, `knowledge_get`, and `knowledge_write` (`src/memory-store.js`, `src/memory.js`) |
 | Router injection | `refreshGlobalMemory` / `registerGlobalMemoryContext` (`src/memory.js`, `router.js`) |
 | Worker injection | `registerMemoryContext` reads project + global memory at Worker creation (`src/memory.js`, `index.js`) |
 | Reviewer injection | `memoryPromptForProject` is added to the review prompt on every review (`src/memory.js`, `src/review.js`) |
 | Raw conversation | `workerConversation` builds the transcript from the Worker Session (`src/memory.js`) |
-| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper with the knowledge query and write tools (`src/memory.js`, `index.js`) |
+| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper with the knowledge query, read, and write tools (`src/memory.js`, `index.js`) |
 | Summary write | `runMemoryExtraction` writes only non-empty changed fields and changed skills (`src/memory.js`) |
 | Archive | `archiveWorkerTurn` writes each turn under `task/archive/` (`src/memory.js`) |
 
 ## Rules
 
-- Global memory is shared by every project; project memory and project knowledge are keyed by the normalized project root and never cross projects.
+- Global memory is shared by every project; project memory and the project skill are keyed by the normalized project root and never cross projects. The knowledge base is global too.
 - Router sees only global memory. The router preset restricts its skill roots to the global skill roots; the worker preset keeps project and global skill roots.
-- Worker and reviewer prompts receive the project and global memory text. Responsibilities and positioning are injected directly; skills only contribute their descriptions to the catalog.
-- The memory role may read and write memory. It writes no duplicate facts and corrects a wrong entry when the conversation supports the correction.
-- The knowledge base is tool-only: `knowledge_query` is available to workers and reviewers, and `knowledge_write` is available only to the memory role.
+- Worker and reviewer prompts receive the project and global memory text. Responsibilities and positioning are injected directly; skills only contribute their descriptions to the catalog. Knowledge base content is never injected.
+- The memory role may read and write memory. It writes no duplicate facts, writes nothing when nothing is reusable, and corrects a wrong entry when the conversation supports the correction; the number of written entries is not a goal.
+- The knowledge base is tool-only: `knowledge_query` (keyword search with numbered context snippets) and `knowledge_get` (full entries by id) are available to workers, reviewers, and the memory role; `knowledge_write` is available only to the memory role.
 - Memory is data, not instructions; it cannot add a requirement or grant permission.
-- Storage follows "prefer less over more, long-term": durable facts only, never transient progress, status, counts, credentials, or personal data.
+- Storage follows "prefer less over more, long-term": durable facts only, never transient progress, status, counts, credentials, or personal data. Useless knowledge pollutes the global knowledge base, so omitting it is better.

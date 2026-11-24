@@ -150,13 +150,32 @@ function knowledgeEntry(entry) {
   }
 }
 
-function knowledgeFrom(doc, projectRoot) {
+function knowledgeFrom(doc) {
   if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.version !== VERSION) {
-    throw new Error('Invalid or unsupported project knowledge')
+    throw new Error('Invalid or unsupported knowledge base')
   }
-  if (doc.projectRoot !== projectRoot) throw new Error('Stored knowledge belongs to a different project root')
-  if (!Array.isArray(doc.entries)) throw new Error('Invalid project knowledge entries')
+  if (!Array.isArray(doc.entries)) throw new Error('Invalid knowledge base entries')
   return doc.entries.map(knowledgeEntry)
+}
+
+const KNOWLEDGE_SNIPPET_CONTEXT = 120
+
+function knowledgeSnippet(text, needle) {
+  const limit = KNOWLEDGE_SNIPPET_CONTEXT * 2
+  if (!needle) return text.length > limit ? `${text.slice(0, limit)}…` : text
+  const index = text.toLowerCase().indexOf(needle)
+  if (index < 0) return text
+  const start = Math.max(0, index - KNOWLEDGE_SNIPPET_CONTEXT)
+  const end = Math.min(text.length, index + needle.length + KNOWLEDGE_SNIPPET_CONTEXT)
+  return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`
+}
+
+function nextKnowledgeId(entries) {
+  const highest = entries.reduce((max, entry) => {
+    const numeric = /^\d+$/.test(entry.id) ? Number(entry.id) : 0
+    return Math.max(max, numeric)
+  }, 0)
+  return String(highest + 1)
 }
 
 function skillNameOf(scope) {
@@ -234,8 +253,8 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return join(memoryRoot, 'projects', `${createHash('sha256').update(projectRoot).digest('hex')}.json`)
   }
 
-  function knowledgePath(projectRoot) {
-    return join(memoryRoot, 'knowledge', `${createHash('sha256').update(projectRoot).digest('hex')}.json`)
+  function knowledgePath() {
+    return join(memoryRoot, 'knowledge.json')
   }
 
   function skillPath(scope, projectRoot) {
@@ -311,44 +330,40 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     }
   }
 
-  async function readKnowledge(projectRoot) {
-    const resolved = projectRootOf(projectRoot)
-    const doc = await readDocument(knowledgePath(resolved))
-    return doc === undefined ? [] : knowledgeFrom(doc, resolved)
+  async function readKnowledge() {
+    const doc = await readDocument(knowledgePath())
+    return doc === undefined ? [] : knowledgeFrom(doc)
   }
 
-  async function mutateKnowledge(projectRoot, change) {
-    const resolved = projectRootOf(projectRoot)
-    const path = knowledgePath(resolved)
+  async function mutateKnowledge(change) {
+    const path = knowledgePath()
     return serialize(path, async () => {
       const doc = await readDocument(path)
-      const entries = doc === undefined ? [] : knowledgeFrom(doc, resolved)
+      const entries = doc === undefined ? [] : knowledgeFrom(doc)
       const result = change(entries)
-      if (result.changed) {
-        await writeDocument(path, { version: VERSION, projectRoot: resolved, entries: result.entries })
-      }
+      if (result.changed) await writeDocument(path, { version: VERSION, entries: result.entries })
       return result.value
     })
   }
 
-  async function addKnowledge(projectRoot, value) {
+  async function addKnowledge(value) {
     const text = knowledgeText(value)
-    return mutateKnowledge(projectRoot, entries => {
+    return mutateKnowledge(entries => {
       const existing = entries.find(entry => entry.text === text)
       if (existing) return { changed: false, entries, value: { entry: existing, duplicate: true } }
       if (entries.length >= MAX_KNOWLEDGE_ENTRIES) {
-        throw new RangeError(`Project knowledge is limited to ${MAX_KNOWLEDGE_ENTRIES} entries`)
+        throw new RangeError(`Knowledge base is limited to ${MAX_KNOWLEDGE_ENTRIES} entries`)
       }
       const now = new Date().toISOString()
-      const entry = { id: randomUUID(), text, createdAt: now, updatedAt: now }
+      const entry = { id: nextKnowledgeId(entries), text, createdAt: now, updatedAt: now }
       return { changed: true, entries: [entry, ...entries], value: { entry, duplicate: false } }
     })
   }
 
-  async function updateKnowledge(projectRoot, id, value) {
+  async function updateKnowledge(id, value) {
     const entryId = knowledgeId(id)
     const text = knowledgeText(value)
-    return mutateKnowledge(projectRoot, entries => {
+    return mutateKnowledge(entries => {
       const index = entries.findIndex(entry => entry.id === entryId)
       if (index < 0) throw new Error(`Knowledge entry "${entryId}" was not found`)
       if (entries.some(entry => entry.id !== entryId && entry.text === text)) {
@@ -362,9 +377,9 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function deleteKnowledge(projectRoot, id) {
+  async function deleteKnowledge(id) {
     const entryId = knowledgeId(id)
-    return mutateKnowledge(projectRoot, entries => {
+    return mutateKnowledge(entries => {
       const index = entries.findIndex(entry => entry.id === entryId)
       if (index < 0) throw new Error(`Knowledge entry "${entryId}" was not found`)
       const entry = entries[index]
@@ -372,18 +387,26 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function searchKnowledge(projectRoot, query = '', limit = 10) {
+  async function searchKnowledge(query = '', limit = 10) {
     if (typeof query !== 'string') throw new TypeError('Knowledge query must be a string')
     if (query.length > 500) throw new TypeError('Knowledge query must contain at most 500 characters')
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > KNOWLEDGE_QUERY_LIMIT) {
       throw new TypeError(`Knowledge query limit must be an integer from 1 to ${KNOWLEDGE_QUERY_LIMIT}`)
     }
     const needle = query.trim().toLowerCase()
-    const entries = await readKnowledge(projectRoot)
+    const entries = await readKnowledge()
     return entries
       .filter(entry => !needle || entry.text.toLowerCase().includes(needle))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, limit)
+      .map(entry => ({ ...entry, snippet: knowledgeSnippet(entry.text, needle) }))
+  }
+
+  async function getKnowledge(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) throw new TypeError('Knowledge entry ids are required')
+    const entryIds = ids.map(knowledgeId)
+    const entries = new Map((await readKnowledge()).map(entry => [entry.id, entry]))
+    return entryIds.map(id => ({ id, entry: entries.get(id) }))
   }
 
   async function readSkill(scope, projectRoot) {
@@ -448,6 +471,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     updateKnowledge,
     deleteKnowledge,
     searchKnowledge,
+    getKnowledge,
     readSkill,
     readSkills,
     writeSkill,
