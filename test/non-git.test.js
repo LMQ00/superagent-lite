@@ -282,10 +282,8 @@ async function applyHarness(projectRoot, memoryOutput = {}) {
     userProfile: '',
     responsibilities: '',
     positioning: '',
-    sharedSkillDescription: '',
-    sharedSkillContent: '',
-    projectSkillDescription: '',
-    projectSkillContent: '',
+    sharedSkills: [],
+    projectSkills: [],
     ...memoryOutput,
   }
   const skills = {

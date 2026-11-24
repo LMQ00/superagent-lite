@@ -74,7 +74,12 @@ export function createMemoryPanelHandler(connection, {
         }
         target = { kind, scope, projectRoot, field }
       } else {
-        target = { kind, scope, projectRoot }
+        const name = params.get('name')
+        if (!name) {
+          fail(res, 400, 'A skill name is required')
+          return
+        }
+        target = { kind, scope, projectRoot, name }
       }
     }
     try {

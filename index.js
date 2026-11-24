@@ -16,19 +16,19 @@ import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import {
-  archiveWorkerTurn, createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool, memorySkillNames,
-  registerMemoryContext, registerProjectSkillProvider, runMemoryExtraction,
+  archiveWorkerTurn, createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool,
+  memoryAuthoredSkillNames, registerMemoryContext, registerProjectSkillProvider, runMemoryExtraction,
 } from './src/memory.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
-    ownedSkills: async agent => {
+    authoredSkills: async agent => {
       const parent = agent.session?.header?.parentSession
       const task = await taskForSession(undefined, agent.id)
         ?? (parent === undefined ? undefined : await taskForSession(undefined, parent))
-      return memorySkillNames(task?.projectRoot)
+      return memoryAuthoredSkillNames(task?.projectRoot)
     },
   })
   ctx.on('agent/pre-step', catalogGuard.preStep)
