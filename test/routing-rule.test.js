@@ -3,9 +3,11 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { createContinueTool } from '../src/continue.js'
 import { createDispatchTool } from '../src/dispatch.js'
+import { createWorkerStatusTool } from '../src/worker-status.js'
 
 const dispatch = createDispatchTool({})
 const followUp = createContinueTool({})
+const status = createWorkerStatusTool()
 
 test('both routing tools keep a different business goal out of continue_worker', () => {
   for (const description of [dispatch.description, followUp.description]) {
@@ -60,4 +62,22 @@ test('the router persona names all four modes and defaults merges to a new worke
   assert.match(persona, /when a merge worker is already running for this project, dispatch_worker appends the request to it instead of starting a second one/)
   assert.match(persona, /Never continue the task that owns a branch in order to merge it/)
   assert.match(persona, /continue_worker land=true authorizes only pushing or a pull request, not merging/)
+})
+
+test('worker_status names every router-visible task state and one optional task', () => {
+  assert.equal(status.name, 'worker_status')
+  assert.match(status.description, /queued, running, delivered, cancelled, and failed/)
+  assert.match(status.description, /pass taskId to inspect one task/)
+  assert.match(status.description, /status question instead of dispatching/)
+  assert.match(status.description, /background worker-status notices/)
+  assert.deepEqual(Object.keys(status.parameters.properties), ['taskId'])
+  assert.equal(status.parameters.required, undefined)
+  assert.match(status.parameters.properties.taskId.description, /16-character task ID/)
+})
+
+test('the router persona routes status questions to worker_status and treats notices as background', async () => {
+  const persona = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  assert.match(persona, /or worker_status when the input only asks about worker or task state/)
+  assert.match(persona, /Call worker_status when the input asks whether a task is queued, running, delivered, or cancelled/)
+  assert.match(persona, /A queued task cancelled from the panel or a queued worker that starts arrives as a background worker-status notice, not a new request/)
 })

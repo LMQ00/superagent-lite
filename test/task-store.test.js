@@ -48,11 +48,11 @@ test('task store removes a task and its worker session link', async () => {
   }
 })
 
-test('task store cancels only a queued task and removes its session link', async () => {
+test('task store cancels only a queued task and keeps a cancelled record for status queries', async () => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-lite-'))
   const store = createTaskStore(root)
   try {
-    const queued = { id: '0123456789abcdef', workerSessionId: 'worker-1', status: 'queued' }
+    const queued = { id: '0123456789abcdef', workerSessionId: 'worker-1', status: 'queued', parentSessionId: 'router' }
     const running = { id: 'fedcba9876543210', workerSessionId: 'worker-2', status: 'running' }
     assert.equal(await store.createTask(queued), true)
     assert.equal(await store.createTask(running), true)
@@ -62,10 +62,15 @@ test('task store cancels only a queued task and removes its session link', async
     assert.equal(await store.cancelQueuedTask(queued.id), true)
     assert.equal(await store.readTask(queued.id), undefined)
     assert.equal(await store.taskForSession(undefined, queued.workerSessionId), undefined)
+    const cancelled = (await store.listCancelledTasks()).find(task => task.id === queued.id)
+    assert.equal(cancelled.status, 'cancelled')
+    assert.equal(cancelled.parentSessionId, 'router')
+    assert.equal(typeof cancelled.cancelledAt, 'string')
     assert.equal((await store.readTask(running.id)).status, 'running')
     assert.equal((await store.taskForSession(undefined, running.workerSessionId)).id, running.id)
     await assert.rejects(store.cancelQueuedTask(running.id), /no longer queued/)
     assert.equal((await store.readTask(running.id)).status, 'running')
+    assert.deepEqual((await store.listCancelledTasks()).map(task => task.id), [queued.id])
     assert.equal(await store.cancelQueuedTask(queued.id), false)
   } finally {
     await rm(root, { recursive: true, force: true })
