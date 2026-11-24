@@ -91,6 +91,8 @@ export async function runReview(ctx, agent, task, signal) {
     activation = await ctx.subagents.startActivation({
       provider: 'spawn', parent: agent, cwd: task.worktree.path,
       label: 'Independent code review', delivery: 'caller', signal, maxDepth: 2,
+      // The review request is a message from the worker, not user input.
+      promptSource: { kind: 'agent-message', form: 'relay', senderSessionId: agent.id },
       prompt: [{ type: 'text', text: reviewPrompt({
         task,
         followUps: (task.followUps ?? []).map(item => typeof item === 'string' ? item : item.text),

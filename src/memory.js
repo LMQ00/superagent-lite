@@ -199,6 +199,8 @@ export async function runMemoryExtraction(ctx, agent, caller, signal) {
     activation = await ctx.subagents.startActivation({
       provider: 'spawn', parent: agent,
       delivery: 'caller', label: memoryRole.label, signal, maxDepth: 2,
+      // The distillation request is a message from the worker, not user input.
+      promptSource: { kind: 'agent-message', form: 'relay', senderSessionId: agent.id },
       prompt: [{ type: 'text', text: memoryPrompt({ conversation, ...current, skills }) }],
       outputSchema: memoryOutputSchema,
     })

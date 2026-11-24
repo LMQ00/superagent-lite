@@ -127,6 +127,9 @@ test('the final report triggers the memory role, saves memory and writes skills'
   assert.equal(wiring.activations[0].label, 'Distill memory')
   assert.equal(wiring.activations[0].delivery, 'caller')
   assert.equal(wiring.activations[0].maxDepth, 2)
+  assert.deepEqual(wiring.activations[0].promptSource, {
+    kind: 'agent-message', form: 'relay', senderSessionId: wiring.agent.id,
+  })
   assert.match(wiring.activations[0].prompt[0].text, /You are the memory role/)
   assert.match(wiring.activations[0].prompt[0].text, /\[user\] Implement the change\./)
   assert.match(wiring.activations[0].prompt[0].text, /\[assistant\] Done\. Review approved; tests pass\./)
