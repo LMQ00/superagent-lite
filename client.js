@@ -28,6 +28,7 @@ window.__ModuleLoader__.load({
         batchTasksTitle: 'Delete selected tasks',
         batchTasksHint: 'The selected task records will be removed from this panel. Any worker branch and worktree are kept.',
         batchTasksDeleted: 'Selected tasks deleted.',
+        cancelQueued: 'Cancel', cancelQueuedTitle: 'Cancel the queued task', cancelQueuedDone: 'Queued task cancelled.',
         confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
@@ -76,6 +77,7 @@ window.__ModuleLoader__.load({
         batchTasksTitle: '删除所选任务',
         batchTasksHint: '所选任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
         batchTasksDeleted: '所选任务已删除。',
+        cancelQueued: '取消', cancelQueuedTitle: '取消排队中的任务', cancelQueuedDone: '已取消排队任务。',
         confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
@@ -280,6 +282,7 @@ window.__ModuleLoader__.load({
         external: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
         trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5',
         review: 'M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM12 8v4l3 2',
+        cancel: 'M6 6l12 12M18 6L6 18',
       }[name] }))
     }
 
@@ -546,6 +549,21 @@ window.__ModuleLoader__.load({
         if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
         return value
       }
+      const cancelQueued = async task => {
+        setPending(`${task.id}:cancel`)
+        setError('')
+        setNotice('')
+        try {
+          await removeTask(task.id)
+          setTasks(current => current.filter(item => item.id !== task.id))
+          setSelectedTasks(current => current.filter(id => id !== task.id))
+          setNotice(t('cancelQueuedDone'))
+        } catch (actionError) {
+          setError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('actionFailed'))
+        } finally {
+          setPending('')
+        }
+      }
       const confirmBatch = async () => {
         if (!batch) return
         setBatchPending(true)
@@ -768,6 +786,11 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
                 onClick: () => void openDialog('delete', task),
               }, icon('trash'), t('deleteBranch')),
+              task.queued && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline', disabled: busy,
+                title: t('cancelQueuedTitle'),
+                onClick: () => void cancelQueued(task),
+              }, icon('cancel'), t('cancelQueued')),
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
                 disabled: busy || !deletable, title: deletable ? undefined : t('deleteTaskUnavailable'),

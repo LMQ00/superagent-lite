@@ -37,7 +37,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | `resuming` | 存储状态是 `resuming`，且有活着的 Worker agent | `running` |
 | `running` | 存储状态是 `running`，且有活着的 Worker agent | `running` |
 | `starting` | 存储状态是 `starting`，且有活着的 Worker agent | `running` |
-| `queued` | 存储状态是 `queued`，等待并发名额 | `running`，带「排队中」标签 |
+| `queued` | 存储状态是 `queued`，等待并发名额；可在面板取消 | `running`，带「排队中」标签 |
 
 面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 的文案；当前没有生命周期代码写这些值（`client.js:8-15`、`src/status.js:8-10`）。
 
@@ -58,7 +58,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | 深度 | `ctx.subagents.resolveMaxDepth()` |
 | 首条消息 | `buildWorkerPrompt` 生成的任务消息 |
 
-Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:110-124`）。同一事件安装工具守卫、注册 Worker 工具和 `knowledge_query`，并把项目 + 全局记忆注册为必需的运行时上下文（`index.js:51-145`、`src/memory.js`）。
+Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:38-50`、`src/task-store.js:149-166`）。同一事件安装工具守卫、注册 Worker 工具和 `knowledge_query`，并把项目 + 全局记忆注册为必需的运行时上下文（`index.js:51-145`、`src/memory.js`）。
 
 Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
@@ -105,13 +105,13 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 
 ## 并发
 
-- 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:110-124`）。
+- 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:149-166`）。
 - 并发 worker 上限来自面板「设置」，默认 3，范围 1–16；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/launch-queue.js`）。
-- 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:166-206`、`client.js:348-381`）。
+- 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新；排队中的 Task 也可以取消：面板发送既有 `DELETE /superagent-lite/tasks?taskId=`，服务端在同一 Task 锁内确认状态仍是 `queued` 后移除记录和会话映射，已经离开队列的 Task 返回 `409`，不会在取消后继续启动。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:166-206`、`client.js:348-381`、`src/board.js:14-55`、`src/task-store.js:122-144`）。
 - `mode=merge` 例外：同一 Router Session 和 Project 只有一个活着的 merge worker，新的 merge 请求追加给它，并发的 merge 派发按 Router 和 Project 排队；没有活 Worker Session 的残留运行中 Task 不参与追加（`src/dispatch.js`）。
 - 同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和 memory 角色都以深度 2 启动（`src/review.js`、`src/memory.js`）。
-- 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:142`）。
+- 面板的 Git 动作按 Task ID 串行，单次 HTTP 超时 15 分钟（`src/git-actions.js:81-88`、`src/board.js:157`）。
 - 面板的合并和分支删除按 Project 根串行，共享 checkout 不会被两个面板动作同时切换；merge worker 的目标分支合并发生在自己的 worktree 内，不占共享 checkout（`src/merge.js:14-26`、`src/merge-tool.js:13-64`）。
 - Worktree 服务配置 `retainOnArchive: true`，Worker 结束后保留分支和检出，供恢复和交付读取（`cordis.patch.yml:1-7`）。
 
@@ -137,7 +137,7 @@ change 和 merge 任务的 Worker 回合按以下顺序落定（`index.js:119-15
 
 report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:128-131`）。
 
-安装 owner 也可以从面板删除 Task 记录。删除移除记录和 worker 会话映射，不结束 Worker Session，也不回收 worker 分支或 Worktree；Worker Session 还活着的运行中 Task、`merging` 或 `publishing` 中的 Task 不能删除（`src/board.js:14-45`、`src/task-store.js:103-121`）。
+安装 owner 也可以从面板删除 Task 记录。删除移除记录和 worker 会话映射，不结束 Worker Session，也不回收 worker 分支或 Worktree；Worker Session 还活着的运行中 Task、`merging` 或 `publishing` 中的 Task 不能删除（`src/board.js:11-48`、`src/task-store.js:103-121`）。
 
 不需要 Worker 的输入不是 Task：`dispatch_worker` 收到 `mode=answer` 时直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录，回合直接回答（`src/dispatch.js:63`）。
 
@@ -155,7 +155,7 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 ### Host 重启或插件重载
 
-Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签；`queued` 显示「排队中」，不算未确认（`src/board.js:48-62`）。这样的残留 merge Task 不会被新的 merge 请求追加；新的请求会新派发 merge worker。
+Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签；`queued` 显示「排队中」，不算未确认（`src/board.js:60-74`）。这样的残留 merge Task 不会被新的 merge 请求追加；新的请求会新派发 merge worker。
 
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入；已有 `queued` 的同名 Task 直接返回，不重复入队（`src/dispatch.js:51-58`）。
 

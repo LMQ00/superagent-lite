@@ -16,7 +16,7 @@ const {
 const { createSettingsPanelHandler } = await import('../src/settings-panel.js')
 const { createDispatchTool } = await import('../src/dispatch.js')
 const { occupiedSlots, pumpWorkers } = await import('../src/launch-queue.js')
-const { readTask, updateTask } = await import('../src/task-store.js')
+const { cancelQueuedTask, readTask, updateTask } = await import('../src/task-store.js')
 
 after(() => rm(home, { recursive: true, force: true }))
 beforeEach(async () => saveWorkerSettings(defaultWorkerSettings()))
@@ -197,6 +197,16 @@ test('dispatch gives new workers the configured model and queues tasks beyond th
   assert.deepEqual(activations[1].agentOptions, {
     provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'high',
   })
+
+  const third = await dispatch.execute({
+    mode: 'change', title: 'Third', teamId: 'team-queue', task: 'Third change', worktreeName: 'third-worker',
+  }, exec('third'))
+  assert.equal(third.status, 'queued')
+  assert.equal(await cancelQueuedTask(third.taskId), true)
+  assert.equal(await readTask(third.taskId), undefined)
+  await updateTask(second.taskId, { status: 'awaiting-merge' })
+  await pumpWorkers(ctx)
+  assert.equal(activations.length, 2)
 })
 
 test('a blank worker model needs no override and reviews consume no extra slot', async () => {
