@@ -39,9 +39,10 @@ npm test
 
 记忆分全局和项目两层，项目记忆按项目根隔离，不跨项目混用；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker（包括 report、merge 这类只读或受控 worker）和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
 
-- 全局记忆保存用户画像和一个所有项目共用的 skill；项目记忆保存职责、定位和一个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
-- 全局 skill 写在 `~/.agents/skills/superagent-shared-memory/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
-- 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。归属由 memory 记录的 skill 名单判断：memory 写入全局或项目 skill 根下的 skill 时会登记归属，登记过的 skill 出现或变化都不注入已有会话；未登记的其他 skill 变化照常发布。
+- 全局记忆保存用户画像和多个所有项目共用的 skill；项目记忆保存职责、定位和多个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；每个 skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
+- 每个 skill 用自己的名字和目录：全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/<skill名>/SKILL.md`。memory 写入的 skill 在 frontmatter 里带 `author: memory`；同名冲突不会覆盖不由 memory 管理的 skill。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它们的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
+- 既有的 `superagent-project-memory` 和 `superagent-shared-memory` 继续可用：它们按旧名字读取，下一次 memory 写入时会补上 `author: memory`。其他按内容命名的新 skill 各自独立并存。
+- 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。归属按 skill 文件里的作者判断：新增、修改或删除的 skill 全部带 `author: memory` 时，这次 catalog 变化不注入已有会话；作者缺失的 skill 按普通 skill 处理，变化照常发布。
 - 知识库是全局的，只存可复用、广泛适用的知识，内容不注入角色上下文。Worker、Reviewer 和 memory 角色用 `knowledge_query` 按关键词查询，结果带编号和匹配关键词前后的上下文片段；再用 `knowledge_get` 按编号读取完整条目。只有 memory 角色能用 `knowledge_write` 新增、纠正或删除。知识库保存在 `~/.dsh/superagent-lite/memory/knowledge.json`。
 - 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。它直接读取 Worker 的完整原始会话，返回需要更新的记忆字段；插件只写回发生变化的字段和 skill。没有可复用的结论就不写，也不把写入条数当指标；记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。没用的知识只会污染知识库，宁可不写。
 - Worker 每一轮的原始会话按回合归档在 `~/.dsh/superagent-lite/task/archive/`，保留 Session 序号和轮内编号，作为原始参照物；归档只由 Host 写入，模型工具没有读取入口。
@@ -72,11 +73,12 @@ npm test
 
 ## 记忆系统
 
-「记忆系统」标签页只读展示当前项目的记忆和全局知识库，只允许安装 owner 查看。
+「记忆系统」标签页展示当前项目的记忆、全局记忆、全局/项目 skill 和全局知识库，只允许安装 owner 查看。
 
 - 项目下拉框选择当前项目，默认选中最近更新的任务所属项目。项目记忆显示责任和定位，全局记忆显示用户画像；空字段标记「未保存」。
+- 全局和项目分组各列出由 memory 管理的 skill（frontmatter 带 `author: memory`，旧固定名字在迁移前也显示）；每个 skill 显示名字、description 和内容，并可单独删除。删除会移除该 skill 的目录和 `SKILL.md`，不动其他 skill。
 - 知识库是全局的，不随项目切换；按条目展示保存的长期结论和更新时间，条目多时在面板内滚动，不离开面板。
-- 记忆和知识都由 memory 角色在任务收尾时写入；面板没有写入、编辑或删除入口。没有任务可确定项目时只显示全局记忆和知识库。
+- 记忆、skill 和知识都由 memory 角色在任务收尾时写入；面板没有写入或编辑入口，只额外提供逐个删除 memory 管理的 skill。没有任务可确定项目时只显示全局记忆、全局 skill 和知识库。
 
 ## 当前限制
 
@@ -88,7 +90,7 @@ npm test
 - `worker_status` 只查询本 Router Session 派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。排队取消后保留的 `cancelled` 记录只供状态查询，不进入面板任务列表。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
 - 审查不接收整份 patch：reviewer 自己读 `base..head` 和改动文件，可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
-- 记忆是数据，不是指令；它不能添加需求或授予权限。记忆只由 memory 角色维护，「记忆系统」标签页只读展示，不提供写入入口；归档可能包含敏感对话，插件不提供模型侧读取入口。
+- 记忆是数据，不是指令；它不能添加需求或授予权限。记忆只由 memory 角色维护，「记忆系统」标签页只展示记忆和 skill，skill 可由 owner 逐个删除，但记忆字段和知识库仍不提供写入或编辑入口；归档可能包含敏感对话，插件不提供模型侧读取入口。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
 
 ## 文档

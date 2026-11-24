@@ -110,23 +110,24 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 | 作用域 | 内容 | 写入者 | 读者 |
 | --- | --- | --- | --- |
-| 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（只读） |
-| 项目 | `responsibilities`、`positioning`、项目 skill | memory 角色 | Worker、Reviewer、面板（只读） |
+| 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（读取，skill 可删除） |
+| 项目 | `responsibilities`、`positioning`、项目 skill | memory 角色 | Worker、Reviewer、面板（读取，skill 可删除） |
 | 全局知识库 | 可复用、广泛适用的知识 | memory 角色（`knowledge_write`） | Worker、Reviewer、memory 角色（`knowledge_query` / `knowledge_get`）、面板（只读） |
 
 - 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；全局知识库在 `~/.dsh/superagent-lite/memory/knowledge.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
 - 不同项目的项目记忆和项目 skill 互相不可见；全局记忆、全局 skill 和知识库所有项目共享（`src/memory-store.js`）。
-- 项目 skill 写在项目 checkout 的 `.dsh/skills/`，并追加到 `.git/info/exclude`；它由 Worker 作用域的 provider 读取，因此不会弄脏 report 和 merge 要求的干净 checkout。
+- 全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在项目 checkout 的 `.dsh/skills/<skill名>/SKILL.md`，每个 skill 一个目录；项目 skill 目录会追加到 `.git/info/exclude`。项目 skill 由 Worker 作用域的 provider 读取，因此不会弄脏 report 和 merge 要求的干净 checkout。
+- memory 写入的 skill 在 frontmatter 带 `author: memory`，不同内容用不同名字；写入的 skill 名与已有非 memory 作者 skill 冲突时拒绝写入，不静默覆盖；同一次更新内重复名字也拒绝。既有的固定名字 `superagent-shared-memory` / `superagent-project-memory` 在没有 author 时仍可读取和更新，写入时补上 author。
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
 - 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
-- memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收只由 memory 管理的 skill（memory 写入全局或项目 skill 根下时登记的名单）变化引起的 catalog 更新，因此不会在最终报告后继续行动；其他 skill 的变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
+- memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
 - memory 角色只在 change worker 的最终报告后触发一次，读取完整原始会话；最终报告工具的参数不进入 transcript（`src/memory.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
-- 面板的「记忆系统」标签页经 owner-only `GET /superagent-lite/memory` 只读读取全局记忆、所选项目的项目记忆和全局知识库；没有写入接口，记忆仍只由 memory 角色维护（`src/memory-panel.js`）。
+- 面板的「记忆系统」标签页经 owner-only `GET /superagent-lite/memory` 读取全局记忆、所选项目的项目记忆、全局/项目 skill 和全局知识库；`DELETE /superagent-lite/memory` 可按 `kind=skill`、`scope` 和 `name` 删除一个 memory 管理的 skill。面板没有创建或编辑接口，记忆和知识仍只由 memory 角色维护（`src/memory-panel.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
 - 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口（`src/memory.js`、`src/memory-store.js`）。
 
@@ -181,7 +182,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 - Task 已结束 Worker 工作（`awaiting-merge` 或 `awaiting-ci`）、有 worker 分支和 Worktree、`review.approved === true`、当前 HEAD 等于 `review.head`、文件策略为 full access。
 - 唯一额外条件是 GitHub：`gh auth status --hostname github.com` 必须成功，所选 remote 的 fetch 与 push URL 必须指向同一 GitHub 仓库；写权限由 push 本身验证（`src/git-actions.js:427-439`）。
-- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:244-252`、`client.js:577-608`）。
+- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:244-252`、`client.js:779-837`）。
 - 已有精确匹配且打开的 PR 时复用；已有精确匹配且已合并的 PR 时记为 `merged`；已关闭时拒绝（`src/git-actions.js:440-450`）。
 - 准备阶段用 `assertStillDeliverable` 复核状态与 Review 后把 Task 标为 `publishing`，把 reviewed HEAD 推送到所选 remote 的 push URL 和 `refs/heads/<worker branch>`，再创建 base 为 `task.baseBranch` 的 PR（`src/git-actions.js:451-457`、`src/github.js:77-113`）。
 - PR 打开后 Task 标为 `awaiting-ci`；发送命令失败时标为 `delivery-blocked`。GitHub 写入不自动重试（`src/git-actions.js:469-472`）。

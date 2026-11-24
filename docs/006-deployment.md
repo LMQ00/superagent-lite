@@ -11,7 +11,7 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | DSH Web Host | 运行插件、Session 和面板 |
 | `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
 | 记忆 | 全局/项目记忆、全局/项目 skill、全局知识库，以及 change worker 的原始归档 |
-| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断另外读取 memory 登记的 skill 名单 |
+| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/<skill名>/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断读取这些 skill 的 `author` frontmatter |
 | Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
 | GitHub remote | 可选；发送 PR 需要，合并不需要 |
@@ -86,20 +86,20 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 排队变化 | 排队中的 Worker 开始执行、排队中的 Task 被取消时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。取消会在 `tasks/cancelled/` 留下墓碑供 `worker_status` 查询，面板列表仍移除该行 |
-| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/` 下 memory 登记为它管理的目录 |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和全局知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/` |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许 owner 删除 memory 管理的 skill。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、记忆读取、Git 动作、任务删除或排队取消成功 |
-| `400` | 任务 ID、JSON 请求体或项目根不对 |
+| `200` | 列表、记忆读取、skill 删除、Git 动作、任务删除或排队取消成功 |
+| `400` | 任务 ID、JSON 请求体、项目根、删除类型、scope 或 skill 名不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
 | `404` | Git 详情、任务删除或排队取消找不到 Task |
 | `405` | 方法不被该端点接受 |
-| `409` | Git 动作被拒绝或失败、任务删除或排队取消被拒绝，或记忆读取失败 |
+| `409` | Git 动作被拒绝或失败、任务删除或排队取消被拒绝、记忆读取失败或 skill 删除失败 |
 | `413` | Git 动作请求体超过 4 KB |
 | `415` | 动作请求体不是 `application/json` |
 
@@ -123,7 +123,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:60-74`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:60-74`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 

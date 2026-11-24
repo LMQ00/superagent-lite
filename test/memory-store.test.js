@@ -98,7 +98,7 @@ test('the knowledge file is global and rejects malformed documents', async () =>
   await assert.rejects(store.readKnowledge(), /Invalid knowledge base entries/)
 })
 
-test('global and project skills use their own files and only the description is read for the catalog', async () => {
+test('memory writes named skills to their own directories with the memory author', async () => {
   const project = join(root, 'project-skill')
   assert.equal(await store.readSkill('global', project), undefined)
   assert.equal(await store.readSkill('project', project), undefined)
@@ -110,28 +110,75 @@ test('global and project skills use their own files and only the description is 
     description: 'How to work on this project.',
     content: 'Run npm test before reporting.',
   })
+  await store.writeSkill('project', project, {
+    name: 'superagent-lite-test-conventions',
+    description: 'How tests are written here.',
+    content: 'Prefer node --test.',
+  })
   assert.deepEqual(await store.readSkill('global', project), {
     description: 'Reusable inspection guidance across projects.',
     content: 'Inspect the repository before changing it.',
+    author: 'memory',
   })
   assert.deepEqual(await store.readSkill('project', project), {
     description: 'How to work on this project.',
     content: 'Run npm test before reporting.',
+    author: 'memory',
   })
   const globalFile = join(agentsHome, 'skills', 'superagent-shared-memory', 'SKILL.md')
   const projectFile = join(project, '.dsh', 'skills', 'superagent-project-memory', 'SKILL.md')
-  assert.match(await readFile(globalFile, 'utf8'), /^---\nname: superagent-shared-memory\ndescription: "Reusable inspection guidance across projects\."\n---/)
+  const secondFile = join(project, '.dsh', 'skills', 'superagent-lite-test-conventions', 'SKILL.md')
+  assert.match(await readFile(globalFile, 'utf8'), /^---\nname: superagent-shared-memory\nauthor: memory\ndescription: "Reusable inspection guidance across projects\."\n---/)
   assert.match(await readFile(projectFile, 'utf8'), /Run npm test before reporting\./)
+  assert.match(await readFile(secondFile, 'utf8'), /name: superagent-lite-test-conventions\nauthor: memory/)
   assert.deepEqual(await store.readSkills(project), {
-    global: { description: 'Reusable inspection guidance across projects.', content: 'Inspect the repository before changing it.' },
-    project: { description: 'How to work on this project.', content: 'Run npm test before reporting.' },
+    global: [{
+      name: 'superagent-shared-memory',
+      description: 'Reusable inspection guidance across projects.',
+      content: 'Inspect the repository before changing it.',
+      author: 'memory',
+    }],
+    project: [
+      {
+        name: 'superagent-lite-test-conventions',
+        description: 'How tests are written here.',
+        content: 'Prefer node --test.',
+        author: 'memory',
+      },
+      {
+        name: 'superagent-project-memory',
+        description: 'How to work on this project.',
+        content: 'Run npm test before reporting.',
+        author: 'memory',
+      },
+    ],
   })
   await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
 })
 
-test('memory records the skills it writes and reports them as owned', async () => {
-  const project = join(root, 'project-owned-skills')
-  const other = join(root, 'project-owned-skills-other')
+test('a same-name conflict does not overwrite a skill memory does not manage', async () => {
+  const project = join(root, 'project-skill-conflict')
+  await mkdir(join(project, '.dsh', 'skills', 'manual-skill'), { recursive: true })
+  const manualFile = join(project, '.dsh', 'skills', 'manual-skill', 'SKILL.md')
+  const manual = '---\nname: manual-skill\nauthor: someone-else\ndescription: "Manual."\n---\n\nManual body.\n'
+  await writeFile(manualFile, manual)
+  await assert.rejects(store.writeSkill('project', project, {
+    name: 'manual-skill', description: 'Memory copy.', content: 'New body.',
+  }), /not managed by memory/)
+  assert.equal(await readFile(manualFile, 'utf8'), manual)
+  await mkdir(join(project, '.dsh', 'skills', 'authorless-skill'), { recursive: true })
+  const authorlessFile = join(project, '.dsh', 'skills', 'authorless-skill', 'SKILL.md')
+  const authorless = '---\nname: authorless-skill\ndescription: "No author."\n---\n\nBody.\n'
+  await writeFile(authorlessFile, authorless)
+  await assert.rejects(store.writeSkill('project', project, {
+    name: 'authorless-skill', description: 'Memory copy.', content: 'New body.',
+  }), /not managed by memory/)
+  assert.equal(await readFile(authorlessFile, 'utf8'), authorless)
+})
+
+test('memory-authored skills are identified by their author field', async () => {
+  const project = join(root, 'project-authored-skills')
+  const other = join(root, 'project-authored-skills-other')
   await store.writeSkill('global', project, {
     description: 'Shared inspection skill.', content: 'Inspect first.',
   })
@@ -144,20 +191,41 @@ test('memory records the skills it writes and reports them as owned', async () =
   })
   await mkdir(join(project, '.dsh', 'skills', 'manual-skill'), { recursive: true })
   await writeFile(join(project, '.dsh', 'skills', 'manual-skill', 'SKILL.md'),
-    '---\nname: manual-skill\ndescription: "Not memory-owned."\n---\n\nBody.\n')
-  assert.deepEqual([...(await store.ownedSkillNames(project))].sort(), [
+    '---\nname: manual-skill\nauthor: someone-else\ndescription: "Not memory-owned."\n---\n\nBody.\n')
+  await mkdir(join(project, '.dsh', 'skills', 'authorless-skill'), { recursive: true })
+  await writeFile(join(project, '.dsh', 'skills', 'authorless-skill', 'SKILL.md'),
+    '---\nname: authorless-skill\ndescription: "No author."\n---\n\nBody.\n')
+  assert.deepEqual([...(await store.memoryAuthoredSkillNames(project))].sort(), [
     'superagent-lite-test-conventions', 'superagent-project-memory', 'superagent-shared-memory',
   ])
-  assert.equal((await store.ownedSkillNames(project)).has('manual-skill'), false)
-  assert.deepEqual([...(await store.ownedSkillNames(other))].sort(), [
-    'superagent-project-memory', 'superagent-shared-memory',
-  ])
-  assert.deepEqual([...(await store.ownedSkillNames())].sort(), [
+  assert.equal((await store.memoryAuthoredSkillNames(project)).has('manual-skill'), false)
+  assert.equal((await store.memoryAuthoredSkillNames(project)).has('authorless-skill'), false)
+  assert.deepEqual([...(await store.memoryAuthoredSkillNames(other))].sort(), [
     'superagent-shared-memory',
   ])
-  assert.deepEqual(await store.readSkill('project', project, 'superagent-lite-test-conventions'), {
-    description: 'Test conventions.', content: 'Run the suite.',
-  })
+  assert.deepEqual([...(await store.memoryAuthoredSkillNames())].sort(), [
+    'superagent-shared-memory',
+  ])
+  assert.equal(await store.deleteSkill('project', project, 'superagent-lite-test-conventions'), true)
+  assert.equal(await store.readSkill('project', project, 'superagent-lite-test-conventions'), undefined)
+  assert.equal((await store.memoryAuthoredSkillNames(project)).has('superagent-lite-test-conventions'), false)
+  await assert.rejects(store.deleteSkill('project', project, 'manual-skill'), /not managed by memory/)
+})
+
+test('a legacy skill without an author is managed until memory rewrites it', async () => {
+  const project = join(root, 'project-legacy-skill')
+  const file = join(project, '.dsh', 'skills', 'superagent-project-memory', 'SKILL.md')
+  await mkdir(join(project, '.dsh', 'skills', 'superagent-project-memory'), { recursive: true })
+  await writeFile(file, '---\nname: superagent-project-memory\ndescription: "Legacy skill."\n---\n\nOld body.\n')
+  assert.deepEqual(await store.readSkills(project).then(value => value.project.map(skill => skill.name)), [
+    'superagent-project-memory',
+  ])
+  assert.deepEqual([...(await store.memoryAuthoredSkillNames(project))], ['superagent-shared-memory'])
+  await store.writeSkill('project', project, { description: 'Legacy skill.', content: 'New body.' })
+  assert.match(await readFile(file, 'utf8'), /author: memory/)
+  assert.deepEqual([...(await store.memoryAuthoredSkillNames(project))].sort(), [
+    'superagent-project-memory', 'superagent-shared-memory',
+  ])
 })
 
 test('a project skill is kept out of the project checkout status through .git/info/exclude', async () => {

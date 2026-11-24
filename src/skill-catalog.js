@@ -4,9 +4,10 @@ export const WORKER_PRESET = 'superagent-lite-worker'
 // session started. Memory-owned skills are written while the reporting worker
 // is still finishing, and a replacement catalog at that point makes an already
 // delivered session act again; later tasks read the new description when they
-// are created. `ownedSkills` reports the current memory-owned names from the
-// ownership record memory keeps when it writes a skill, so this guard never
-// guesses from names.
+// are created. Skills memory writes carry `author: memory` in their
+// frontmatter. The callback reads those authors from the skill files, so this
+// guard never relies on a separate name list. A skill without an author keeps
+// normal catalog behavior.
 function changedSkillNames(before, after) {
   const previous = new Map(before.map(entry => [entry.name, entry.description]))
   const next = new Map(after.map(entry => [entry.name, entry.description]))
@@ -14,8 +15,14 @@ function changedSkillNames(before, after) {
   return [...names].filter(name => previous.get(name) !== next.get(name))
 }
 
-export function createWorkerSkillCatalogGuard(ctx, { ownedSkills = () => new Set() } = {}) {
+function removedSkillNames(before, after) {
+  const names = new Set(after.map(entry => entry.name))
+  return new Set(before.map(entry => entry.name).filter(name => !names.has(name)))
+}
+
+export function createWorkerSkillCatalogGuard(ctx, { authoredSkills = async () => new Set() } = {}) {
   const baselines = new Map()
+  const authored = new Map()
 
   async function preStep({ agent }, next) {
     const decision = await next()
@@ -26,6 +33,7 @@ export function createWorkerSkillCatalogGuard(ctx, { ownedSkills = () => new Set
     const entries = catalog.source.entries
     if (catalog.source.update !== true) {
       baselines.set(agent.id, entries)
+      authored.set(agent.id, await authoredSkills(agent))
       return decision
     }
     const baseline = baselines.get(agent.id)
@@ -34,8 +42,15 @@ export function createWorkerSkillCatalogGuard(ctx, { ownedSkills = () => new Set
     }
     const changed = changedSkillNames(baseline, entries)
     if (changed.length > 0) {
-      const owned = await ownedSkills(agent)
-      if (changed.every(name => owned.has(name))) {
+      const current = await authoredSkills(agent)
+      const previous = authored.get(agent.id) ?? new Set()
+      const removed = removedSkillNames(baseline, entries)
+      // A file that was deleted has no frontmatter left to read, so a removed
+      // name counts as memory-authored when the last observation saw its
+      // author. Added and modified skills use the current author.
+      const owned = name => current.has(name) || (removed.has(name) && previous.has(name))
+      authored.set(agent.id, new Set([...previous, ...current]))
+      if (changed.every(name => owned(name))) {
         return { ...decision, messages: decision.messages.filter(message => message !== catalog) }
       }
     }
@@ -45,6 +60,7 @@ export function createWorkerSkillCatalogGuard(ctx, { ownedSkills = () => new Set
 
   function forget(agentId) {
     baselines.delete(agentId)
+    authored.delete(agentId)
   }
 
   return { preStep, forget }

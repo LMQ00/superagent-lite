@@ -80,7 +80,7 @@ test('the memory panel serves the global scope when no project is given', async 
   assert.deepEqual(JSON.parse(result.body), { global: { userProfile: 'Global only.' }, knowledge: [] })
 })
 
-test('the memory panel rejects invalid project roots and non-GET methods', async () => {
+test('the memory panel rejects invalid project roots and unsupported methods', async () => {
   const reads = []
   const handler = createMemoryPanelHandler(owner(), { read: async projectRoot => { reads.push(projectRoot); return {} } })
   for (const url of ['/superagent-lite/memory?projectRoot=relative/path', '/superagent-lite/memory?projectRoot=']) {
@@ -91,7 +91,7 @@ test('the memory panel rejects invalid project roots and non-GET methods', async
   assert.deepEqual(reads, [])
   const post = await request(handler, 'POST')
   assert.equal(post.status, 405)
-  assert.equal(post.headers.allow, 'GET')
+  assert.equal(post.headers.allow, 'GET, DELETE')
 })
 
 test('the memory panel reports unreadable memory as a conflict', async () => {
@@ -125,4 +125,84 @@ test('the memory panel reads the default store without exposing write paths', as
   const globalOnly = JSON.parse((await request(handler)).body)
   assert.deepEqual(globalOnly.global, { userProfile: 'Prefers concise answers.' })
   assert.deepEqual(globalOnly.knowledge, body.knowledge)
+})
+
+test('the memory panel deletes one of several project skills without touching the others', async () => {
+  const projectRoot = join(home, 'project-delete-skills')
+  const store = createMemoryStore()
+  await store.writeSkill('project', projectRoot, {
+    name: 'superagent-project-memory', description: 'First project skill.', content: 'First body.',
+  })
+  await store.writeSkill('project', projectRoot, {
+    name: 'superagent-lite-test-conventions', description: 'Test conventions.', content: 'Run node --test.',
+  })
+  await store.writeSkill('global', projectRoot, {
+    description: 'Shared skill.', content: 'Inspect first.',
+  })
+  const handler = createMemoryPanelHandler(owner())
+  const before = JSON.parse((await request(handler, 'GET',
+    `/superagent-lite/memory?projectRoot=${encodeURIComponent(projectRoot)}`)).body)
+  assert.deepEqual(before.skills.project.map(skill => skill.name), [
+    'superagent-lite-test-conventions', 'superagent-project-memory',
+  ])
+  assert.deepEqual(before.skills.global.map(skill => skill.name), ['superagent-shared-memory'])
+  const removed = await request(handler, 'DELETE',
+    `/superagent-lite/memory?kind=skill&scope=project&projectRoot=${encodeURIComponent(projectRoot)}&name=superagent-lite-test-conventions`)
+  assert.equal(removed.status, 200)
+  assert.deepEqual(JSON.parse(removed.body), {
+    deleted: { kind: 'skill', scope: 'project', name: 'superagent-lite-test-conventions' },
+    existed: true,
+  })
+  const after = JSON.parse((await request(handler, 'GET',
+    `/superagent-lite/memory?projectRoot=${encodeURIComponent(projectRoot)}`)).body)
+  assert.deepEqual(after.skills.project.map(skill => skill.name), ['superagent-project-memory'])
+  assert.deepEqual(after.skills.global.map(skill => skill.name), ['superagent-shared-memory'])
+  assert.equal(await store.readSkill('project', projectRoot, 'superagent-lite-test-conventions'), undefined)
+})
+
+test('the memory panel validates skill deletes and maps storage failures', async () => {
+  const ownerConnection = owner()
+  const removals = []
+  const handler = createMemoryPanelHandler(ownerConnection, {
+    remove: async target => {
+      removals.push(target)
+      if (target.name === 'broken') throw new Error('Skill storage is unreadable')
+      return { deleted: { kind: 'skill', scope: target.scope, name: target.name }, existed: true }
+    },
+  })
+  for (const target of [
+    'kind=other&scope=project&projectRoot=%2Fwork%2Fproject&name=x',
+    'kind=skill&scope=other&projectRoot=%2Fwork%2Fproject&name=x',
+    'kind=skill&scope=project&name=x',
+    'kind=skill&scope=project&projectRoot=%2Fwork%2Fproject',
+    'kind=skill&scope=global',
+  ]) {
+    const result = await request(handler, 'DELETE', `/superagent-lite/memory?${target}`)
+    assert.equal(result.status, 400, target)
+  }
+  assert.deepEqual(removals, [])
+  const failed = await request(handler, 'DELETE', '/superagent-lite/memory?kind=skill&scope=global&name=broken')
+  assert.equal(failed.status, 409)
+  assert.equal(JSON.parse(failed.body).error, 'Skill storage is unreadable')
+  const ok = await request(handler, 'DELETE', '/superagent-lite/memory?kind=skill&scope=global&name=shared')
+  assert.equal(ok.status, 200)
+  assert.deepEqual(removals, [{ kind: 'skill', scope: 'global', projectRoot: undefined, name: 'broken' },
+    { kind: 'skill', scope: 'global', projectRoot: undefined, name: 'shared' }])
+  const denied = createMemoryPanelHandler({ admit: () => ({ peer: { principal: { kind: 'guest' } } }) }, {
+    remove: async () => assert.fail('must not delete for a non-owner'),
+  })
+  assert.equal((await request(denied, 'DELETE', '/superagent-lite/memory?kind=skill&scope=global&name=x')).status, 403)
+})
+
+test('the memory panel deletes a global skill', async () => {
+  const projectRoot = join(home, 'project-delete-global-skill')
+  const store = createMemoryStore()
+  await store.writeSkill('global', projectRoot, {
+    name: 'superagent-extra-skill', description: 'Extra shared skill.', content: 'Body.',
+  })
+  const handler = createMemoryPanelHandler(owner())
+  const removed = await request(handler, 'DELETE',
+    '/superagent-lite/memory?kind=skill&scope=global&name=superagent-extra-skill')
+  assert.equal(removed.status, 200)
+  assert.equal(await store.readSkill('global', projectRoot, 'superagent-extra-skill'), undefined)
 })

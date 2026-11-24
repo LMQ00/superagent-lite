@@ -19,10 +19,10 @@ function catalogMessage(entries, update = false) {
   }
 }
 
-function guardFor(preset = () => WORKER_PRESET, ownedSkills = async () => MEMORY_SKILLS) {
+function guardFor(preset = () => WORKER_PRESET, authoredSkills = async () => MEMORY_SKILLS) {
   return createWorkerSkillCatalogGuard(
     { agentPresets: { composedPreset: preset } },
-    { ownedSkills },
+    { authoredSkills },
   )
 }
 
@@ -137,7 +137,7 @@ test('only the worker preset catalog is stabilized', async () => {
   assert.deepEqual(decision.messages, [update])
 })
 
-test('the ownership source receives the guarded agent', async () => {
+test('the author source receives the guarded agent', async () => {
   const seen = []
   const guard = guardFor(() => WORKER_PRESET, async target => {
     seen.push(target)
@@ -145,7 +145,7 @@ test('the ownership source receives the guarded agent', async () => {
   })
   await step(guard, [catalogMessage([projectSkill('Project skill.')])])
   await step(guard, [catalogMessage([projectSkill('Changed project skill.')], true)])
-  assert.deepEqual(seen, [agent])
+  assert.deepEqual(seen, [agent, agent])
 })
 
 test('the guard ignores rejected steps', async () => {
@@ -161,4 +161,26 @@ test('a forgotten agent drops catalog updates until it publishes one', async () 
   const update = catalogMessage([otherSkill('Find, install, and extend skills.')], true)
   const decision = await step(guard, [update])
   assert.deepEqual(decision.messages, [])
+})
+
+test('a deleted memory-authored skill is not injected into a running worker session', async () => {
+  const guard = guardFor()
+  await step(guard, [catalogMessage([otherSkill('find skills'), projectSkill('Project skill.')])])
+  const update = catalogMessage([otherSkill('find skills')], true)
+  assert.deepEqual((await step(guard, [update])).messages, [])
+})
+
+test('a deleted skill without the memory author keeps normal catalog behavior', async () => {
+  const manual = { name: 'project-notes', description: 'Local notes.' }
+  const guard = guardFor()
+  await step(guard, [catalogMessage([otherSkill('find skills'), manual])])
+  const update = catalogMessage([otherSkill('find skills')], true)
+  assert.deepEqual((await step(guard, [update])).messages, [update])
+})
+
+test('a skill without the memory author still publishes its change', async () => {
+  const guard = guardFor(() => WORKER_PRESET, async () => new Set())
+  await step(guard, [catalogMessage([projectSkill('Old project skill.')])])
+  const update = catalogMessage([projectSkill('Changed project skill.')], true)
+  assert.deepEqual((await step(guard, [update])).messages, [update])
 })

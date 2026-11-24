@@ -100,10 +100,8 @@ const memoryFields = values => ({
   userProfile: '',
   responsibilities: '',
   positioning: '',
-  sharedSkillDescription: '',
-  sharedSkillContent: '',
-  projectSkillDescription: '',
-  projectSkillContent: '',
+  sharedSkills: [],
+  projectSkills: [],
   ...values,
 })
 
@@ -113,10 +111,16 @@ test('the final report triggers the memory role, saves memory and writes skills'
   const wiring = await workerWiring(workerId, projectRoot, memoryFields({
     userProfile: 'Prefers terse reports.',
     responsibilities: 'Keep the notes accurate.',
-    sharedSkillDescription: 'Inspect before changing.',
-    sharedSkillContent: 'Read the repository first.',
-    projectSkillDescription: 'Run the project tests.',
-    projectSkillContent: 'Run npm test before reporting.',
+    sharedSkills: [{
+      name: 'superagent-shared-memory',
+      description: 'Inspect before changing.',
+      content: 'Read the repository first.',
+    }],
+    projectSkills: [{
+      name: 'superagent-project-memory',
+      description: 'Run the project tests.',
+      content: 'Run npm test before reporting.',
+    }],
   }))
   const result = await wiring.message().execute({
     message: 'Done. Review approved; tests pass.',
@@ -146,10 +150,10 @@ test('the final report triggers the memory role, saves memory and writes skills'
   assert.equal(saved.global.userProfile, 'Prefers terse reports.')
   assert.equal(saved.project.responsibilities, 'Keep the notes accurate.')
   assert.deepEqual(await store.readSkill('global', projectRoot), {
-    description: 'Inspect before changing.', content: 'Read the repository first.',
+    description: 'Inspect before changing.', content: 'Read the repository first.', author: 'memory',
   })
   assert.deepEqual(await store.readSkill('project', projectRoot), {
-    description: 'Run the project tests.', content: 'Run npm test before reporting.',
+    description: 'Run the project tests.', content: 'Run npm test before reporting.', author: 'memory',
   })
 })
 
@@ -157,8 +161,11 @@ test('a finished worker is not shown a catalog update caused by its own memory s
   const workerId = 'worker-catalog'
   const projectRoot = await taskForWorker('ab'.repeat(8), workerId)
   const wiring = await workerWiring(workerId, projectRoot, memoryFields({
-    projectSkillDescription: 'Run the project tests.',
-    projectSkillContent: 'Run npm test before reporting.',
+    projectSkills: [{
+      name: 'superagent-project-memory',
+      description: 'Run the project tests.',
+      content: 'Run npm test before reporting.',
+    }],
   }))
   const catalog = (entries, update = false) => ({
     id: 'catalog',
@@ -199,6 +206,41 @@ test('a finished worker is not shown a catalog update caused by its own memory s
   assert.deepEqual(decision.messages, [unrelated])
 })
 
+test('deleting one of several memory-authored skills does not inject a catalog update', async () => {
+  const workerId = 'worker-delete'
+  const projectRoot = await taskForWorker('ac'.repeat(8), workerId)
+  const { createMemoryStore, deleteMemoryView } = await import('../src/memory.js')
+  const store = createMemoryStore()
+  await store.writeSkill('project', projectRoot, {
+    name: 'superagent-project-memory', description: 'Project skill.', content: 'Body.',
+  })
+  await store.writeSkill('project', projectRoot, {
+    name: 'superagent-lite-test-conventions', description: 'Test conventions.', content: 'Run the suite.',
+  })
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields())
+  const catalog = (entries, update = false) => ({
+    id: 'catalog',
+    source: { kind: 'skill-catalog', form: 'catalog', ...update ? { update: true } : {}, entries },
+  })
+  const preStep = wiring.listeners.get('agent/pre-step')
+  const initial = catalog([
+    { name: 'find-skills', description: 'Find skills.' },
+    { name: 'superagent-project-memory', description: 'Project skill.' },
+    { name: 'superagent-lite-test-conventions', description: 'Test conventions.' },
+  ])
+  const entered = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [initial] }))
+  assert.deepEqual(entered.messages, [initial])
+  await deleteMemoryView({
+    kind: 'skill', scope: 'project', projectRoot, name: 'superagent-lite-test-conventions',
+  })
+  const update = catalog([
+    { name: 'find-skills', description: 'Find skills.' },
+    { name: 'superagent-project-memory', description: 'Project skill.' },
+  ], true)
+  const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [update] }))
+  assert.deepEqual(decision.messages, [])
+})
+
 test('a worker gets project and global memory injected and only the knowledge read tools', async () => {
   const workerId = 'worker-b'
   const projectRoot = await taskForWorker('b'.repeat(16), workerId)
@@ -216,7 +258,8 @@ test('a worker gets project and global memory injected and only the knowledge re
   assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_get'), true)
   assert.equal(wiring.skillProviders.length, 1)
   const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
-  assert.equal(candidates[0].description, 'Project skill description.')
+  assert.equal(candidates.find(candidate => candidate.name === 'superagent-project-memory').description,
+    'Project skill description.')
   assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_write'), false)
   assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), false)
   assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
@@ -254,7 +297,8 @@ test('a report worker gets the same project and global memory and project skill 
   assert.match(memory.text(), /Positioning: Report project positioning\./)
   assert.equal(wiring.skillProviders.length, 1)
   const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
-  assert.equal(candidates[0].description, 'Report project skill description.')
+  assert.equal(candidates.find(candidate => candidate.name === 'superagent-project-memory').description,
+    'Report project skill description.')
   assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), true)
   assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_write'), false)
   assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), false)

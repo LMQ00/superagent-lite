@@ -278,12 +278,15 @@ test('the settings tab edits the worker model and concurrency limit', async () =
   board.dispose()
 })
 
-test('the memory tab browses global memory, project memory and global knowledge read-only', async () => {
+test('the memory tab browses memory and deletes individual project skills', async () => {
   const requests = []
   const tasks = [
     task({ id: 'a', projectRoot: '/two', updatedAt: '2026-02-01T00:00:00.000Z' }),
     task({ id: 'b', projectRoot: '/one', updatedAt: '2026-01-01T00:00:00.000Z' }),
   ]
+  const sharedSkills = [{
+    name: 'superagent-shared-memory', description: 'Shared inspection.', content: 'Inspect first.',
+  }]
   const views = {
     '/one': {
       global: { userProfile: 'Prefers Chinese reports.' },
@@ -292,6 +295,13 @@ test('the memory tab browses global memory, project memory and global knowledge 
         id: '1', text: 'Run npm test before reporting.',
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
       }],
+      skills: {
+        global: sharedSkills,
+        project: [
+          { name: 'superagent-lite-test-conventions', description: 'Test conventions.', content: 'Prefer node --test.' },
+          { name: 'superagent-project-memory', description: 'Keep the board accurate.', content: 'Run npm test.' },
+        ],
+      },
     },
     '/two': {
       global: { userProfile: 'Prefers Chinese reports.' },
@@ -300,12 +310,25 @@ test('the memory tab browses global memory, project memory and global knowledge 
         id: '1', text: 'Run npm test before reporting.',
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
       }],
+      skills: {
+        global: sharedSkills,
+        project: [{ name: 'superagent-project-memory', description: 'Second project skill.', content: 'Second body.' }],
+      },
     },
   }
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
       if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      if (options.method === 'DELETE') {
+        return {
+          ok: true,
+          json: async () => ({
+            deleted: { kind: 'skill', scope: 'project', name: 'superagent-lite-test-conventions' },
+            existed: true,
+          }),
+        }
+      }
       const root = new URL(path, 'http://localhost').searchParams.get('projectRoot')
       return { ok: true, json: async () => views[root] }
     },
@@ -325,24 +348,28 @@ test('the memory tab browses global memory, project memory and global knowledge 
   tree = board.render()
   assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
   assert.equal(tab(tree, '设置').props['aria-selected'], false)
-  assert.match(text(tree), /只读查看保存的项目记忆和全局知识库/)
+  assert.match(text(tree), /查看保存的项目记忆/)
   assert.match(text(tree), /全局记忆/)
   assert.match(text(tree), /用户画像/)
   assert.match(text(tree), /Prefers Chinese reports/)
+  assert.match(text(tree), /全局 skill/)
+  assert.match(text(tree), /superagent-shared-memory/)
+  assert.match(text(tree), /Shared inspection/)
   assert.match(text(tree), /项目记忆/)
   assert.match(text(tree), /责任/)
   assert.match(text(tree), /Watch the second project/)
   assert.match(text(tree), /定位/)
   assert.match(text(tree), /未保存/)
+  assert.match(text(tree), /项目 skill/)
+  assert.match(text(tree), /Second project skill/)
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   // The most recently updated task's project is the current project.
   const projectSelect = nodes(tree).find(node => node.type === 'select')
   assert.equal(projectSelect.props.value, '/two')
-  // Read-only: no inputs, textareas or write controls on the memory tab.
+  // Only skill deletion is exposed; there are no memory or knowledge edit controls.
   assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'button' && ['保存', '写入', '删除'].includes(text(node))).length, 0)
-  assert.equal(nodes(tree).filter(node => node.props?.role === 'tabpanel').length, 1)
+  assert.equal(nodes(tree).filter(node => node.type === 'button' && node.props?.['aria-label']).length, 2)
 
   projectSelect.props.onChange({ target: { value: '/one' } })
   board.render()
@@ -350,10 +377,14 @@ test('the memory tab browses global memory, project memory and global knowledge 
   tree = board.render()
   assert.match(text(tree), /Keep the board accurate/)
   assert.match(text(tree), /Local-first tools/)
+  assert.match(text(tree), /Test conventions/)
+  assert.match(text(tree), /Prefer node --test/)
+  assert.match(text(tree), /superagent-lite-test-conventions/)
   assert.doesNotMatch(text(tree), /未保存/)
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   assert.match(text(tree), /更新时间/)
+  assert.equal(nodes(tree).filter(node => node.type === 'button' && node.props?.['aria-label']).length, 3)
   const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))
   assert.deepEqual(memoryRequests.map(request => new URL(request.path, 'http://localhost').searchParams.get('projectRoot')),
     ['/two', '/one'])
@@ -363,8 +394,30 @@ test('the memory tab browses global memory, project memory and global knowledge 
     assert.equal(request.options.cache, 'no-store')
     assert.ok(request.options.signal)
   }
+
+  const skillDelete = nodes(tree).find(node => node.type === 'button' &&
+    node.props?.['aria-label'] === '删除: superagent-lite-test-conventions')
+  assert.ok(skillDelete, 'the project skill has a delete button')
+  skillDelete.props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /删除 skill/)
+  assert.match(text(tree), /superagent-lite-test-conventions/)
+  buttons(tree, '删除').at(-1).props.onClick()
+  await flush()
+  tree = board.render()
+  const deletes = requests.filter(request => request.options.method === 'DELETE')
+  assert.equal(deletes.length, 1)
+  const params = new URL(deletes[0].path, 'http://localhost').searchParams
+  assert.equal(params.get('kind'), 'skill')
+  assert.equal(params.get('scope'), 'project')
+  assert.equal(params.get('name'), 'superagent-lite-test-conventions')
+  assert.equal(params.get('projectRoot'), '/one')
+  assert.equal(deletes[0].options.credentials, 'same-origin')
+  assert.match(text(tree), /skill 已删除/)
+  assert.doesNotMatch(text(tree), /Prefer node --test/)
+  assert.match(text(tree), /Keep the board accurate/)
   board.dispose()
-  assert.ok(requests.every(request => request.options.signal.aborted))
+  assert.ok(requests.filter(request => request.options.signal).every(request => request.options.signal.aborted))
 })
 
 test('the memory tab reports a load failure and can retry from the same panel', async () => {
