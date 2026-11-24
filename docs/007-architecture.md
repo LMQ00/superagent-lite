@@ -118,7 +118,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/git-actions.js`
 
-推导每个 Task 的六个面板状态，采纳同一 commit 由另一个 Task 记录的通过审查，读取本地分支、remote 和 `gh` 账号，并执行面板的 `merge`、`publish`、`review` 和 `delete-branch`。`delete-branch` 不要求分支已合并，运行中的 Task 禁用；删除后返回与重新读取一致的行视图，供面板就地更新。它缓存 PR 事实 30 秒，把精确 PR 状态同步进 Task，用共用的 `deliverableHead` 检查状态、审查和 HEAD，再检查目标或 remote，按 Task 串行化动作；发送 PR 额外检查 `gh` 账号；状态推导和审查索引在 `src/status.js`（`src/git-actions.js:66-577`）。
+推导每个 Task 的六个面板状态，采纳同一 commit 由另一个 Task 记录的通过审查，读取本地分支、remote 和 `gh` 账号，并执行面板的 `merge`、`publish`、`review` 和 `delete-branch`。`delete-branch` 不要求分支已合并，运行中的 Task 禁用；删除后返回与重新读取一致的行视图，供面板就地更新。它缓存 PR 事实 30 秒，把精确 PR 状态同步进 Task，用共用的 `deliverableHead` 检查状态、审查和 HEAD，再检查目标或 remote，按 Task 串行化动作；发送 PR 额外检查 `gh` 账号；状态推导和审查索引在 `src/status.js`（`src/git-actions.js:66-585`）。
 
 ### `src/github.js`
 
@@ -155,7 +155,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js`）。
 - `src/memory-store.js` 是唯一记忆、知识、skill 文件和归档存储模块；`src/memory.js` 是唯一记忆提示词、提取流程和知识工具模块。
 - `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:77-137`、`src/merge.js:30-142`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
-- `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-49`）。
+- `src/status.js` 是唯一把存储状态、Git 事实和审查记录变成面板状态的地方（`src/status.js:6-52`）。
 
 ### 状态写者
 

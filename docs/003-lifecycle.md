@@ -4,27 +4,27 @@
 
 ## 阶段
 
-Task 记录只保存一个生命周期状态；面板不直接显示它，而是用存储状态、worker 分支、审查记录和 Pull request 事实推导出六个面板状态（`src/status.js:6-34`、`src/git-actions.js:276-390`）。推导回答的是「现在这个人能对这个 Task 做什么」。
+Task 记录只保存一个生命周期状态；面板不直接显示它，而是用存储状态、worker 分支、审查记录和 Pull request 事实推导出六个面板状态（`src/status.js:6-37`、`src/git-actions.js:276-398`）。推导回答的是「现在这个人能对这个 Task 做什么」。
 
 | 面板状态 | 成立条件（从上往下读） |
 | --- | --- |
 | `running` / 运行中 | 存储状态是 `queued`、`starting`、`running`、`resuming`、`publishing` 或 `merging` |
-| `completed` / 已完成 | 存储状态是 `merged`；或 worker HEAD 是基础分支 tip 的祖先；或 reviewed HEAD 的精确 PR 是 `MERGED`；或非失败 Task 的 worker 分支已被删除 |
+| `completed` / 已完成 | 存储状态是 `merged`；或 worker HEAD 是基础分支 tip 的祖先；或 reviewed HEAD 是基础分支 tip 的祖先（worktree 已不在时）；或 reviewed HEAD 的精确 PR 是 `MERGED`；或非失败 Task 的 worker 分支已被删除 |
 | `failed` / 失败 | 精确 PR 是 `CLOSED`，或存储状态是 `cancelled`、`interrupted`、`merge-conflict` |
 | `unmerged` / 未合并 | 当前 worker HEAD 有通过的审查且尚未合并；同一 Project 的另一个 Task 为同一 commit 记录的审查也算，面板会把它写回本 Task |
 | `completed` / 已完成 | Worker 回合以 `completed` 结束，且分支在基础 commit 之后没有提交，没有可审查的内容 |
 | `unreviewed` / 未审查 | worker 分支有提交，且当前 HEAD 没有通过的审查 |
 | `failed` / 失败 | 其他失败存储值（`failed`、`delivery-blocked`） |
-| `answer` / 仅回答 | Task 是 report 模式且存储为 `completed`；report 任务其余情况显示运行中或失败 |
+| `answer` / 仅回答 | Task 是 report 模式且存储为 `completed`，或记录了 `report`（`report_task` 已交付）；report 任务不进入审查和合并判断，其余情况显示运行中或失败 |
 
-存储状态为 `review-required`、`delivery-blocked` 或 `failed`，而当前 HEAD 已有通过的审查时，面板读取会把 Task 修正为 `awaiting-merge`；存储为 `review-required` 且 HEAD 已合并时修正为 `merged`（`src/git-actions.js:313-317`）。
+存储状态为 `review-required`、`delivery-blocked` 或 `failed`，而当前 HEAD 已有通过的审查时，面板读取会把 Task 修正为 `awaiting-merge`；存储为 `review-required` 且 HEAD 已合并时修正为 `merged`。worktree 已不在时用任务记录的 reviewed HEAD 核对基础分支（`src/git-actions.js:314-325`）。
 
 存储阶段表从上往下读，第一条成立的条件就是记录的生命周期阶段。精确匹配的合并 PR 可以覆盖存储的交付状态，`unconfirmed` 由面板在读取时计算。
 
 | 阶段 | 成立条件 | 面板状态 |
 | --- | --- | --- |
 | `unconfirmed` | 存储状态是 `starting`、`running` 或 `resuming`，但没有活着的 Worker agent | `running`，带「未确认」标签 |
-| `merged` | 存储状态是 `merged`；或 reviewed HEAD 的精确 PR 是 `MERGED` | `completed` |
+| `merged` | 存储状态是 `merged`；或 reviewed HEAD 的精确 PR 是 `MERGED`；或 worktree 已不在时记录的 reviewed HEAD 已包含在基础分支 | `completed` |
 | `delivery-blocked` | 存储状态是 `delivery-blocked`，且 HEAD 未通过审查 | `failed` |
 | `merging` | 存储状态是 `merging` | `running` |
 | `publishing` | 存储状态是 `publishing` | `running` |
@@ -32,14 +32,14 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | `merge-queued` | 存储状态是 `merge-queued` | `unmerged` |
 | `awaiting-merge` | 存储状态是 `awaiting-merge` | `unmerged` |
 | `review-required` | 存储状态是 `review-required`，或覆盖的 commit 没有通过的审查 | `unreviewed`；分支没有提交时是 `completed` |
-| `completed` | 存储状态是 `completed` | report 任务是 `answer`，其余是 `completed` |
+| `completed` | 存储状态是 `completed`；report 任务交付了 `report` | report 任务是 `answer`，其余是 `completed` |
 | `failed` | 存储状态是 `failed`，且 HEAD 未通过审查 | `failed` |
 | `resuming` | 存储状态是 `resuming`，且有活着的 Worker agent | `running` |
 | `running` | 存储状态是 `running`，且有活着的 Worker agent | `running` |
 | `starting` | 存储状态是 `starting`，且有活着的 Worker agent | `running` |
 | `queued` | 存储状态是 `queued`，等待并发名额；可在面板取消 | `running`，带「排队中」标签 |
 
-存储阶段表以 worker 分支仍存在为默认前提。worker 分支已删除的 Task 不再按分支推导面板状态：非失败的 Task 显示为已完成，失败 Task 保持失败（`src/git-actions.js:288-293`）。
+存储阶段表以 worker 分支仍存在为默认前提。worker 分支已删除的 Task 不再按分支推导面板状态：非失败的 Task 显示为已完成，失败 Task 保持失败（`src/git-actions.js:293-298`）。worktree 已移除但任务记录仍保留分支名时，面板用记录的 reviewed HEAD 判断是否已合入基础分支，不会因为读不到工作树而停在「未合并」；report 任务同样不进入分支推导。
 
 面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 的文案；活动 Task 不写这些值。排队取消会留下 `cancelled` 墓碑，`worker_status` 用它报告已取消任务，面板列表仍不显示（`client.js:14-15`、`client.js:64-65`、`src/status.js:8-10`、`src/task-store.js`、`src/worker-status.js`）。
 
@@ -74,7 +74,7 @@ Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base
 
 Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:109-122`）。
 
-面板的 `review` 动作从活着的 Worker Session 对 `unreviewed` 的 HEAD 运行同一审查；通过后 Task 修正为 `awaiting-merge`，有意见则落到 `review-required`（`src/git-actions.js:398-419`）。
+面板的 `review` 动作从活着的 Worker Session 对 `unreviewed` 的 HEAD 运行同一审查；通过后 Task 修正为 `awaiting-merge`，有意见则落到 `review-required`（`src/git-actions.js:406-427`）。
 
 ### Memory 角色
 
@@ -135,15 +135,15 @@ change 和 merge 任务的 Worker 回合按以下顺序落定（`index.js:119-15
 
 `awaiting-merge` 是 Worker 工作的结束，不是 Task 的结束。merge worker 自己把 reviewed merge commit 合入 base branch 后，目标分支的提交就成为 base branch 的祖先；面板读取这些原任务时按「已包含在基础分支」收尾。Task 到 `merged` 的路径有三种：
 
-- 用户明确授权后由 merge worker（没有运行中的就新派发，已有则追加目标）把 reviewed merge commit 合入 base branch（`src/merge-tool.js:13-64`、`src/landing.js:370-388`）；也可以由面板行内合并执行本地 `git merge --no-ff --log`，合并提交带上分支的功能性 commit 信息（`src/merge.js:30-109`、`src/git-actions.js:409-425`）。
-- 精确匹配的 PR 在 GitHub 上被合并，面板读取时同步为 `merged`（`src/git-actions.js:190-194`、`src/git-actions.js:309-317`）。
-- 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:316-324`）。没有自有提交的分支不算合并。
+- 用户明确授权后由 merge worker（没有运行中的就新派发，已有则追加目标）把 reviewed merge commit 合入 base branch（`src/merge-tool.js:13-64`、`src/landing.js:370-388`）；也可以由面板行内合并执行本地 `git merge --no-ff --log`，合并提交带上分支的功能性 commit 信息（`src/merge.js:30-109`、`src/git-actions.js:417-433`）。
+- 精确匹配的 PR 在 GitHub 上被合并，面板读取时同步为 `merged`（`src/git-actions.js:190-194`、`src/git-actions.js:314-325`）。
+- 面板读取时发现 worker HEAD 不是基础 commit，且已包含在基础分支中；worktree 已不在时改用记录的 reviewed HEAD 核对。只有存储状态属于 `review-required`、`awaiting-merge`、`awaiting-ci`、`merge-queued`、`publishing`、`merging`、`delivery-blocked` 时才回写 `merged`（`src/git-actions.js:13`、`src/git-actions.js:151-160`、`src/git-actions.js:324-332`）。没有自有提交的分支不算合并。
 
-report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:128-131`）。
+report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调用 `report_task` 时到 `failed`，失败原因是 `Report-only task ended without report_task`（`src/report-tool.js:34-41`、`index.js:128-131`）。面板读取带 `report` 记录的任务时直接按「仅回答」收尾并把过期的交付状态修正为 `completed`，不进入分支、审查或合并推导；仍在运行且没交付报告的 report 任务显示运行中，失败则保持失败。
 
 安装 owner 也可以从面板删除 Task 记录。删除移除记录和 worker 会话映射，不结束 Worker Session，也不回收 worker 分支或 Worktree；Worker Session 还活着的运行中 Task、`merging` 或 `publishing` 中的 Task 不能删除（`src/board.js:11-48`、`src/task-store.js:103-121`）。
 
-面板的「删除分支」不要求 Task 已合并。它只在一个 Task 仍有 worker 分支时出现；运行中的 Task 不能删除分支。删除先移除该 Task 登记且干净的工作树，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`；工作树有未提交改动、被其他工作树检出、移除失败或移除后仍存在时拒绝。删除后非失败的 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
+面板的「删除分支」不要求 Task 已合并。它只在一个 Task 仍有 worker 分支时出现；运行中的 Task 不能删除分支。删除先移除该 Task 登记且干净的工作树，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`；工作树有未提交改动、被其他工作树检出、移除失败或移除后仍存在时拒绝。删除后非失败的 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:293-298`）。
 
 不需要 Worker 的输入不是 Task：`dispatch_worker` 收到 `mode=answer` 时直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录，回合直接回答（`src/dispatch.js:63`）。
 
@@ -167,7 +167,7 @@ Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.a
 
 ### GitHub 交付失败
 
-发送 PR 失败时，Task 标为 `delivery-blocked`，错误写入 `failure`；已创建的 PR 保留链接。精确匹配的 PR 在交付状态中被关闭时也落为 `delivery-blocked`；精确 PR 已合并时落为 `merged`（`src/git-actions.js:149-199`、`src/git-actions.js:469-472`）。发送 PR 与合并共用同一套状态、审查和 HEAD 前置校验，唯一额外条件是 `gh` 登录和 GitHub remote（`src/delivery.js:7-19`）。
+发送 PR 失败时，Task 标为 `delivery-blocked`，错误写入 `failure`；已创建的 PR 保留链接。精确匹配的 PR 在交付状态中被关闭时也落为 `delivery-blocked`；精确 PR 已合并时落为 `merged`（`src/git-actions.js:149-199`、`src/git-actions.js:477-480`）。发送 PR 与合并共用同一套状态、审查和 HEAD 前置校验，唯一额外条件是 `gh` 登录和 GitHub remote（`src/delivery.js:7-19`）。
 
 GitHub 写入不自动重试。PR 尚未创建时的发送失败可以从 `delivery-blocked` 重试；一旦 `prUrl` 已存在，再次发送会复用同一 HEAD 的 PR（`src/github.js:83-95`）。
 
