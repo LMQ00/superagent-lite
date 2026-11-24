@@ -91,7 +91,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 2. 预设 persona：Router 或 Worker 的 `persona.prefix`。
 3. 已挂载工具各自注册的工具指导。
 4. 记忆运行时上下文：Worker 创建时读取项目 + 全局记忆，Reviewer 每次审查时读取，Router 只读取全局记忆；以 order `170` 注册并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、派发守卫的提醒。
+5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒。
 
 两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并（`cordis.patch.yml:25-26`、`cordis.patch.yml:44-53`、`cordis.patch.yml:81-86`）。
 

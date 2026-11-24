@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 /**
- * Apply the agent-message task-card patch to the installed
- * `@deepseek-ai/dsh-client-ui-chat` 0.2.2-rc.3 client.
+ * Put every Superagent-Lite inter-role message on the existing `收到任务消息`
+ * task-card chrome in the installed `@deepseek-ai/dsh-client-ui-chat` 0.2.2-rc.3
+ * client.
  *
  * The Chat composer classifies a non-`user` message as a `turn-trigger` card
- * only while it is waking the Turn. A worker report steered into a running
- * router Turn therefore falls back to the `context` row. This patch keeps the
- * existing card chrome for every `agent-message`, and suppresses the
- * "triggered this response" explanation when the message did not open the Turn.
+ * only while it is waking the Turn. A message steered into a running Turn
+ * therefore falls back to the `context` row. The plugin reaches the router
+ * through three non-`user` sources:
+ *
+ * - `agent-message`: dispatch, review and memory requests, follow-ups and reports;
+ * - `subagent-settled`: the runtime notice that a worker or helper settled;
+ * - `superagent-lite-reminder`: the dispatch guard's system reminder.
+ *
+ * This patch keeps the existing card chrome for those sources whether they woke
+ * the Turn or were steered into it, and suppresses the "triggered this response"
+ * explanation when the message did not open the Turn. Other injected context
+ * (`runtime-context`, `skill-catalog`, `working-directory`, ...) keeps its
+ * compact context row. No delivery semantics change.
  *
  * Usage:
  *   node scripts/dsh-client-ui-chat-0.2.2-rc.3-agent-message-card.mjs
@@ -22,6 +32,8 @@
  *
  * Without `--package` or `--dsh`, the package is resolved from the `dsh`
  * executable on PATH. The patch is idempotent: applying it twice is a no-op.
+ * It also upgrades a Host that still carries the earlier agent-message-only
+ * patch, and `--revert` restores the pristine package from either state.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -35,28 +47,38 @@ const MESSAGE = 'src/client/conversation-nodes/message.ts'
 const TRIGGER_VIEW = 'src/client/chat/TurnTriggerNodeView.tsx'
 const CLIENT_BUNDLE = 'lib/client.js'
 
+// Durable source kinds the plugin delivers to the router. Role messages, the
+// runtime's settled-role notice and the plugin's system reminder all describe a
+// message a reader should expand, so they share the task-card chrome.
+const CARDED_KINDS_SNIPPET = "['agent-message', 'subagent-settled', 'superagent-lite-reminder']"
+
+// Every entry lists the pristine snippet first. A second `old` variant is the
+// snippet written by the earlier agent-message-only patch, so applying over that
+// Host upgrades it instead of failing; `--revert` always restores the first.
 const PATCHES = [
   {
     file: MESSAGE,
     label: 'card data carries the waking flag',
-    old: `    /** Recorded notification or manual continuation that starts a Turn. */
+    old: [
+      `    /** Recorded notification or manual continuation that starts a Turn. */
     'turn-trigger': ContextMessageNode
 `,
-    new: `    /** Recorded notification or manual continuation that starts a Turn, or a steered agent message. */
+      `    /** Recorded notification or manual continuation that starts a Turn, or a steered agent message. */
+    'turn-trigger': ContextMessageNode & { readonly waking?: boolean }
+`,
+    ],
+    new: `    /** Recorded notification or manual continuation that starts a Turn, or a steered role message. */
     'turn-trigger': ContextMessageNode & { readonly waking?: boolean }
 `,
   },
   {
     file: MESSAGE,
-    label: 'agent messages select the turn-trigger card',
-    old: `    const waking = context.state.kind === 'context'
-      && context.start?.event.type === 'user/message'
-      && context.state.waking === true
+    label: 'role, status and reminder messages select the turn-trigger card',
+    old: [
+      `      && context.state.waking === true
     // Human input claimed for Step 1 opens an exchange; Notice-woken Turns and
 `,
-    new: `    const waking = context.state.kind === 'context'
-      && context.start?.event.type === 'user/message'
-      && context.state.waking === true
+      `      && context.state.waking === true
     // An agent message is a task message whether it woke this Turn or was
     // steered into it; both use the turn-trigger card chrome.
     const agentCard = context.state.kind === 'context'
@@ -64,17 +86,33 @@ const PATCHES = [
       && context.start.event.data.source.kind === 'agent-message'
     // Human input claimed for Step 1 opens an exchange; Notice-woken Turns and
 `,
+    ],
+    new: `      && context.state.waking === true
+    // Role messages, settled-role notices and system reminders are recorded
+    // messages, not injected context rows; all use the turn-trigger card chrome.
+    const cardedNotice = context.state.kind === 'context'
+      && context.start?.event.type === 'user/message'
+      && ${CARDED_KINDS_SNIPPET}
+        .includes(context.start.event.data.source.kind)
+    // Human input claimed for Step 1 opens an exchange; Notice-woken Turns and
+`,
   },
   {
     file: MESSAGE,
-    label: 'card kind also covers a steered agent message',
-    old: `    return chatNode(
+    label: 'card kind also covers steered messages, notices and reminders',
+    old: [
+      `    return chatNode(
       context,
       waking ? 'turn-trigger' : context.state.kind,
 `,
-    new: `    return chatNode(
+      `    return chatNode(
       context,
       waking || agentCard ? 'turn-trigger' : context.state.kind,
+`,
+    ],
+    new: `    return chatNode(
+      context,
+      waking || cardedNotice ? 'turn-trigger' : context.state.kind,
 `,
   },
   {
@@ -89,13 +127,16 @@ const PATCHES = [
   },
   {
     file: CLIENT_BUNDLE,
-    label: 'runtime bundle: card classification',
-    old: 'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,waking?`turn-trigger`:context.state.kind,',
-    new: 'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const agentCard=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.start.event.data.source.kind===`agent-message`;const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,(waking||agentCard)?`turn-trigger`:context.state.kind,',
+    label: 'runtime bundle: card classification for steered messages',
+    old: [
+      'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,waking?`turn-trigger`:context.state.kind,',
+      'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const agentCard=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.start.event.data.source.kind===`agent-message`;const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,(waking||agentCard)?`turn-trigger`:context.state.kind,',
+    ],
+    new: 'const waking=context.state.kind===`context`&&context.start?.event.type===`user/message`&&context.state.waking===true;const cardedNotice=context.state.kind===`context`&&context.start?.event.type===`user/message`&&[`agent-message`,`subagent-settled`,`superagent-lite-reminder`].includes(context.start.event.data.source.kind);const human=context.state.kind===`user`||context.state.kind===`steering`;const opensExchange=human&&location.kind===`step`&&location.step.step===1;return chatNode(context,(waking||cardedNotice)?`turn-trigger`:context.state.kind,',
   },
   {
     file: CLIENT_BUNDLE,
-    label: 'runtime bundle: explanation guard',
+    label: 'runtime bundle: explanation only when the message woke the Turn',
     old: '(0,react_jsx_runtime.jsx)(`p`,{className:TurnTriggerNodeView_module_css_default.explanation,children:t(`message.trigger.explanation`)}),',
     new: 'node.data.waking!==false&&(0,react_jsx_runtime.jsx)(`p`,{className:TurnTriggerNodeView_module_css_default.explanation,children:t(`message.trigger.explanation`)}),',
   },
@@ -136,6 +177,19 @@ function resolvePackage(options) {
   return join(dshRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat')
 }
 
+function oldVariants(entry) {
+  return Array.isArray(entry.old) ? entry.old : [entry.old]
+}
+
+function occurrences(content, text) {
+  return content.split(text).length - 1
+}
+
+function replaceOnce(content, from, to, label) {
+  if (occurrences(content, from) !== 1) fail(`"${label}" does not occur exactly once; the installed package differs from ${VERSION}`)
+  return content.replace(from, to)
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   const packageDir = resolvePackage(options)
@@ -150,21 +204,26 @@ async function main() {
   const changes = new Map()
   for (const entry of PATCHES) {
     const content = changes.get(entry.file) ?? await readFile(join(packageDir, entry.file), 'utf8')
-    const hasOld = content.includes(entry.old)
-    const hasNew = content.includes(entry.new)
+    const variants = oldVariants(entry)
+    const patched = content.includes(entry.new)
+    const present = variants.filter(variant => content.includes(variant))
+
     if (options.revert) {
-      if (!hasNew) {
-        if (hasOld) continue
-        fail(`${entry.file} does not contain either side of "${entry.label}"; the installed package differs from ${VERSION}`)
+      if (patched) {
+        changes.set(entry.file, replaceOnce(content, entry.new, variants[0], entry.label))
+        continue
       }
-      if (content.split(entry.new).length !== 2) fail(`${entry.file} contains "${entry.label}" more than once; refusing to revert an ambiguous match`)
-      changes.set(entry.file, content.split(entry.new).join(entry.old))
+      if (present.length === 0) fail(`${entry.file} does not contain either side of "${entry.label}"; the installed package differs from ${VERSION}`)
+      if (present.length > 1) fail(`${entry.file} contains more than one historical state of "${entry.label}"; refusing to revert an ambiguous match`)
+      if (present[0] === variants[0]) continue
+      changes.set(entry.file, replaceOnce(content, present[0], variants[0], entry.label))
       continue
     }
-    if (hasNew) continue
-    if (!hasOld) fail(`${entry.file} does not contain "${entry.label}"; the installed package differs from ${VERSION}`)
-    if (content.split(entry.old).length !== 2) fail(`${entry.file} contains "${entry.label}" more than once; refusing to patch an ambiguous match`)
-    changes.set(entry.file, content.split(entry.old).join(entry.new))
+
+    if (patched) continue
+    if (present.length === 0) fail(`${entry.file} does not contain "${entry.label}"; the installed package differs from ${VERSION}`)
+    if (present.length > 1) fail(`${entry.file} contains more than one historical state of "${entry.label}"; refusing to patch an ambiguous match`)
+    changes.set(entry.file, replaceOnce(content, present[0], entry.new, entry.label))
   }
 
   if (options.check) {

@@ -72,7 +72,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | GitHub remote | 发送 PR | `git remote -v` 显示一个 remote，fetch 与 push URL 指向同一个 GitHub 仓库；面板列出 remote 供选择 |
 | `gh` 登录 | 发送 PR | `gh auth status --hostname github.com` |
 | GitHub 分支保护与必需检查 | 在 GitHub 上合并 PR | 在 GitHub 仓库设置；插件不预检检查状态 |
-| Host 补丁 | 任务消息卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；不打补丁也能运行 |
+| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；不打补丁也能运行 |
 
 ## 启停与状态
 

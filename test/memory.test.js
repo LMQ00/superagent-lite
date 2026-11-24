@@ -135,6 +135,9 @@ test('extraction updates fields and skills, and reports only changed memory', as
   assert.equal(activations[0].maxDepth, 2)
   assert.equal(activations[0].parent, agent)
   assert.equal(activations[0].label, 'Distill memory')
+  assert.deepEqual(activations[0].promptSource, {
+    kind: 'agent-message', form: 'relay', senderSessionId: agent.id,
+  })
   assert.deepEqual(helper(), { scope: undefined, kind: 'memory', projectRoot })
   const prompt = activations[0].prompt[0].text
   assert.match(prompt, /\[user\] Use the checked-in notes\./)

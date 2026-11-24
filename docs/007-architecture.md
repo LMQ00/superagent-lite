@@ -230,7 +230,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写 skill 后已结束 Worker 不再收到 catalog 更新。 |
 | `test/memory-panel.test.js` | 记忆只读端点的 owner 准入、项目根校验、全局/项目记忆与知识库返回和读取失败。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话拦截全局/项目 memory skill 的 catalog 更新，其他 skill 变化和 Router 会话不受影响。 |
-| `test/host-patch.test.js` | agent-message 任务卡 Host 补丁的检查、重复应用和回滚。 |
+| `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁的检查、旧补丁升级、重复应用和回滚。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
 | `test/merge-tool.test.js` | merge worker 的目标分支合并、冲突保留和 worktree 状态限制。 |

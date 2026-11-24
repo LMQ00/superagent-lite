@@ -1,9 +1,11 @@
 # DSH host patch: initial subagent prompt source
 
-`dispatch_worker` can show the creation dispatch as a "任务消息" card only when the
-Host records the initial subagent prompt with a non-`user` message source. DSH
-`0.2.2-rc.3` hard-codes that source in `@deepseek-ai/dsh-subagent`, so the installed
-copy needs the patch below. This note is the application and rollback guide; the
+The plugin's subagent requests can show as "任务消息" cards only when the Host
+records the initial child prompt with a non-`user` message source. That covers the
+`dispatch_worker` task, the worker's review request (`src/review.js`) and the
+worker's memory distillation request (`src/memory.js`). DSH `0.2.2-rc.3`
+hard-codes that source in `@deepseek-ai/dsh-subagent`, so the installed copy needs
+the patch below. This note is the application and rollback guide; the
 unified diff is [`scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch`](../scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch).
 
 ## Affected versions
@@ -32,8 +34,9 @@ The client rule is unchanged: a `user/message` whose source is not `user` and
 whose message was claimed by the waking turn renders as a `turn-trigger` card.
 With `promptSource = { kind: 'agent-message', form: 'relay', senderSessionId }`,
 the header is the existing `收到任务消息` label and the collapsible body carries the
-full task message, without the `Agent <name> sent a message:` prefix that
-`sendMessage` adds.
+full prompt, without the `Agent <name> sent a message:` prefix that `sendMessage`
+adds. The dispatch names the router as the sender; the review and memory requests
+name the worker that started the helper.
 
 ## Apply
 
@@ -87,5 +90,8 @@ the `收到任务消息` card.
 - Without the patch, the plugin still works: `promptSource` is an extra field on the
   call, the Host ignores it, and creation falls back to the ordinary user row.
 - Reverse the patch with `patch -R -p1 -d "$DSUBAGENT" < scripts/…patch`.
-- Keep the plugin's `dispatch.js` source and this patch together; the card requires
-  both the Host-side plumbing and the plugin passing `promptSource`.
+- Keep the plugin's `promptSource` call sites (`src/launch-queue.js`,
+  `src/review.js`, `src/memory.js`) and this patch together; the card requires both
+  the Host-side plumbing and the plugin passing `promptSource`. The Chat client
+  patch in [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) then renders the
+  source as a card in both waking and steered Turns.
