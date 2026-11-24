@@ -4,7 +4,7 @@
 
 ## 两条路径
 
-新工作与已有工作走不同入口，互不接管。
+新工作与已有工作走不同入口，互不接管；只询问 worker 或任务状态时走 `worker_status`，不创建也不延续工作。
 
 ### 新工作
 
@@ -21,6 +21,7 @@
 - `mode=merge` 还要求 `land=true` 和非空 `branches`；每项是分支名或 16 位 Task ID，最多 20 项。Task ID 会按本 Router Session 和 Project 解析成 worker 分支，目标分支必须存在且不能是 base branch（`src/validation.js:5-48`、`src/dispatch.js:13-43`）。
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:70-75`）。
 - 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占额外名额（`src/worker-settings.js`、`src/launch-queue.js`）。
+- 只询问 worker 或任务状态时，Router 用 `worker_status` 查询本会话派发的任务，不新建 Task；排队任务被取消或排队 worker 开始执行时，Router 收到后台状态通知。
 
 ### 已有工作
 
@@ -44,7 +45,7 @@
 
 | 级别 | 授予方式 | 允许什么 | 默认 |
 | --- | --- | --- | --- |
-| 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker` 和 `continue_worker` | 每个输入 |
+| 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker` 和 `continue_worker`；只问状态时调用 `worker_status` | 每个输入 |
 | 委派 | `dispatch_worker` 且 `mode=change`、`mode=report` 或 `mode=merge` | 创建一个 Task 和一个 Worker Session，或把 merge 请求追加给运行中的 merge worker | 否；需要决定 |
 | 编辑 | change 任务中调用 `create_worktree` | 在分配的 Worktree 工作；未进入前其他工具被拦 | 否；Worker 必须先进入 Worktree |
 | 审查 | 提交后调用 `review_worker_commit` | 读取已提交 diff 并启动一个独立 reviewer；reviewer 不能写改文件或改变分支 | 否；需要干净的已提交 Worktree |
@@ -53,7 +54,7 @@
 | 合并 | 用户直接指示时由 router 派发 `mode=merge`：没有运行中的 merge worker 就新派发，已有则追加；面板任务行的合并操作 | merge worker 先把 `mergeBranches` 合入自己的 worktree 分支并审查合并结果，再把 reviewed commit 本地合入 base branch；面板直接把 reviewed HEAD 合入所选分支，不需要 `gh` | 否；需要明确授权、审查通过的 HEAD、干净的项目 checkout 和 full access |
 | 发送 PR | 用户在面板点击「提交 PR」 | 推送 reviewed HEAD 到所选 GitHub remote 并打开或复用该 HEAD 的 Pull request | 否；需要任务已结束 Worker 工作、审查通过的 HEAD、`gh` 账号、GitHub remote 和 full access |
 | 删除分支 | 用户在已完成的 Task 行点击「删除分支」 | 移除已合并的 worker Worktree 并删除分支 | 否；需要明确点击和已合并的 HEAD |
-| 取消排队 | 安装 owner 在「排队中」的 Task 行点击「取消」 | 原子地只移除仍为 `queued` 的 Task 记录和会话映射，之后不会再被派发；任务已离开队列时拒绝 | 否；需要明确点击，运行中或已交付的 Task 没有入口 |
+| 取消排队 | 安装 owner 在「排队中」的 Task 行点击「取消」 | 原子地只移除仍为 `queued` 的活动 Task 记录和会话映射，并留下 `cancelled` 墓碑供 `worker_status` 查询；之后不会再被派发，任务已离开队列时拒绝 | 否；需要明确点击，运行中或已交付的 Task 没有入口 |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支和 Worktree | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
 | 修改设置 | owner 在面板「设置」保存 | 保存 worker 模型和并发上限，只影响之后启动的 worker | 否；需要 owner 明确点击 |
 | 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | memory 角色读取 Worker 原始会话，写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
@@ -71,11 +72,12 @@
 
 Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生效（`src/turn-guard.js:89-93`）。
 
-- 每个用户输入需要当前回合内一次成功的 `dispatch_worker` 或 `continue_worker` 结果。失败的工具结果不算；`mode=answer` 的成功结果算（`src/turn-guard.js:73-108`）。
+- 每个用户输入需要当前回合内一次成功的 `dispatch_worker`、`continue_worker` 或 `worker_status` 结果。失败的工具结果不算；`mode=answer` 的成功结果算（`src/turn-guard.js:73-108`）。
 - 完成回合没有决定时，等 agent 空闲后插入提醒。提醒是 `source.kind = superagent-lite-reminder` 的用户角色消息，不是新输入（`src/turn-guard.js:7`、`src/turn-guard.js:33-51`）。
 - 每个输入最多提醒 2 次；新的用户输入重置预算（`src/turn-guard.js:3-7`、`src/turn-guard.js:56-70`）。
 - Router 从输入本身判断，不检查仓库、不运行项目命令；项目工作交给 Worker。
-- Router 只在派发、续派或用户要求加载 skill 时调用别的工具；全局记忆由运行时上下文注入，没有模型侧记忆工具。
+- Router 只在派发、续派、只查询 worker 状态或用户要求加载 skill 时调用别的工具；全局记忆由运行时上下文注入，没有模型侧记忆工具。
+- 排队任务取消和排队 worker 开始执行会以 `source.kind = superagent-lite-worker-status` 的用户角色消息注入 Router 的下一模型步；它不唤醒新回合、不算新输入，Router 需要当前全量状态时调用 `worker_status`（`src/worker-status.js`、`src/launch-queue.js`、`index.js`）。
 - 派发参数在碰文件前完成校验：`mode` 必填，`title` 1–120 字符，`task` 1–20,000 字符，`teamId` 1–64 字符；change 和 merge 还要求英文 `worktreeName`（`src/dispatch.js:44-50`、`src/validation.js:1-53`）。
 - 合并只在用户明确授权后执行：直接指示或面板的合并操作。直接指示的合并请求默认派发 `mode=merge` 的新 worker，不续派分支所属的 Task（`cordis.patch.yml:31-32`、`src/dispatch.js:25-48`）。
 
@@ -188,7 +190,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 - 面板的 `review` 动作对未合并、HEAD 未审查且有提交的 Task 运行一次独立审查；Worker Session 必须还活着。通过写 `awaiting-merge`，有意见写 `review-required`（`src/git-actions.js:390-412`）。
 - 面板的 `delete-branch` 只用于 `merged` 的 Task。Worktree 已登记且干净时先 `git worktree remove`，再 `git branch -D`；随后记录 `branchDeletedAt` 并清空 `worktree`（`src/merge.js:113-142`）。
-- 面板的「取消」只出现在「排队中」的 Task 行，向 `/superagent-lite/tasks` 发送 `DELETE`；服务端在 Task 锁内复核状态仍为 `queued` 后原子移除记录和会话映射，已经离开队列时返回 `409`，不启动 Worker（`src/board.js:11-40`、`src/task-store.js:122-144`）。
+- 面板的「取消」只出现在「排队中」的 Task 行，向 `/superagent-lite/tasks` 发送 `DELETE`；服务端在 Task 锁内复核状态仍为 `queued` 后原子移除活动记录和会话映射，留下 `cancelled` 墓碑供 `worker_status` 查询，已经离开队列时返回 `409`，不启动 Worker（`src/board.js:11-40`、`src/task-store.js:122-144`、`src/worker-status.js`）。
 - 面板的「删除任务」向 `/superagent-lite/tasks` 发送 `DELETE`，只接受 owner 和 16 位任务 ID。Worker Session 还活着的运行中 Task、正在合并或发布的 Task 被拒绝；其余 Task 删除记录和 worker 会话映射，分支和 Worktree 保留（`src/board.js:11-48`、`src/task-store.js:103-121`）。
 - 读取面板时会采纳同一 Project 的另一个 Task 为同一 commit 记录的通过审查，把 reviewed HEAD 写回本 Task（`src/git-actions.js:255-299`）。
 

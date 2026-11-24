@@ -252,7 +252,7 @@ test('the router injects only global memory from the shared store', async () => 
   assert.equal(memory.order, 170)
   assert.match(memory.text(), /User profile: Prefers terse reports\./)
   assert.doesNotMatch(memory.text(), /Project-only memory/)
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['continue_worker', 'dispatch_worker'])
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['continue_worker', 'dispatch_worker', 'worker_status'])
 })
 
 test('a memory helper gets both knowledge tools while a reviewer gets only the query tool', async () => {

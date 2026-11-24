@@ -40,6 +40,24 @@ test('a follow-up continued on an existing task is a decision too', () => {
   assert.equal(followups.length, 0)
 })
 
+test('a worker status query satisfies the decision for one input', () => {
+  const { guard, session, followups } = fixture()
+  guard.onEvent(session, input)
+  guard.onEvent(session, call(1, 'worker_status'))
+  guard.onEvent(session, result(1, 'worker_status'))
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 0)
+})
+
+test('a worker status notice is background and does not arm an input', () => {
+  const { guard, session, followups, event } = fixture()
+  guard.onEvent(session, event('user/message', { source: { kind: 'superagent-lite-worker-status' } }))
+  guard.onEvent(session, end(1))
+  guard.onIdle(session.id)
+  assert.equal(followups.length, 0)
+})
+
 test('a completed turn without a decision is reopened once the agent is idle', () => {
   const { guard, session, followups } = fixture()
   guard.onEvent(session, input)

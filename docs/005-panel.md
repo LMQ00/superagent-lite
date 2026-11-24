@@ -84,7 +84,7 @@
 
 ### 取消排队
 
-只有「排队中」的 Task 行显示「取消」，其他状态没有这个按钮。点击后不打开确认弹窗，直接向 `/superagent-lite/tasks` 发送 `DELETE`；成功后该行立即从列表和批量选择中移除，显示「已取消排队任务。」，不刷新页面、不重新加载列表。服务端在 Task 锁内复核状态仍为 `queued` 才移除记录和会话映射，已经离开队列时返回错误并保留该行（`client.js:452-466`、`client.js:689-693`、`src/board.js:11-40`、`src/task-store.js:122-144`）。
+只有「排队中」的 Task 行显示「取消」，其他状态没有这个按钮。点击后不打开确认弹窗，直接向 `/superagent-lite/tasks` 发送 `DELETE`；成功后该行立即从列表和批量选择中移除，显示「已取消排队任务。」，不刷新页面、不重新加载列表。服务端在 Task 锁内复核状态仍为 `queued` 才移除活动记录和会话映射，并留下一条面板不显示的 `cancelled` 墓碑供 Router 的 `worker_status` 查询；已经离开队列时返回错误并保留该行（`client.js:452-466`、`client.js:689-693`、`src/board.js:11-40`、`src/task-store.js:122-144`、`src/worker-status.js`）。
 
 ### 删除任务
 

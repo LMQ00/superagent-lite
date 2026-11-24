@@ -83,9 +83,10 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 启动 | 启用 bundle，启动 DSH Web |
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
-| 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
+| 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
-| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/` |
+| 排队变化 | 排队中的 Worker 开始执行、排队中的 Task 被取消时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。取消会在 `tasks/cancelled/` 留下墓碑供 `worker_status` 查询，面板列表仍移除该行 |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/` |
 | 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker 和 Reviewer 用 `knowledge_query` 查询项目知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
