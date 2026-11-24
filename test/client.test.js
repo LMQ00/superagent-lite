@@ -312,7 +312,11 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   let tree = board.render()
   tab(tree, '记忆系统').props.onClick()
   tree = board.render()
+  // The memory view loads when its tab is first selected.
   assert.equal(tab(tree, '记忆系统').props['aria-selected'], true)
+  assert.match(text(tree), /正在加载任务/)
+  await flush()
+  tree = board.render()
   assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
   assert.equal(tab(tree, '设置').props['aria-selected'], false)
   assert.match(text(tree), /只读查看保存的项目记忆和知识库/)
@@ -378,6 +382,8 @@ test('the memory tab reports a load failure and can retry from the same panel', 
   await flush()
   let tree = board.render()
   tab(tree, 'Memory').props.onClick()
+  board.render()
+  await flush()
   tree = board.render()
   assert.match(text(tree), /Could not load memory/)
   fail = false

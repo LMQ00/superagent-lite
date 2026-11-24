@@ -372,7 +372,7 @@ window.__ModuleLoader__.load({
       }, [revision])
 
       useEffect(() => {
-        if (phase === 'loading') return () => {}
+        if (tab !== 'memory' || phase === 'loading') return () => {}
         const controller = new AbortController()
         setMemoryPhase('loading')
         async function load() {
@@ -399,7 +399,7 @@ window.__ModuleLoader__.load({
         }
         void load()
         return () => controller.abort()
-      }, [revision, phase, memoryProject])
+      }, [revision, phase, memoryProject, tab])
 
       const optionsFor = key => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
         .sort((a, b) => a.localeCompare(b))
