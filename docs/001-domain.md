@@ -57,7 +57,7 @@ flowchart LR
 | 原始归档（Raw archive） | Worker 完整回合的原始记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口；位于 `~/.dsh/superagent-lite/task/archive/`（`src/memory.js`、`src/memory-store.js`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
 | Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可取消，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；合并、发送 PR、审查、删除分支、取消排队和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限（`src/board.js:7-66`、`src/status.js:6-34`、`client.js:220-923`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、取消排队和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限（`src/board.js:7-66`、`src/status.js:6-34`、`client.js:289-1056`）。 |
 
 ## 聚合
 

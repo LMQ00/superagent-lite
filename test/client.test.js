@@ -470,7 +470,9 @@ test('a queued task carries its own label and becomes running in place when a sl
   board.render()
   await flush()
   let tree = board.render()
-  assert.match(text(tree), /排队中/)
+  const rowOf = target => byClass(target, 'sl-task').find(row => text(row).includes('Task A'))
+  assert.match(text(rowOf(tree)), /排队中/)
+  assert.ok(text(tree).includes('排队中1'))
   assert.doesNotMatch(text(tree), /未确认/)
   assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
   assert.equal(scheduled.length, 1)
@@ -479,13 +481,72 @@ test('a queued task carries its own label and becomes running in place when a sl
   await scheduled[0].callback()
   await flush()
   tree = board.render()
-  assert.doesNotMatch(text(tree), /排队中/)
+  assert.doesNotMatch(text(rowOf(tree)), /排队中/)
+  assert.ok(text(tree).includes('排队中0'))
   assert.doesNotMatch(text(tree), /正在加载任务/)
   assert.match(text(tree), /运行中/)
   assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
   assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 2)
   assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').at(-1).options.credentials, 'same-origin')
   assert.deepEqual(cleared, [1])
+  board.dispose()
+})
+
+test('filters queued tasks into their own group while keeping the queued label and cancel action', async () => {
+  let tasks = [
+    task({ id: 'a', title: 'Task A', status: 'running', queued: true, workerSessionId: 'worker-a' }),
+    task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
+    task({ id: 'c', title: 'Task C', status: 'unmerged', git: gitFacts() }),
+  ]
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
+        tasks = tasks.filter(item => item.id !== removed)
+        return { ok: true, json: async () => ({ deleted: removed }) }
+      }
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.ok(text(tree).includes('运行中2'))
+  assert.ok(text(tree).includes('排队中1'))
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1', '运行中2'])
+
+  filterButton(tree, '排队中').props.onClick()
+  tree = board.render()
+  assert.equal(filterButton(tree, '排队中').props['aria-pressed'], true)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['排队中1'])
+  assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)), ['Task A'])
+  const row = byClass(tree, 'sl-task').find(item => text(item).includes('Task A'))
+  assert.match(text(row), /排队中/)
+  const cancelIn = target => nodes(target).find(node => node.type === 'button' && text(node) === '取消')
+  assert.equal(cancelIn(row).props.title, '取消排队中的任务')
+
+  filterButton(tree, '全部').props.onClick()
+  tree = board.render()
+  assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)), ['Task C', 'Task A', 'Task B'])
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1', '运行中2'])
+
+  filterButton(tree, '排队中').props.onClick()
+  tree = board.render()
+  cancelIn(byClass(tree, 'sl-task')[0]).props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task A/)
+  assert.match(text(tree), /该状态下暂无任务/)
+  assert.match(text(tree), /已取消排队任务/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
   board.dispose()
 })
 

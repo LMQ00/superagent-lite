@@ -138,7 +138,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch、cancel-queued 和 delete-task 动作，并支持勾选多条任务后批量删除。取消排队只对 `queued` 行出现，成功后直接移除该行，不弹窗、不重新加载列表。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。记忆系统标签页只读展示全局/项目记忆和知识库；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。面板不显示设置分组（`client.js:1-923`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，也可单独筛出「排队中」的 Task，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 merge、publish、review、delete-branch、cancel-queued 和 delete-task 动作，并支持勾选多条任务后批量删除。取消排队只对 `queued` 行出现，成功后直接移除该行，不弹窗、不重新加载列表。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；删除分支弹窗确认分支和工作树移除；删除任务弹窗确认移除面板记录。记忆系统标签页只读展示全局/项目记忆和知识库；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。面板不显示设置分组（`client.js:1-1084`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
