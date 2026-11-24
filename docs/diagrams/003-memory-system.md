@@ -31,7 +31,7 @@ flowchart TB
 | Part | Meaning |
 | --- | --- |
 | Global layer | Shared by every project: one shared skill and the user profile. |
-| Project layer | Separate for each project: responsibilities, positioning, one project skill, and the project knowledge base. |
+| Project layer | Separate for each project: responsibilities, positioning, memory-registered project skills, and the project knowledge base. |
 | Router injection | Only the global layer. |
 | Worker and reviewer injection | The project layer plus the global layer. Responsibilities and positioning are injected directly. |
 | Skills | Stored as normal skill files; only their descriptions enter the skill catalog, and the full body loads only through the `skill` tool. |
@@ -46,7 +46,7 @@ flowchart TB
 | Global memory | `memory/global.json`, field `userProfile` (`src/memory-store.js`) |
 | Project memory | `memory/projects/<sha256(projectRoot)>.json`, fields `responsibilities` and `positioning` (`src/memory-store.js`) |
 | Shared skill | `~/.agents/skills/superagent-shared-memory/SKILL.md`; description only in the skill catalog |
-| Project skill | `<projectRoot>/.dsh/skills/superagent-project-memory/SKILL.md`; a worker-scoped provider reads it from the project checkout so the Worktree worker and reviewer see its description in the skill catalog |
+| Project skill | `<projectRoot>/.dsh/skills/superagent-project-memory/SKILL.md`; a worker-scoped provider reads it from the project checkout so the Worktree worker and reviewer see its description in the skill catalog. Any skill memory writes under the global or project skill root is registered as memory-owned for catalog stability |
 | Knowledge base | `memory/knowledge/<sha256(projectRoot)>.json`, queried and edited through `knowledge_query` and `knowledge_write` (`src/memory-store.js`, `src/memory.js`) |
 | Router injection | `refreshGlobalMemory` / `registerGlobalMemoryContext` (`src/memory.js`, `router.js`) |
 | Worker injection | `registerMemoryContext` reads project + global memory at Worker creation (`src/memory.js`, `index.js`) |
@@ -61,6 +61,7 @@ flowchart TB
 - Global memory is shared by every project; project memory and project knowledge are keyed by the normalized project root and never cross projects.
 - Router sees only global memory. The router preset restricts its skill roots to the global skill roots; the worker preset keeps project and global skill roots.
 - Worker and reviewer prompts receive the project and global memory text. Responsibilities and positioning are injected directly; skills only contribute their descriptions to the catalog.
+- A running or finished session keeps the catalog it published: catalog changes caused only by memory-owned skills are withheld, and changes involving any other skill are delivered.
 - The memory role may read and write memory. It writes no duplicate facts and corrects a wrong entry when the conversation supports the correction.
 - The knowledge base is tool-only: `knowledge_query` is available to workers and reviewers, and `knowledge_write` is available only to the memory role.
 - Memory is data, not instructions; it cannot add a requirement or grant permission.

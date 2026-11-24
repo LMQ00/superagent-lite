@@ -15,14 +15,21 @@ import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import {
-  archiveWorkerTurn, createKnowledgeQueryTool, createKnowledgeWriteTool, registerMemoryContext,
-  registerProjectSkillProvider, runMemoryExtraction,
+  archiveWorkerTurn, createKnowledgeQueryTool, createKnowledgeWriteTool, memorySkillNames,
+  registerMemoryContext, registerProjectSkillProvider, runMemoryExtraction,
 } from './src/memory.js'
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
-  const catalogGuard = createWorkerSkillCatalogGuard(ctx)
+  const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
+    ownedSkills: async agent => {
+      const parent = agent.session?.header?.parentSession
+      const task = await taskForSession(undefined, agent.id)
+        ?? (parent === undefined ? undefined : await taskForSession(undefined, parent))
+      return memorySkillNames(task?.projectRoot)
+    },
+  })
   ctx.on('agent/pre-step', catalogGuard.preStep)
   const gitManager = createGitManager(ctx)
   ctx.inject(['webServer', 'connection'], web => {

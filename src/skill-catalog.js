@@ -1,14 +1,12 @@
-import { SKILL_NAMES } from './memory-store.js'
-
 export const WORKER_PRESET = 'superagent-lite-worker'
-
-const MEMORY_SKILLS = new Set([SKILL_NAMES.global, SKILL_NAMES.project])
 
 // A live worker or reviewer keeps the skill catalog it published when its
 // session started. Memory-owned skills are written while the reporting worker
 // is still finishing, and a replacement catalog at that point makes an already
 // delivered session act again; later tasks read the new description when they
-// are created.
+// are created. `ownedSkills` reports the current memory-owned names from the
+// ownership record memory keeps when it writes a skill, so this guard never
+// guesses from names.
 function changedSkillNames(before, after) {
   const previous = new Map(before.map(entry => [entry.name, entry.description]))
   const next = new Map(after.map(entry => [entry.name, entry.description]))
@@ -16,7 +14,7 @@ function changedSkillNames(before, after) {
   return [...names].filter(name => previous.get(name) !== next.get(name))
 }
 
-export function createWorkerSkillCatalogGuard(ctx) {
+export function createWorkerSkillCatalogGuard(ctx, { ownedSkills = () => new Set() } = {}) {
   const baselines = new Map()
 
   async function preStep({ agent }, next) {
@@ -35,8 +33,11 @@ export function createWorkerSkillCatalogGuard(ctx) {
       return { ...decision, messages: decision.messages.filter(message => message !== catalog) }
     }
     const changed = changedSkillNames(baseline, entries)
-    if (changed.length > 0 && changed.every(name => MEMORY_SKILLS.has(name))) {
-      return { ...decision, messages: decision.messages.filter(message => message !== catalog) }
+    if (changed.length > 0) {
+      const owned = await ownedSkills(agent)
+      if (changed.every(name => owned.has(name))) {
+        return { ...decision, messages: decision.messages.filter(message => message !== catalog) }
+      }
     }
     baselines.set(agent.id, entries)
     return decision
