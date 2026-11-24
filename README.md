@@ -40,6 +40,7 @@ npm test
 
 - 全局记忆保存用户画像和一个所有项目共用的 skill；项目记忆保存职责、定位、一个适用于当前项目与职责的 skill，以及项目知识库。职责和定位是小段固定注入的内容；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
 - 全局 skill 写在 `~/.agents/skills/superagent-shared-memory/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
+- 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。
 - 知识库只通过工具访问：Worker 和 Reviewer 用 `knowledge_query` 查询；只有 memory 角色能用 `knowledge_write` 新增、纠正或删除。知识库保存在 `~/.dsh/superagent-lite/memory/knowledge/`。
 - 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。它直接读取 Worker 的完整原始会话，返回需要更新的记忆字段；插件只写回发生变化的字段和 skill，没有可复用的结论就不写。记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。
 - Worker 每一轮的原始会话按回合归档在 `~/.dsh/superagent-lite/task/archive/`，保留 Session 序号和轮内编号，作为原始参照物；归档只由 Host 写入，模型工具没有读取入口。
