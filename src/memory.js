@@ -78,15 +78,37 @@ export function memorySkillNames(projectRoot) {
   return store.ownedSkillNames(projectRoot)
 }
 
-// The panel shows saved memory and knowledge read-only; without a project it
-// can still show the global scope, and the knowledge base is always global.
+// The panel shows saved memory, memory-managed skills and knowledge; without a
+// project it can still show the global scope, and the knowledge base is always
+// global.
 export async function readMemoryView(projectRoot) {
-  const [global, project, knowledge] = await Promise.all([
+  const [global, project, knowledge, globalSkill, projectSkill] = await Promise.all([
     store.readGlobal(),
     projectRoot === undefined ? undefined : store.readProject(projectRoot),
     store.readKnowledge(),
+    store.readSkill('global'),
+    projectRoot === undefined ? undefined : store.readSkill('project', projectRoot),
   ])
-  return project === undefined ? { global, knowledge } : { global, project, knowledge }
+  return {
+    global,
+    ...(project === undefined ? {} : { project }),
+    knowledge,
+    skills: { global: globalSkill, ...(projectSkill === undefined ? {} : { project: projectSkill }) },
+  }
+}
+
+export async function deleteMemoryView(target) {
+  if (target.kind === 'memory') {
+    await store.deleteMemoryField(target.scope, target.projectRoot, target.field)
+    if (target.scope === 'global') await refreshGlobalMemory()
+    return { deleted: { kind: 'memory', scope: target.scope, field: target.field } }
+  }
+  if (target.kind === 'skill') {
+    const existed = await store.deleteSkill(target.scope, target.projectRoot)
+    return { deleted: { kind: 'skill', scope: target.scope }, existed }
+  }
+  const entry = await store.deleteKnowledge(target.id)
+  return { deleted: { kind: 'knowledge', id: entry.id } }
 }
 
 export async function registerMemoryContext(ctx, projectRoot) {

@@ -182,3 +182,34 @@ test('worker turns archive under task/archive with their source key', async () =
   await assert.rejects(store.archive.write({ sessionId: '', seq: 1 }, {}), /Session id/)
   await assert.rejects(store.archive.write({ sessionId: 'x', seq: -1 }, {}), /non-negative/)
 })
+
+test('deleting memory fields clears them and deleting a skill removes its file and ownership record', async () => {
+  const { createMemoryStore } = await import('../src/memory-store.js')
+  const directory = join(root, 'delete-store')
+  const agentsHome = join(root, 'delete-agents')
+  const own = createMemoryStore(directory, { agentsHome })
+  const project = join(root, 'project-delete-memory')
+
+  await own.writeMemory(project, {
+    global: { userProfile: 'Delete this profile.' },
+    project: { responsibilities: 'Delete this responsibility.', positioning: 'Keep this positioning.' },
+  })
+  assert.equal((await own.deleteMemoryField('global', project, 'userProfile')).userProfile, '')
+  assert.equal((await own.deleteMemoryField('project', project, 'responsibilities')).responsibilities, '')
+  assert.deepEqual(await own.readProject(project), {
+    projectRoot: project, responsibilities: '', positioning: 'Keep this positioning.',
+  })
+  assert.equal((await own.readGlobal()).userProfile, '')
+  await assert.rejects(own.deleteMemoryField('other', project, 'userProfile'), /scope/)
+  await assert.rejects(own.deleteMemoryField('global', project, 'responsibilities'), /Unknown global memory field/)
+
+  await own.writeSkill('global', project, { description: 'Shared skill.', content: 'Body.' })
+  await own.writeSkill('project', project, { description: 'Project skill.', content: 'Body.' })
+  assert.equal(await own.deleteSkill('global', project), true)
+  assert.equal(await own.deleteSkill('project', project), true)
+  assert.equal(await own.readSkill('global', project), undefined)
+  assert.equal(await own.readSkill('project', project), undefined)
+  assert.equal(await own.deleteSkill('global', project), false)
+  const registry = JSON.parse(await readFile(join(directory, 'memory', 'skills.json'), 'utf8'))
+  assert.deepEqual(registry, { version: 1, global: [], projects: {} })
+})

@@ -41,7 +41,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 
 存储阶段表以 worker 分支仍存在为默认前提。worker 分支已删除的 Task 不再按分支推导面板状态：非失败的 Task 显示为已完成，失败 Task 保持失败（`src/git-actions.js:288-293`）。
 
-面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 的文案；活动 Task 不写这些值。排队取消会留下 `cancelled` 墓碑，`worker_status` 用它报告已取消任务，面板列表仍不显示（`client.js:8-15`、`src/status.js:8-10`、`src/task-store.js`、`src/worker-status.js`）。
+面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 的文案；活动 Task 不写这些值。排队取消会留下 `cancelled` 墓碑，`worker_status` 用它报告已取消任务，面板列表仍不显示（`client.js:14-15`、`client.js:64-65`、`src/status.js:8-10`、`src/task-store.js`、`src/worker-status.js`）。
 
 ## 执行
 
@@ -92,7 +92,7 @@ memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js`、`index.js`）。
 
-写入的 skill 只对之后新派发的 Worker/Reviewer 可见。已运行或已结束的 Worker/Reviewer 会话保留启动时的 skill catalog：只由 memory 管理的 skill 变化构成的 catalog 更新会被拦截，不会因为 memory 写入而收到变更提醒并继续行动。归属来源是 memory store 写入 skill 时登记的名单（按全局和项目根分开记录），并列的第二个项目 skill 也按同一规则处理；未登记的其他 skill 变化照常发布（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
+写入的 skill 只对之后新派发的 Worker/Reviewer 可见。已运行或已结束的 Worker/Reviewer 会话保留启动时的 skill catalog：只由 memory 管理的 skill 变化构成的 catalog 更新会被拦截，不会因为 memory 写入而收到变更提醒并继续行动。归属来源是 memory store 写入 skill 时登记的名单（按全局和项目根分开记录），并列的第二个项目 skill 也按同一规则处理；未登记的其他 skill 变化照常发布（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。安装 owner 可以在「记忆系统」标签页逐条删除记忆字段、memory skill 或知识条目；删除 skill 与写入一样只影响之后派发的会话，删除全局记忆字段后 Router 的全局记忆缓存立即刷新（`src/memory-panel.js`、`src/memory.js`）。
 
 ### 原始归档
 
@@ -111,7 +111,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 
 - 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:149-166`）。
 - 并发 worker 上限来自面板「设置」，默认 3，范围 1–16；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/launch-queue.js`）。
-- 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新；任务列表的「排队中」筛选可以单独筛出这些 Task，筛选后仍保留「排队中」标签和取消按钮。排队中的 Worker 开始执行时，启动队列向 Router 注入后台状态通知；排队中的 Task 也可以取消：面板发送既有 `DELETE /superagent-lite/tasks?taskId=`，服务端在同一 Task 锁内确认状态仍是 `queued` 后移除活动记录和会话映射，留下 `cancelled` 墓碑供 `worker_status` 查询，并通知 Router；已经离开队列的 Task 返回 `409`，不会在取消后继续启动。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:166-206`、`client.js:412-445`、`src/board.js:14-55`、`src/task-store.js:122-144`、`src/worker-status.js`）。
+- 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新；任务列表的「排队中」筛选可以单独筛出这些 Task，筛选后仍保留「排队中」标签和取消按钮。排队中的 Worker 开始执行时，启动队列向 Router 注入后台状态通知；排队中的 Task 也可以取消：面板发送既有 `DELETE /superagent-lite/tasks?taskId=`，服务端在同一 Task 锁内确认状态仍是 `queued` 后移除活动记录和会话映射，留下 `cancelled` 墓碑供 `worker_status` 查询，并通知 Router；已经离开队列的 Task 返回 `409`，不会在取消后继续启动。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:166-206`、`client.js:438-472`、`src/board.js:14-55`、`src/task-store.js:122-144`、`src/worker-status.js`）。
 - `mode=merge` 例外：同一 Router Session 和 Project 只有一个活着的 merge worker，新的 merge 请求追加给它，并发的 merge 派发按 Router 和 Project 排队；没有活 Worker Session 的残留运行中 Task 不参与追加（`src/dispatch.js`）。
 - 同一 Project 的多个 Task 各用自己的 Worktree 并行（`cordis.patch.yml:1-7`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和 memory 角色都以深度 2 启动（`src/review.js`、`src/memory.js`）。
