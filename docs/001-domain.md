@@ -50,14 +50,14 @@ flowchart LR
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；项目 checkout 必须保持原样（`index.js:54-63`、`src/report-tool.js:19-41`）。 |
 | Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 移除已合并的 worker 分支及其 Worktree。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；四者都要求 full access 和未移动的 reviewed HEAD（`src/git-actions.js:386-473`、`src/merge.js:30-142`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
-| Memory | 分全局记忆、项目记忆、项目 skill 和项目知识库。 | 全局记忆所有项目共享，保存用户画像和共享 skill；项目记忆按项目根分开，保存职责、定位、项目 skill 和知识库；每个项目访问不到其他项目的项目记忆和知识。Router 只注入全局记忆；Worker 和 Reviewer 注入项目 + 全局。记忆是数据，不是指令（`src/memory.js`、`src/memory-store.js`、`router.js`、`src/review.js`）。 |
+| Memory | 分全局记忆、项目记忆、项目 skill 和项目知识库。 | 全局记忆所有项目共享，保存用户画像和共享 skill；项目记忆按项目根分开，保存职责、定位、项目 skill 和知识库；每个项目访问不到其他项目的项目记忆和知识。Router 只注入全局记忆；Worker 和 Reviewer 注入项目 + 全局。记忆是数据，不是指令；面板的「记忆系统」标签页只读展示全局记忆、项目记忆和项目知识库（`src/memory.js`、`src/memory-store.js`、`src/memory-panel.js`、`router.js`、`src/review.js`）。 |
 | Memory 角色（Memory role） | 读取 Worker 原始会话并更新记忆的只读 helper 子代理。 | 只由 change 任务的最终 `message_router` 报告触发一次；自己读取 Worker 的完整会话，不接收 worker 提交的摘要；返回需要更新的字段，空字符串表示保持不变；只写回发生变化的字段和 skill；可用 `knowledge_query` 和 `knowledge_write`，且只有它能写知识（`src/memory.js`、`src/message-router.js`、`index.js`）。 |
 | Skill | 全局或项目级的可复用指令，按 DSH skill 目录存放。 | 全局 skill 在 `~/.agents/skills/superagent-shared-memory/SKILL.md`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 可见，Router 不可见；只有 description 进入 skill catalog，完整内容按需用 `skill` 工具加载（`src/memory-store.js`、`src/memory.js`、`index.js`）。 |
 | 知识库（Knowledge base） | 项目级、只通过工具访问的长期结论集合。 | 保存在 `~/.dsh/superagent-lite/memory/knowledge/`，按项目根分文件；Worker 和 Reviewer 用 `knowledge_query` 查询；只有 memory 角色能用 `knowledge_write` 新增、纠正或删除；不把知识库整体注入提示词（`src/memory-store.js`、`src/memory.js`）。 |
 | 原始归档（Raw archive） | Worker 完整回合的原始记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口；位于 `~/.dsh/superagent-lite/task/archive/`（`src/memory.js`、`src/memory-store.js`）。 |
 | Task message | 跨 Session 的消息在聊天里的卡片。 | 应用 Host 补丁后，首个派发消息和空闲 Worker 的 follow-up 渲染为任务消息卡片；没有补丁时按普通用户消息显示（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
-| Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；合并、发送 PR、审查、删除分支和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限（`src/board.js:7-45`、`src/status.js:6-34`、`client.js:220-681`）。 |
+| Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可取消，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导；合并、发送 PR、审查、删除分支、取消排队和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限（`src/board.js:7-66`、`src/status.js:6-34`、`client.js:220-923`）。 |
 
 ## 聚合
 
@@ -114,7 +114,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 
 | 组 | 取值 | 含义 |
 | --- | --- | --- |
-| 派发 | `queued` | 记录已创建，等待并发名额外再启动 Worker（`src/dispatch.js:67-85`、`src/launch-queue.js`） |
+| 派发 | `queued` | 记录已创建，等待并发名额外再启动 Worker；尚未开始执行时可以取消，取消后记录和会话映射被移除（`src/dispatch.js:67-85`、`src/launch-queue.js`、`src/task-store.js`） |
 | 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:67-85`、`src/launch-queue.js`） |
 | 工作 | `running` | Worker 已创建或 Worktree 已保存，任务进行中（`index.js:51-52`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束的 Task 被 follow-up 重新打开（`src/continue.js:127-134`） |

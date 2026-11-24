@@ -58,6 +58,21 @@ test('board lists only its public view fields to the owner and flags unrecovered
   assert.equal(tasks[1].landAuthorizedAt, undefined)
 })
 
+test('board marks a task waiting for a concurrency slot as queued instead of unconfirmed', async () => {
+  const rows = [
+    { id: 'a', status: 'queued', workerSessionId: 'w1' },
+    { id: 'b', status: 'starting', workerSessionId: 'w2' },
+  ]
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => rows,
+  )
+  const tasks = JSON.parse((await request(handler)).body).tasks
+  assert.deepEqual(tasks.map(row => [row.status, row.queued, row.unconfirmed]),
+    [['running', true, undefined], ['running', undefined, true]])
+})
+
 test('board overlays the panel status from the Git branch view', async () => {
   const rows = [
     { id: 'a', status: 'delivery-blocked', workerSessionId: 'w1', updatedAt: '2026-01-01T00:00:00.000Z' },
@@ -143,6 +158,38 @@ test('board refuses task deletion while the worker or delivery is running', asyn
   assert.equal(merging.status, 409)
   assert.match(JSON.parse(merging.body).error, /merge or publication/)
   assert.deepEqual(removed, [])
+})
+
+test('board cancels a queued task through the cancel path instead of deleting it', async () => {
+  const taskId = 'a'.repeat(16)
+  const calls = []
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [{ id: taskId, status: 'queued', workerSessionId: 'worker' }],
+    undefined,
+    async id => { calls.push(['remove', id]); return true },
+    async id => { calls.push(['cancel', id]); return true },
+  )
+  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(result.status, 200)
+  assert.deepEqual(JSON.parse(result.body), { deleted: taskId })
+  assert.deepEqual(calls, [['cancel', taskId]])
+})
+
+test('board refuses to cancel a task that already left the queue', async () => {
+  const taskId = 'a'.repeat(16)
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [{ id: taskId, status: 'queued', workerSessionId: 'worker' }],
+    undefined,
+    async () => assert.fail('must not remove a task that started'),
+    async () => { throw new Error('The task is no longer queued') },
+  )
+  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(result.status, 409)
+  assert.deepEqual(JSON.parse(result.body), { error: 'The task is no longer queued' })
 })
 
 test('board validates task deletion requests and reports missing records', async () => {

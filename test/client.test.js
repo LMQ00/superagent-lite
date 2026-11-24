@@ -5,7 +5,9 @@ import test from 'node:test'
 
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
 
-function setup({ fetch, openSession, language = 'en' }) {
+function setup({ fetch, openSession, language = 'en', timers = {} }) {
+  const schedule = timers.setTimeout ?? setTimeout
+  const cancel = timers.clearTimeout ?? clearTimeout
   let definition
   let dictionary
   const slots = new Map()
@@ -32,12 +34,13 @@ function setup({ fetch, openSession, language = 'en' }) {
       const previous = effects[index]
       if (previous && previous.dependencies.length === dependencies.length &&
           previous.dependencies.every((value, position) => Object.is(value, dependencies[position]))) return
-      previous?.dispose()
+      previous?.dispose?.()
       effects[index] = { dependencies, dispose: effect() }
     },
   }
   runInContext(source, createContext({
     window: { __ModuleLoader__: { load(value) { definition = value } } }, fetch, AbortController, URL,
+    setTimeout: schedule, clearTimeout: cancel,
   }))
   const plugin = definition.factory(name => {
     assert.equal(name, 'react')
@@ -80,7 +83,7 @@ function setup({ fetch, openSession, language = 'en' }) {
       return main.Component({ t: ctx.locale.bind(), ...main.options.inject() })
     },
     dispose() {
-      for (const { dispose } of effects) dispose()
+      for (const { dispose } of effects) dispose?.()
       for (const dispose of applyDisposers.reverse()) dispose()
       assert.equal(slots.size, 0)
       assert.equal(localeDisposed, true)
@@ -200,9 +203,10 @@ test('keeps the task list scrollable beside the settings tab', async () => {
   await flush()
   const tree = board.render()
   const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
-  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置'])
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置', '记忆系统'])
   assert.equal(tabs[0].props['aria-selected'], true)
   assert.equal(tabs[1].props['aria-selected'], false)
+  assert.equal(tabs[2].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
@@ -274,6 +278,128 @@ test('the settings tab edits the worker model and concurrency limit', async () =
   board.dispose()
 })
 
+test('the memory tab browses global memory, project memory and knowledge read-only', async () => {
+  const requests = []
+  const tasks = [
+    task({ id: 'a', projectRoot: '/two', updatedAt: '2026-02-01T00:00:00.000Z' }),
+    task({ id: 'b', projectRoot: '/one', updatedAt: '2026-01-01T00:00:00.000Z' }),
+  ]
+  const views = {
+    '/one': {
+      global: { userProfile: 'Prefers Chinese reports.' },
+      project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
+      knowledge: [{
+        id: 'k1', text: 'Run npm test before reporting.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      }],
+    },
+    '/two': {
+      global: { userProfile: 'Prefers Chinese reports.' },
+      project: { projectRoot: '/two', responsibilities: 'Watch the second project.', positioning: '' },
+      knowledge: [],
+    },
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      const root = new URL(path, 'http://localhost').searchParams.get('projectRoot')
+      return { ok: true, json: async () => views[root] }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '记忆系统').props.onClick()
+  tree = board.render()
+  // The memory view loads when its tab is first selected.
+  assert.equal(tab(tree, '记忆系统').props['aria-selected'], true)
+  assert.match(text(tree), /正在加载任务/)
+  await flush()
+  tree = board.render()
+  assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
+  assert.equal(tab(tree, '设置').props['aria-selected'], false)
+  assert.match(text(tree), /只读查看保存的项目记忆和知识库/)
+  assert.match(text(tree), /全局记忆/)
+  assert.match(text(tree), /用户画像/)
+  assert.match(text(tree), /Prefers Chinese reports/)
+  assert.match(text(tree), /项目记忆/)
+  assert.match(text(tree), /责任/)
+  assert.match(text(tree), /Watch the second project/)
+  assert.match(text(tree), /定位/)
+  assert.match(text(tree), /未保存/)
+  assert.match(text(tree), /知识库0/)
+  assert.match(text(tree), /暂无知识库条目/)
+  // The most recently updated task's project is the current project.
+  const projectSelect = nodes(tree).find(node => node.type === 'select')
+  assert.equal(projectSelect.props.value, '/two')
+  // Read-only: no inputs, textareas or write controls on the memory tab.
+  assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 0)
+  assert.equal(nodes(tree).filter(node => node.type === 'button' && ['保存', '写入', '删除'].includes(text(node))).length, 0)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'tabpanel').length, 1)
+
+  projectSelect.props.onChange({ target: { value: '/one' } })
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Keep the board accurate/)
+  assert.match(text(tree), /Local-first tools/)
+  assert.doesNotMatch(text(tree), /未保存/)
+  assert.match(text(tree), /知识库1/)
+  assert.match(text(tree), /Run npm test before reporting/)
+  assert.match(text(tree), /更新时间/)
+  const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))
+  assert.deepEqual(memoryRequests.map(request => new URL(request.path, 'http://localhost').searchParams.get('projectRoot')),
+    ['/two', '/one'])
+  for (const request of memoryRequests) {
+    assert.equal(request.options.method, 'GET')
+    assert.equal(request.options.credentials, 'same-origin')
+    assert.equal(request.options.cache, 'no-store')
+    assert.ok(request.options.signal)
+  }
+  board.dispose()
+  assert.ok(requests.every(request => request.options.signal.aborted))
+})
+
+test('the memory tab reports a load failure and can retry from the same panel', async () => {
+  let fail = true
+  const board = setup({
+    fetch: async path => {
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task()] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      return fail
+        ? { ok: false }
+        : {
+            ok: true,
+            json: async () => ({ global: { userProfile: 'Recovered.' }, project: { responsibilities: 'R' }, knowledge: [] }),
+          }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, 'Memory').props.onClick()
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Could not load memory/)
+  fail = false
+  button(tree, 'Refresh').props.onClick()
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Recovered/)
+  board.dispose()
+})
+
 test('groups tasks by the six statuses in the specified order', async () => {
   const statuses = ['unmerged', 'running', 'unreviewed', 'completed', 'failed', 'answer']
   const tasks = statuses.map((status, index) => task({ id: `t${index}`, title: `T ${status}`, status }))
@@ -314,6 +440,52 @@ test('reports a load error and can refresh without workspace navigation', async 
   tree = board.render()
   assert.match(text(tree), /Not confirmed/)
   assert.equal(nodes(tree).find(node => text(node) === 'Worker session').type, 'span')
+  board.dispose()
+})
+
+test('a queued task carries its own label and becomes running in place when a slot opens', async () => {
+  const requests = []
+  const scheduled = []
+  const cleared = []
+  const responses = [
+    [task({ status: 'running', queued: true })],
+    [task({ status: 'running' })],
+  ]
+  let loads = 0
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') {
+        const tasks = responses[Math.min(loads++, responses.length - 1)]
+        return { ok: true, json: async () => ({ tasks }) }
+      }
+      return { ok: true, json: async () => ({ settings: { maxWorkers: 1 }, limits: { maxWorkers: { min: 1, max: 16 } } }) }
+    },
+    timers: {
+      setTimeout(callback, delay) { scheduled.push({ callback, delay }); return scheduled.length },
+      clearTimeout(id) { cleared.push(id) },
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.match(text(tree), /排队中/)
+  assert.doesNotMatch(text(tree), /未确认/)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
+  assert.equal(scheduled.length, 1)
+  assert.equal(scheduled[0].delay, 3000)
+
+  await scheduled[0].callback()
+  await flush()
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /排队中/)
+  assert.doesNotMatch(text(tree), /正在加载任务/)
+  assert.match(text(tree), /运行中/)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 2)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').at(-1).options.credentials, 'same-origin')
+  assert.deepEqual(cleared, [1])
   board.dispose()
 })
 
@@ -585,6 +757,81 @@ test('deletes a task from the panel after confirmation and disables deletion for
   const deletion = requests.find(request => request.options.method === 'DELETE')
   assert.equal(deletion.path, '/superagent-lite/tasks?taskId=a')
   assert.equal(deletion.options.credentials, 'same-origin')
+  board.dispose()
+})
+
+test('cancels a queued task in place without reloading the task list', async () => {
+  let tasks = [
+    task({ id: 'a', title: 'Task A', status: 'running', queued: true, workerSessionId: 'worker-a' }),
+    task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
+  ]
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
+        tasks = tasks.filter(item => item.id !== removed)
+        return { ok: true, json: async () => ({ deleted: removed }) }
+      }
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
+  const cancelIn = row => nodes(row).find(node => node.type === 'button' && text(node) === '取消')
+  assert.ok(cancelIn(rowFor('Task A')))
+  assert.equal(cancelIn(rowFor('Task B')), undefined)
+  assert.match(text(rowFor('Task A')), /排队中/)
+
+  cancelIn(rowFor('Task A')).props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task A/)
+  assert.match(text(tree), /Task B/)
+  assert.match(text(tree), /已取消排队任务/)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  const cancellation = requests.find(request => request.options.method === 'DELETE')
+  assert.equal(cancellation.path, '/superagent-lite/tasks?taskId=a')
+  assert.equal(cancellation.options.credentials, 'same-origin')
+  board.dispose()
+})
+
+test('keeps a queued task and shows the host error when cancellation is refused', async () => {
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        return { ok: false, json: async () => ({ error: 'The task is no longer queued' }) }
+      }
+      if (path === '/superagent-lite/tasks') {
+        return { ok: true, json: async () => ({ tasks: [task({ id: 'a', title: 'Task A', status: 'running', queued: true })] }) }
+      }
+      return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  const row = byClass(tree, 'sl-task').find(item => text(item).includes('Task A'))
+  nodes(row).find(node => node.type === 'button' && text(node) === '取消').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.match(text(tree), /Task A/)
+  assert.match(text(tree), /The task is no longer queued/)
   board.dispose()
 })
 
