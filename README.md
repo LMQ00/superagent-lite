@@ -36,7 +36,7 @@ npm test
 
 ## 记忆
 
-记忆分全局和项目两层，按项目根隔离，不跨项目混用。Router 只注入全局记忆；Worker 和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
+记忆分全局和项目两层，按项目根隔离，不跨项目混用。Router 只注入全局记忆；Worker（包括 report、merge 这类只读或受控 worker）和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
 
 - 全局记忆保存用户画像和一个所有项目共用的 skill；项目记忆保存职责、定位、一个适用于当前项目与职责的 skill，以及项目知识库。职责和定位是小段固定注入的内容；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
 - 全局 skill 写在 `~/.agents/skills/superagent-shared-memory/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
