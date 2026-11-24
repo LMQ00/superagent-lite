@@ -172,8 +172,10 @@ test('a finished worker is not shown a catalog update caused by its own memory s
     { name: 'find-skills', description: 'Find skills.' },
     { name: 'superagent-project-memory', description: 'Run the project tests.' },
   ], true)
-  const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [update] }))
-  assert.deepEqual(decision.messages, [])
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [update] }))
+    assert.deepEqual(decision.messages, [], `attempt ${attempt + 1}`)
+  }
 })
 
 test('a worker gets project and global memory injected and only the knowledge query tool', async () => {

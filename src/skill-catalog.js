@@ -9,10 +9,6 @@ const MEMORY_SKILLS = new Set([SKILL_NAMES.global, SKILL_NAMES.project])
 // is still finishing, and a replacement catalog at that point makes an already
 // delivered session act again; later tasks read the new description when they
 // are created.
-function catalogEntries(message) {
-  return message.source.entries
-}
-
 function changedSkillNames(before, after) {
   const previous = new Map(before.map(entry => [entry.name, entry.description]))
   const next = new Map(after.map(entry => [entry.name, entry.description]))
@@ -29,10 +25,12 @@ export function createWorkerSkillCatalogGuard(ctx) {
     if (ctx.agentPresets?.composedPreset(agent.ctx) !== WORKER_PRESET) return decision
     const catalog = decision.messages.find(message => message.source?.kind === 'skill-catalog')
     if (catalog === undefined) return decision
-    const entries = catalogEntries(catalog)
+    const entries = catalog.source.entries
+    if (catalog.source.update !== true) {
+      baselines.set(agent.id, entries)
+      return decision
+    }
     const baseline = baselines.get(agent.id)
-    baselines.set(agent.id, entries)
-    if (catalog.source.update !== true) return decision
     if (baseline === undefined) {
       return { ...decision, messages: decision.messages.filter(message => message !== catalog) }
     }
@@ -40,6 +38,7 @@ export function createWorkerSkillCatalogGuard(ctx) {
     if (changed.length > 0 && changed.every(name => MEMORY_SKILLS.has(name))) {
       return { ...decision, messages: decision.messages.filter(message => message !== catalog) }
     }
+    baselines.set(agent.id, entries)
     return decision
   }
 

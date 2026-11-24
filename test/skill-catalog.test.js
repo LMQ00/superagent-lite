@@ -50,6 +50,23 @@ test('a newly created global memory skill is not injected into a running worker 
   assert.deepEqual(decision.messages, [])
 })
 
+test('the same memory-only update stays filtered on every later step', async () => {
+  const guard = guardFor()
+  await step(guard, [catalogMessage([otherSkill('find skills'), projectSkill('Old project skill.')])])
+  const update = catalogMessage([
+    otherSkill('find skills'), projectSkill('New project skill.'), sharedSkill('Shared skill.'),
+  ], true)
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const decision = await step(guard, [update])
+    assert.deepEqual(decision.messages, [], `attempt ${attempt + 1}`)
+  }
+  const later = catalogMessage([
+    otherSkill('Find, install, and extend skills.'), projectSkill('New project skill.'), sharedSkill('Shared skill.'),
+  ], true)
+  const decision = await step(guard, [later])
+  assert.deepEqual(decision.messages, [later])
+})
+
 test('a catalog change that includes another skill is still delivered', async () => {
   const guard = guardFor()
   await step(guard, [catalogMessage([otherSkill('Find and install skills.')])])
