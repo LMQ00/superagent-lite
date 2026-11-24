@@ -35,6 +35,14 @@ the header is the existing `收到任务消息` label and the collapsible body c
 full task message, without the `Agent <name> sent a message:` prefix that
 `sendMessage` adds.
 
+## Related client patch
+
+The separate agent-message task-card patch supports dsh `0.2.2-rc.1`,
+`0.2.2-rc.3`, and the DSH-go Host with its pinned `0.2.2-rc.1` engine; see
+[HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md). This subagent source
+patch is not part of that matrix and remains `0.2.2-rc.3`-only; do not apply the
+diff below to a `0.2.2-rc.1` or DSH-go package without re-checking it.
+
 ## Apply
 
 Resolve the installed package from the `dsh` executable:
