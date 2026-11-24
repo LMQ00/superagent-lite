@@ -12,6 +12,9 @@ const FAILED = new Set(['failed', 'delivery-blocked', 'merge-conflict', 'interru
 export function panelStatus(task, facts = {}) {
   const status = task?.status
   if (typeof status !== 'string') return 'failed'
+  // A delivered report is the task's completed state even when the stored
+  // status is stale: report_task never enters review or merge.
+  if (task.report) return 'answer'
   if (task.mode === 'report') {
     if (status === 'completed') return 'answer'
     if (FAILED.has(status)) return 'failed'

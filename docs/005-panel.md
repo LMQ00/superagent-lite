@@ -11,18 +11,18 @@
 
 ## 一套状态
 
-任务列表是唯一的状态分类来源。六个面板状态是**未合并**、**运行中**、**未审查**、**已完成**、**失败**、**仅回答**。它们互斥、覆盖全部 Task，并按这个顺序作为筛选项和分组标题出现。另有一个「排队中」筛选项，用来单独筛出等待并发名额的 Task；它不是第七个状态，排队中的 Task 仍属于运行中，也计入运行中的计数和分组。面板状态不是 Task 存储值，而是由 [003 生命周期](003-lifecycle.md) 从存储状态、worker 分支、审查记录和 Pull request 事实推导出来的（`src/status.js:6-34`）。每行的「删除任务」移除任务记录和 worker 会话映射；运行中的 Task 禁用该按钮，失联的「未确认」Task 可以删除。勾选多行后也可以一次删除所选任务；worker 分支和工作树不会被删除。
+任务列表是唯一的状态分类来源。六个面板状态是**未合并**、**运行中**、**未审查**、**已完成**、**失败**、**仅回答**。它们互斥、覆盖全部 Task，并按这个顺序作为筛选项和分组标题出现。另有一个「排队中」筛选项，用来单独筛出等待并发名额的 Task；它不是第七个状态，排队中的 Task 仍属于运行中，也计入运行中的计数和分组。面板状态不是 Task 存储值，而是由 [003 生命周期](003-lifecycle.md) 从存储状态、worker 分支、审查记录和 Pull request 事实推导出来的（`src/status.js:6-37`）。每行的「删除任务」移除任务记录和 worker 会话映射；运行中的 Task 禁用该按钮，失联的「未确认」Task 可以删除。勾选多行后也可以一次删除所选任务；worker 分支和工作树不会被删除。
 
 | 状态 | 出现的条件 | 行内动作 |
 | --- | --- | --- |
 | 未合并 | 当前 worker HEAD 已审查通过且尚未合并 | 合并、提交 PR、删除分支 |
 | 运行中 | Worker、排队中的 Worker 或交付动作正在进行；排队中的 Task 带「排队中」标签，记录失联时带「未确认」标签 | 会话链接；worker 分支还在时「删除分支」禁用 |
 | 未审查 | Worker 提交了 HEAD，但没有通过的审查 | 审查、删除分支 |
-| 已完成 | 已审查的 HEAD 已合并，Worker 结束时没有可交付的提交，或非失败的 Task 的 worker 分支已被删除 | worker 分支还在时「删除分支」 |
+| 已完成 | reviewed HEAD 已合入基础分支（worktree 已不在时用记录的 reviewed HEAD 核对），Worker 结束时没有可交付的提交，或非失败的 Task 的 worker 分支已被删除 | worker 分支还在时「删除分支」 |
 | 失败 | Worker 回合、交付动作或 Task 失败 | 会话链接；显示保存的失败原因；worker 分支还在时「删除分支」 |
-| 仅回答 | report 任务交回了报告 | 会话链接 |
+| 仅回答 | report 任务通过 `report_task` 交回了报告；交付后不进入审查或合并判断 | 会话链接 |
 
-面板读取 Task 时会修正过期的 `review-required`、`delivery-blocked` 或 `failed`：当前 HEAD 已审查时改为 `awaiting-merge`；也会采纳同一 Project 的另一个 Task 为同一 commit 记录的通关审查。
+面板读取 Task 时会修正过期的 `review-required`、`delivery-blocked` 或 `failed`：当前 HEAD 已审查时改为 `awaiting-merge`；也会采纳同一 Project 的另一个 Task 为同一 commit 记录的通关审查。worktree 已不在时用任务记录的 reviewed HEAD 核对是否已合入基础分支，因此清理工作树后不会停在「未合并」。report 任务一旦记录了交付的 `report`，直接按「仅回答」收尾，不读取分支或审查。
 
 ## 区块
 
@@ -64,23 +64,23 @@
 
 ### 合并
 
-打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff --log`，合并提交写明 worker 分支与任务标题，并记录分支上的功能性 commit 摘要；不需要 `gh` 账号，完成后 checkout 回到原来的分支。Host 在响应里返回合并后的任务视图，面板据此就地把该行改为已完成（`client.js:577-731`、`src/merge.js:30-109`、`src/git-actions.js:414-442`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge`（已有运行中的 merge worker 时追加给它），合入的是该 worker 的 reviewed merge commit。
+打开弹窗，列出项目 checkout 的本地分支（排除 worker 分支），预选 Task 的 base branch。确认后发送选中的目标分支。合并是本地 `git merge --no-ff --log`，合并提交写明 worker 分支与任务标题，并记录分支上的功能性 commit 摘要；不需要 `gh` 账号，完成后 checkout 回到原来的分支。Host 在响应里返回合并后的任务视图，面板据此就地把该行改为已完成（`client.js:577-731`、`src/merge.js:30-109`、`src/git-actions.js:422-450`）。这是用户直接合并入口，不经过 merge worker；用户直接指示的合并由 router 派发 `mode=merge`（已有运行中的 merge worker 时追加给它），合入的是该 worker 的 reviewed merge commit。
 
-按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏、HEAD 移动或任务已离开可交付状态都会带原因拒绝（`src/git-actions.js:308-316`、`src/delivery.js:7-19`）。
+按钮要求当前 HEAD 审查通过、尚未合并、项目 checkout 干净且检出在分支上。目标冲突、checkout 脏、HEAD 移动或任务已离开可交付状态都会带原因拒绝（`src/git-actions.js:313-324`、`src/delivery.js:7-19`）。
 
 ### 提交 PR
 
-打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:577-608`、`client.js:714-722`、`src/git-actions.js:432-477`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:435-444`）。
+打开弹窗，先检查 GitHub 账号。没有登录的 `gh` 时显示「需要 gh 账号：」和 `gh` 错误，不能提交。有账号时列出 checkout 的 remote 及其对应的 GitHub 仓库，由用户选择仓库。确认后把 reviewed HEAD 推到该 remote，并创建或复用 Pull request（`client.js:577-608`、`client.js:714-722`、`src/git-actions.js:440-485`）。发送 PR 与合并共用状态、审查和 HEAD 前置校验，唯一额外条件是 GitHub 账号和 remote；Host 在执行前会再验证 `gh auth status`（`src/delivery.js:7-19`、`src/git-actions.js:443-452`）。
 
 当前 HEAD 未审查、项目没有 GitHub remote、Task 已合并或 PR 已关闭时按钮禁用。已有同一 HEAD 的 Pull request 时直接复用，不重复创建。
 
 ### 审查
 
-从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:499-512`、`client.js:681-684`、`src/git-actions.js:398-419`）。
+从对应的 Worker Session 对已提交的 HEAD 启动一次独立审查，并记录裁决。Reviewer 用 `submit_review` 填内容，内容为「通过」就是通过，其他内容记为审查意见。按钮要求 HEAD 未审查、有提交、Worker Session 仍活着；没有会话时禁用并给出原因（`client.js:499-512`、`client.js:681-684`、`src/git-actions.js:406-427`）。
 
 ### 删除分支
 
-凡是任务记录里还有 worker 分支的行都显示「删除分支」，不要求分支已合并：已合并、已发布 PR 和未合并的分支都可以删除。任务处于运行中（`queued`、`starting`、`running`、`resuming`、`publishing`、`merging`）时按钮禁用，原因放在 `title`。打开确认弹窗显示分支名；未合并的分支额外提示删除会丢弃分支及其工作树且不可恢复；确认弹窗只读任务行里的分支信息，不读取分支历史。确认后 Host 拒绝仍在运行的任务、有未提交改动的工作树、被其他工作树检出的分支、工作树移除失败以及移除后仍存在的工作树，并返回明确错误；其余情况先移除该 Task 的干净 Worktree，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`。删除后未失败的 Task 按已完成显示，失败 Task 保持失败；Host 返回该行最新视图，面板就地更新并隐藏按钮，不重新加载列表（`client.js:679-687`、`client.js:798-801`、`client.js:828-829`、`src/git-actions.js:288-293`、`src/git-actions.js:341-342`、`src/git-actions.js:502-521`、`src/merge.js:112-170`）。
+凡是任务记录里还有 worker 分支的行都显示「删除分支」，不要求分支已合并：已合并、已发布 PR 和未合并的分支都可以删除。任务处于运行中（`queued`、`starting`、`running`、`resuming`、`publishing`、`merging`）时按钮禁用，原因放在 `title`。打开确认弹窗显示分支名；未合并的分支额外提示删除会丢弃分支及其工作树且不可恢复；确认弹窗只读任务行里的分支信息，不读取分支历史。确认后 Host 拒绝仍在运行的任务、有未提交改动的工作树、被其他工作树检出的分支、工作树移除失败以及移除后仍存在的工作树，并返回明确错误；其余情况先移除该 Task 的干净 Worktree，再删除分支，记录 `branchDeletedAt` 并清空 `worktree`。删除后未失败的 Task 按已完成显示，失败 Task 保持失败；Host 返回该行最新视图，面板就地更新并隐藏按钮，不重新加载列表（`client.js:679-687`、`client.js:798-801`、`client.js:828-829`、`src/git-actions.js:293-298`、`src/git-actions.js:349-350`、`src/git-actions.js:510-529`、`src/merge.js:112-170`）。
 
 ### 取消排队
 
@@ -131,7 +131,7 @@ bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提�
 
 1. **一套状态系统。** 六个任务状态负责分类；没有第二个 Git 页签或状态列表重复它们。Git 动作属于任务行及其弹窗（`src/status.js:6`）。
 2. **只回答三个问题。** 每个区块对应一个问题；不改变决定的数量或行去掉。
-3. **监督而不是静默交付。** 每次刷新只发只读 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR、删除分支、删除任务和取消排队只在用户明确确认的动作里写（`src/board.js:7-55`、`src/git-actions.js:276-380`、`src/git-actions.js:502-521`）。
+3. **监督而不是静默交付。** 每次刷新只发只读 GET，可能修正过期的任务状态或采纳匹配的审查记录。读取不碰项目文件；合并、发送 PR、删除分支、删除任务和取消排队只在用户明确确认的动作里写（`src/board.js:7-55`、`src/git-actions.js:276-388`、`src/git-actions.js:510-529`）。
 4. **一行一个动作并给出原因。** 按钮禁用时说明缺什么，用户不必翻文档才知道为什么。
 5. **诚实状态。** Worker Session 不在时显示「未确认」；已合并显示「已完成」；已审查未合并显示「未合并」；缺审查显示「未审查」。
 6. **链接而不复制。** 会话在对应 Session 里，审查在 GitHub 上，面板只给链接。

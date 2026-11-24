@@ -280,8 +280,13 @@ export function createGitManager(ctx, dependencies = {}) {
       pr = await syncPullRequest(task, signal)
       if (pr?.status) task = { ...task, status: pr.status }
     }
-    if (task.mode === 'report' && DELIVERY_STATUSES.includes(task.status)) {
-      task = await settle(task, { status: 'completed' })
+    // A report-only task has no review or merge path. Once report_task delivered
+    // its conclusion it is complete even if the stored status is stale.
+    if (task.mode === 'report' || task.report) {
+      if (task.status !== 'completed' && (task.report || DELIVERY_STATUSES.includes(task.status))) {
+        task = await settle(task, { status: 'completed', failure: undefined })
+      }
+      return { status: panelStatus(task), git: undefined }
     }
     const branch = task.worktree?.branch
     if (!branch) {
@@ -307,8 +312,11 @@ export function createGitManager(ctx, dependencies = {}) {
       }
     }
     const mergedInPr = pr?.exact === true && pr.state === 'MERGED'
+    // A removed worktree leaves no live HEAD. The recorded reviewed commit is
+    // still enough to verify that the branch reached the base branch.
+    const mergedHead = head ?? task.review?.head
     const merged = mergedInPr || task.status === 'merged' ||
-      (hasCommits && await isMerged(task, head, signal))
+      (mergedHead !== undefined && mergedHead !== base && await isMerged(task, mergedHead, signal))
     const closed = pr?.exact === true && pr.state === 'CLOSED'
     if (merged && DELIVERY_STATUSES.includes(task.status)) {
       task = await settle(task, { status: 'merged', ...(mergedInPr ? { prState: 'MERGED' } : {}) })

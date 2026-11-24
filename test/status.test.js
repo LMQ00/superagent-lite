@@ -38,6 +38,12 @@ test('report-only tasks are answer, running or failed', () => {
   assert.equal(panelStatus(task({ mode: 'report', status: 'failed' }), {}), 'failed')
 })
 
+test('a delivered report is answer even when its stored status still needs review', () => {
+  const report = { message: '结论与证据', at: '2026-11-24T00:00:00.000Z' }
+  assert.equal(panelStatus(task({ mode: 'report', status: 'review-required', report }), {}), 'answer')
+  assert.equal(panelStatus(task({ status: 'review-required', report }), {}), 'answer')
+})
+
 test('an unavailable Git view falls back to the recorded lifecycle status', () => {
   assert.equal(panelStatus(task({ status: 'awaiting-merge' }), {}), 'unmerged')
   assert.equal(panelStatus(task({ status: 'review-required' }), {}), 'unreviewed')

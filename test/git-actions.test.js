@@ -254,6 +254,19 @@ test('a merged worker branch shows completed and can delete its branch', async (
   assert.equal((await store.readTask(taskId)).status, 'merged')
 })
 
+test('a merged branch is completed after its worktree and branch are gone', async () => {
+  const facts = await setupRepo()
+  await git(['merge', '--no-ff', '--no-edit', 'sl-feature'], facts.repo)
+  await git(['worktree', 'remove', facts.worktree], facts.repo)
+  await git(['branch', '-D', 'sl-feature'], facts.repo)
+  const record = recordFor(facts, { status: 'awaiting-merge' })
+  const store = taskStore([record])
+  const view = (await managerFor(store).list([record], signal)).get(taskId)
+  assert.equal(view.status, 'completed')
+  assert.equal(view.git.merged, true)
+  assert.equal((await store.readTask(taskId)).status, 'merged')
+})
+
 test('a completed worker turn without commits is completed, not unreviewed', async () => {
   const root = await mkdtemp(join(tmp, 'git-actions-empty-'))
   roots.push(root)
@@ -302,6 +315,21 @@ test('report-only and failed tasks land in answer and failed', async () => {
   assert.equal(views.get(failed.id).status, 'failed')
   assert.equal((await store.readTask(report.id)).status, 'completed')
   assert.equal((await store.readTask(failed.id)).status, 'failed')
+})
+
+test('a delivered report is answer without entering the review or merge path', async () => {
+  const facts = await setupRepo()
+  const report = recordFor(facts, {
+    id: 'c'.repeat(16),
+    mode: 'report',
+    status: 'review-required',
+    report: { message: '结论与证据', at: '2026-11-24T00:00:00.000Z' },
+  })
+  const store = taskStore([report])
+  const view = (await managerFor(store).list([report], signal)).get(report.id)
+  assert.equal(view.status, 'answer')
+  assert.equal(view.git, undefined)
+  assert.equal((await store.readTask(report.id)).status, 'completed')
 })
 
 test('a closed pull request is failed and a merged pull request is completed', async () => {
