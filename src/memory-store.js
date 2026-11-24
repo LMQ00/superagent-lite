@@ -327,6 +327,30 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
+  function unrecordOwnedSkill(scope, projectRoot, name) {
+    const registry = join(memoryRoot, 'skills.json')
+    return serialize(registry, async () => {
+      const doc = await readOwnedSkills()
+      let changed = false
+      if (scope === 'global') {
+        if (doc.global.includes(name)) {
+          doc.global = doc.global.filter(candidate => candidate !== name)
+          changed = true
+        }
+      } else {
+        const key = projectKey(projectRoot)
+        const names = doc.projects[key]
+        if (names?.includes(name)) {
+          const remaining = names.filter(candidate => candidate !== name)
+          if (remaining.length > 0) doc.projects[key] = remaining
+          else delete doc.projects[key]
+          changed = true
+        }
+      }
+      if (changed) await writeDocument(registry, { version: VERSION, ...doc })
+    })
+  }
+
   async function readGlobal() {
     const doc = await readDocument(join(memoryRoot, 'global.json'))
     return doc === undefined ? emptyGlobal() : documentFrom(doc, GLOBAL_FIELDS, 'global')
@@ -390,6 +414,12 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
       global: await writeGlobal(globalChanges),
       project: await writeProject(projectRoot, projectChanges),
     }
+  }
+
+  async function deleteMemoryField(scope, projectRoot, field) {
+    if (scope === 'global') return writeGlobal({ [field]: '' })
+    if (scope === 'project') return writeProject(projectRoot, { [field]: '' })
+    throw new TypeError('Memory scope must be global or project')
   }
 
   async function readKnowledge() {
@@ -510,6 +540,18 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
+  async function deleteSkill(scope, projectRoot) {
+    const name = skillNameOf(scope)
+    const resolved = scope === 'project' ? projectRootOf(projectRoot) : undefined
+    const path = skillPath(scope, resolved, name)
+    return serialize(path, async () => {
+      const current = await readSkill(scope, resolved, name)
+      await rm(dirname(path), { recursive: true, force: true })
+      await unrecordOwnedSkill(scope, resolved, name)
+      return current !== undefined
+    })
+  }
+
   async function writeArchive(source, value) {
     const path = archivePath(root, source)
     await writeDocument(path, { version: VERSION, source, value })
@@ -533,6 +575,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     writeGlobal,
     writeProject,
     writeMemory,
+    deleteMemoryField,
     readKnowledge,
     addKnowledge,
     updateKnowledge,
@@ -543,6 +586,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     readSkills,
     ownedSkillNames,
     writeSkill,
+    deleteSkill,
     archive: Object.freeze({ write: writeArchive, read: readArchive }),
   }
 }

@@ -14,11 +14,11 @@
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
 | 审查提示词、裁决工具与限制 | 审查指令、`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-71`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-22` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
-| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:70-300` |
+| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-426` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
-| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-90` |
+| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-120` |
 
-提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。面板「设置」标签页保存 worker 模型和并发上限，不编辑提示词；记忆由 memory 角色维护，「记忆系统」标签页只读展示记忆和全局知识库，没有编辑入口。
+提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。面板「设置」标签页保存 worker 模型和并发上限，不编辑提示词；记忆由 memory 角色维护，「记忆系统」标签页展示并可删除单条记忆、skill 和知识，没有新增或编辑入口。
 
 ## Worker 运行时设置
 

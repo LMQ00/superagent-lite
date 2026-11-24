@@ -110,9 +110,9 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 | 作用域 | 内容 | 写入者 | 读者 |
 | --- | --- | --- | --- |
-| 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（只读） |
-| 项目 | `responsibilities`、`positioning`、项目 skill | memory 角色 | Worker、Reviewer、面板（只读） |
-| 全局知识库 | 可复用、广泛适用的知识 | memory 角色（`knowledge_write`） | Worker、Reviewer、memory 角色（`knowledge_query` / `knowledge_get`）、面板（只读） |
+| 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（可删除） |
+| 项目 | `responsibilities`、`positioning`、项目 skill | memory 角色 | Worker、Reviewer、面板（可删除） |
+| 全局知识库 | 可复用、广泛适用的知识 | memory 角色（`knowledge_write`） | Worker、Reviewer、memory 角色（`knowledge_query` / `knowledge_get`）、面板（可删除） |
 
 - 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；全局知识库在 `~/.dsh/superagent-lite/memory/knowledge.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
 - 不同项目的项目记忆和项目 skill 互相不可见；全局记忆、全局 skill 和知识库所有项目共享（`src/memory-store.js`）。
@@ -126,7 +126,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
-- 面板的「记忆系统」标签页经 owner-only `GET /superagent-lite/memory` 只读读取全局记忆、所选项目的项目记忆和全局知识库；没有写入接口，记忆仍只由 memory 角色维护（`src/memory-panel.js`）。
+- 面板的「记忆系统」标签页经 owner-only `/superagent-lite/memory` 读取与删除全局记忆、所选项目的项目记忆、memory skill 和全局知识库：GET 读取，DELETE 只删除用户确认的单条字段、skill 或知识条目；没有新增或编辑接口，写入仍只由 memory 角色完成。删除知识后 `knowledge_query` 不再返回该条目，删除 skill 后之后新派发的会话不再看到它（`src/memory-panel.js`、`src/memory-store.js`、`src/memory.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
 - 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口（`src/memory.js`、`src/memory-store.js`）。
 
@@ -181,7 +181,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 - Task 已结束 Worker 工作（`awaiting-merge` 或 `awaiting-ci`）、有 worker 分支和 Worktree、`review.approved === true`、当前 HEAD 等于 `review.head`、文件策略为 full access。
 - 唯一额外条件是 GitHub：`gh auth status --hostname github.com` 必须成功，所选 remote 的 fetch 与 push URL 必须指向同一 GitHub 仓库；写权限由 push 本身验证（`src/git-actions.js:427-439`）。
-- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:244-252`、`client.js:577-608`）。
+- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:244-252`、`client.js:776-807`）。
 - 已有精确匹配且打开的 PR 时复用；已有精确匹配且已合并的 PR 时记为 `merged`；已关闭时拒绝（`src/git-actions.js:440-450`）。
 - 准备阶段用 `assertStillDeliverable` 复核状态与 Review 后把 Task 标为 `publishing`，把 reviewed HEAD 推送到所选 remote 的 push URL 和 `refs/heads/<worker branch>`，再创建 base 为 `task.baseBranch` 的 PR（`src/git-actions.js:451-457`、`src/github.js:77-113`）。
 - PR 打开后 Task 标为 `awaiting-ci`；发送命令失败时标为 `delivery-blocked`。GitHub 写入不自动重试（`src/git-actions.js:469-472`）。

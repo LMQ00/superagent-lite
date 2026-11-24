@@ -278,7 +278,7 @@ test('the settings tab edits the worker model and concurrency limit', async () =
   board.dispose()
 })
 
-test('the memory tab browses global memory, project memory and global knowledge read-only', async () => {
+test('the memory tab browses and deletes global memory, project memory, skills and global knowledge', async () => {
   const requests = []
   const tasks = [
     task({ id: 'a', projectRoot: '/two', updatedAt: '2026-02-01T00:00:00.000Z' }),
@@ -300,6 +300,10 @@ test('the memory tab browses global memory, project memory and global knowledge 
         id: '1', text: 'Run npm test before reporting.',
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
       }],
+      skills: {
+        global: { description: 'Shared inspection guidance.', content: 'Inspect the repository first.' },
+        project: { description: 'Project inspection guidance.', content: 'Run the project tests.' },
+      },
     },
   }
   const board = setup({
@@ -325,7 +329,7 @@ test('the memory tab browses global memory, project memory and global knowledge 
   tree = board.render()
   assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
   assert.equal(tab(tree, '设置').props['aria-selected'], false)
-  assert.match(text(tree), /只读查看保存的项目记忆和全局知识库/)
+  assert.match(text(tree), /查看并删除保存的项目记忆和全局知识库/)
   assert.match(text(tree), /全局记忆/)
   assert.match(text(tree), /用户画像/)
   assert.match(text(tree), /Prefers Chinese reports/)
@@ -334,14 +338,18 @@ test('the memory tab browses global memory, project memory and global knowledge 
   assert.match(text(tree), /Watch the second project/)
   assert.match(text(tree), /定位/)
   assert.match(text(tree), /未保存/)
+  assert.match(text(tree), /全局 skill/)
+  assert.match(text(tree), /Shared inspection guidance/)
+  assert.match(text(tree), /项目 skill/)
+  assert.match(text(tree), /Project inspection guidance/)
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   // The most recently updated task's project is the current project.
   const projectSelect = nodes(tree).find(node => node.type === 'select')
   assert.equal(projectSelect.props.value, '/two')
-  // Read-only: no inputs, textareas or write controls on the memory tab.
+  // Deleting is an inline action with a confirmation dialog, not an edit form.
   assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 0)
-  assert.equal(nodes(tree).filter(node => node.type === 'button' && ['保存', '写入', '删除'].includes(text(node))).length, 0)
+  assert.equal(buttons(tree, '删除').length, 5)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'tabpanel').length, 1)
 
   projectSelect.props.onChange({ target: { value: '/one' } })
@@ -351,6 +359,7 @@ test('the memory tab browses global memory, project memory and global knowledge 
   assert.match(text(tree), /Keep the board accurate/)
   assert.match(text(tree), /Local-first tools/)
   assert.doesNotMatch(text(tree), /未保存/)
+  assert.doesNotMatch(text(tree), /Shared inspection guidance/)
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   assert.match(text(tree), /更新时间/)
@@ -400,6 +409,132 @@ test('the memory tab reports a load failure and can retry from the same panel', 
   await flush()
   tree = board.render()
   assert.match(text(tree), /Recovered/)
+  board.dispose()
+})
+
+test('deletes saved memory, skills and knowledge in place after confirmation', async () => {
+  const requests = []
+  const view = {
+    global: { userProfile: 'Delete this profile.' },
+    project: { projectRoot: '/one', responsibilities: 'Delete this responsibility.', positioning: 'Keep positioning.' },
+    knowledge: [{
+      id: '1', text: 'Delete this knowledge.',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+    }],
+    skills: {
+      global: { description: 'Shared inspection guidance.', content: 'Inspect the repository first.' },
+      project: { description: 'Project inspection guidance.', content: 'Run the project tests.' },
+    },
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task({ projectRoot: '/one' })] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      if (options.method === 'DELETE') return { ok: true, json: async () => ({ deleted: {} }) }
+      return { ok: true, json: async () => view }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, 'Memory').props.onClick()
+  board.render()
+  await flush()
+  tree = board.render()
+  const deleteButton = label => nodes(tree).find(node => node.type === 'button' &&
+    node.props?.['aria-label'] === `Delete: ${label}`)
+  const confirm = async () => {
+    button(board.render(), 'Delete').props.onClick()
+    board.render()
+    await flush()
+    board.render()
+    await flush()
+    return board.render()
+  }
+
+  deleteButton('User profile').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /Delete memory content/)
+  assert.match(text(tree), /The saved memory field is cleared/)
+  tree = await confirm()
+  assert.doesNotMatch(text(tree), /Delete this profile/)
+  assert.match(text(tree), /Memory content deleted/)
+
+  deleteButton('Responsibilities').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /Delete this responsibility\./)
+  tree = await confirm()
+  assert.doesNotMatch(text(tree), /Delete this responsibility/)
+  assert.match(text(tree), /Keep positioning/)
+
+  deleteButton('Project skill').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /The skill file is removed/)
+  tree = await confirm()
+  assert.doesNotMatch(text(tree), /Project inspection guidance/)
+
+  deleteButton('#1').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /so queries no longer return it/)
+  tree = await confirm()
+  assert.doesNotMatch(text(tree), /Delete this knowledge/)
+  assert.match(text(tree), /Global knowledge base0/)
+
+  const deletes = requests.filter(request => request.options.method === 'DELETE')
+  assert.deepEqual(deletes.map(request => {
+    const url = new URL(request.path, 'http://localhost')
+    return [
+      url.searchParams.get('kind'), url.searchParams.get('scope'), url.searchParams.get('field'),
+      url.searchParams.get('projectRoot'), url.searchParams.get('id'),
+    ]
+  }), [
+    ['memory', 'global', 'userProfile', null, null],
+    ['memory', 'project', 'responsibilities', '/one', null],
+    ['skill', 'project', null, '/one', null],
+    ['knowledge', null, null, null, '1'],
+  ])
+  for (const request of deletes) {
+    assert.equal(request.options.credentials, 'same-origin')
+    assert.equal(request.options.cache, 'no-store')
+  }
+  // Deletes update the loaded view in place and do not reload the memory tab.
+  assert.equal(requests.filter(request =>
+    request.path.startsWith('/superagent-lite/memory') && request.options.method !== 'DELETE').length, 1)
+  board.dispose()
+})
+
+test('keeps memory content and reports the error when a delete fails', async () => {
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task({ projectRoot: '/one' })] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      if (options.method === 'DELETE') return { ok: false, json: async () => ({ error: 'Memory is locked' }) }
+      return { ok: true, json: async () => ({ global: { userProfile: 'Keep this profile.' }, project: { responsibilities: 'R' }, knowledge: [] }) }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, 'Memory').props.onClick()
+  board.render()
+  await flush()
+  tree = board.render()
+  nodes(tree).find(node => node.type === 'button' && node.props?.['aria-label'] === 'Delete: User profile')
+    .props.onClick()
+  button(board.render(), 'Delete').props.onClick()
+  board.render()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /Memory is locked/)
+  assert.match(text(tree), /Keep this profile/)
+  assert.doesNotMatch(text(tree), /Memory content deleted/)
   board.dispose()
 })
 
