@@ -10,8 +10,8 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | --- | --- |
 | DSH Web Host | 运行插件、Session 和面板 |
 | `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
-| 记忆 | 全局/项目记忆、全局/项目 skill、项目知识库，以及 change worker 的原始归档 |
-| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description |
+| 记忆 | 全局/项目记忆、全局/项目 skill、全局知识库，以及 change worker 的原始归档 |
+| 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/superagent-project-memory/SKILL.md`，让 Worktree 里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断另外读取 memory 登记的 skill 名单 |
 | Worktree 服务 | 为每个 Task 创建并保留一个 Worktree |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
 | GitHub remote | 可选；发送 PR 需要，合并不需要 |
@@ -72,7 +72,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | GitHub remote | 发送 PR | `git remote -v` 显示一个 remote，fetch 与 push URL 指向同一个 GitHub 仓库；面板列出 remote 供选择 |
 | `gh` 登录 | 发送 PR | `gh auth status --hostname github.com` |
 | GitHub 分支保护与必需检查 | 在 GitHub 上合并 PR | 在 GitHub 仓库设置；插件不预检检查状态 |
-| Host 补丁 | 任务消息卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；不打补丁也能运行 |
+| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；不打补丁也能运行 |
 
 ## 启停与状态
 
@@ -83,10 +83,11 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 启动 | 启用 bundle，启动 DSH Web |
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
-| 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义 |
-| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；已完成提供删除分支；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
-| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/superagent-project-memory/` |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker 和 Reviewer 用 `knowledge_query` 查询项目知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
+| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
+| 排队变化 | 排队中的 Worker 开始执行、排队中的 Task 被取消时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。取消会在 `tasks/cancelled/` 留下墓碑供 `worker_status` 查询，面板列表仍移除该行 |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/superagent-shared-memory/`；项目 skill 在 `<项目根>/.dsh/skills/` 下 memory 登记为它管理的目录 |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页只读显示记忆和全局知识库。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
@@ -111,7 +112,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 需要合并或发送 PR 时，把 Router Session 设为 full access。
 6. 先问一个只读问题：Router 应直接回答，不启动 Worker。
 7. 再要求一个小的文件改动：面板应把审查通过的 Task 显示为「未合并」，并出现「合并」和「提交 PR」；如果审查未通过，先显示「未审查」。
-8. 完成一个 change 任务：memory 角色会更新全局/项目记忆和 skill；下一个 Worker 和 Reviewer 的提示词自动带上这些内容，Worker 可以用 `knowledge_query` 读取项目知识。
+8. 完成一个 change 任务：memory 角色会更新全局/项目记忆和 skill，并可能写入全局知识库；下一个 Worker 和 Reviewer 的提示词自动带上这些内容，Worker 和 Reviewer 可以用 `knowledge_query` / `knowledge_get` 读取全局知识。
 
 ## 升级
 
@@ -140,13 +141,17 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The merge target branch "<name>" was not found` | 在合并弹窗里选择一个存在的本地分支 |
 | `The selected remote is not a single GitHub fetch/push repository` | 选择一个 fetch 和 push URL 指向同一 GitHub 仓库的 remote |
 | `The worker Session is not running; open its conversation to review the commit there` | 审查动作需要活着的 Worker Session；恢复或重新派发该 Task |
-| `Delete the worker branch only after the task is merged` | 先合并 reviewed HEAD，再删除分支 |
+| `The task is still running; stop its worker before deleting the branch` | 等 Task 结束工作、分支不再被运行中的 Worker 占用后再删除分支 |
 | `No reviewed local commit is ready for delivery` | 先调用 `review_worker_commit` 并修完问题；合并与发送 PR 共用这条前置校验 |
 | `The worker branch no longer matches its reviewed commit` | 审查后又有提交；重新审查新 HEAD |
 | `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding` | Reviewer 没有读改动；重新运行审查，让它读 `base..head` 或改动文件 |
 | `Merge would conflict; the target was not changed` | 把基础分支合并进 worker 分支并重新审查；插件没有改目标 |
 | `The project checkout has uncommitted changes` | 合并前提交或 stash 项目 checkout 的改动 |
 | `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | 删除分支前清理 worker Worktree |
+| `The worktree at <path> is not on the worker branch <branch>; remove it before deleting the branch` | 登记的工作树已切到别的分支；先移除该工作树再删除分支 |
+| `The worker branch is still checked out in the worktree at <path>; remove it before deleting the branch` | 分支被其他工作树检出；先移除那个工作树再删除分支 |
+| `The worker worktree at <path> still exists; remove it before deleting the branch` | `git worktree remove` 后工作树仍在；手动清理后再重试 |
+| `Could not remove the worker worktree at <path>: ...` | 工作树移除失败；按错误信息处理占用或权限问题后重试 |
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `The task is no longer queued` | 取消前任务已获得并发名额并开始启动；刷新面板后按运行中任务处理，不能再取消 |

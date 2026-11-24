@@ -150,18 +150,38 @@ function knowledgeEntry(entry) {
   }
 }
 
-function knowledgeFrom(doc, projectRoot) {
+function knowledgeFrom(doc) {
   if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.version !== VERSION) {
-    throw new Error('Invalid or unsupported project knowledge')
+    throw new Error('Invalid or unsupported knowledge base')
   }
-  if (doc.projectRoot !== projectRoot) throw new Error('Stored knowledge belongs to a different project root')
-  if (!Array.isArray(doc.entries)) throw new Error('Invalid project knowledge entries')
+  if (!Array.isArray(doc.entries)) throw new Error('Invalid knowledge base entries')
   return doc.entries.map(knowledgeEntry)
 }
 
-function skillNameOf(scope) {
+const KNOWLEDGE_SNIPPET_CONTEXT = 120
+
+function knowledgeSnippet(text, needle) {
+  const limit = KNOWLEDGE_SNIPPET_CONTEXT * 2
+  if (!needle) return text.length > limit ? `${text.slice(0, limit)}…` : text
+  const index = text.toLowerCase().indexOf(needle)
+  if (index < 0) return text
+  const start = Math.max(0, index - KNOWLEDGE_SNIPPET_CONTEXT)
+  const end = Math.min(text.length, index + needle.length + KNOWLEDGE_SNIPPET_CONTEXT)
+  return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`
+}
+
+function nextKnowledgeId(entries) {
+  const highest = entries.reduce((max, entry) => {
+    const numeric = /^\d+$/.test(entry.id) ? Number(entry.id) : 0
+    return Math.max(max, numeric)
+  }, 0)
+  return String(highest + 1)
+}
+
+function skillNameOf(scope, name = SKILL_NAMES[scope]) {
   if (scope !== 'global' && scope !== 'project') throw new TypeError('Skill scope is required')
-  return SKILL_NAMES[scope]
+  if (typeof name !== 'string' || !SKILL_NAME.test(name)) throw new TypeError('Invalid memory skill name')
+  return name
 }
 
 function parseSkillDocument(text) {
@@ -185,13 +205,12 @@ function skillDocument(name, description, content) {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${content.trim()}\n`
 }
 
-const PROJECT_SKILL_EXCLUDE = `.dsh/skills/${SKILL_NAMES.project}/`
-
 // The project skill lives in the project checkout so later workers can read
 // it, but it is host-maintained data and must not dirty the checkout that
 // report tasks and local merges require to stay clean. Git's local exclude
 // list is the place for that; `.gitignore` itself would be a tracked change.
-async function excludeProjectSkill(projectRoot) {
+async function excludeProjectSkill(projectRoot, name) {
+  const line = `.dsh/skills/${name}/`
   const gitDirectory = join(projectRoot, '.git')
   let gitDirectoryInfo
   try {
@@ -209,10 +228,10 @@ async function excludeProjectSkill(projectRoot) {
     if (error.code !== 'ENOENT') throw error
     current = ''
   }
-  if (current.split(/\r?\n/).includes(PROJECT_SKILL_EXCLUDE)) return
+  if (current.split(/\r?\n/).includes(line)) return
   await mkdir(dirname(exclude), { recursive: true, mode: 0o700 })
   const prefix = current.length > 0 && !current.endsWith('\n') ? '\n' : ''
-  await appendFile(exclude, `${prefix}${PROJECT_SKILL_EXCLUDE}\n`, 'utf8')
+  await appendFile(exclude, `${prefix}${line}\n`, 'utf8')
 }
 
 function archivePath(root, source) {
@@ -234,16 +253,78 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return join(memoryRoot, 'projects', `${createHash('sha256').update(projectRoot).digest('hex')}.json`)
   }
 
-  function knowledgePath(projectRoot) {
-    return join(memoryRoot, 'knowledge', `${createHash('sha256').update(projectRoot).digest('hex')}.json`)
+  function knowledgePath() {
+    return join(memoryRoot, 'knowledge.json')
   }
 
-  function skillPath(scope, projectRoot) {
-    const name = skillNameOf(scope)
-    if (!SKILL_NAME.test(name)) throw new Error('Invalid memory skill name')
+  function skillPath(scope, projectRoot, name = skillNameOf(scope)) {
+    const skillName = skillNameOf(scope, name)
     return scope === 'global'
-      ? join(globalSkillRoot, name, 'SKILL.md')
-      : join(projectRootOf(projectRoot), '.dsh', 'skills', name, 'SKILL.md')
+      ? join(globalSkillRoot, skillName, 'SKILL.md')
+      : join(projectRootOf(projectRoot), '.dsh', 'skills', skillName, 'SKILL.md')
+  }
+
+  function projectKey(projectRoot) {
+    return createHash('sha256').update(projectRootOf(projectRoot)).digest('hex')
+  }
+
+  function skillNames(value) {
+    if (!Array.isArray(value)) throw new Error('Invalid memory skill registry')
+    return value.map(name => {
+      if (typeof name !== 'string' || !SKILL_NAME.test(name)) throw new Error('Invalid memory skill name')
+      return name
+    })
+  }
+
+  // Memory records every skill it writes so the catalog guard can tell its own
+  // skills from unrelated ones without guessing from names.
+  async function readOwnedSkills() {
+    const doc = await readDocument(join(memoryRoot, 'skills.json'))
+    if (doc === undefined) return { global: [], projects: {} }
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.version !== VERSION ||
+        !doc.projects || typeof doc.projects !== 'object' || Array.isArray(doc.projects)) {
+      throw new Error('Invalid or unsupported memory skill registry')
+    }
+    return {
+      global: skillNames(doc.global),
+      projects: Object.fromEntries(Object.entries(doc.projects)
+        .map(([key, names]) => [key, skillNames(names)])),
+    }
+  }
+
+  async function ownedSkillNames(projectRoot) {
+    const owned = new Set([SKILL_NAMES.global])
+    if (projectRoot === undefined) {
+      for (const name of (await readOwnedSkills()).global) owned.add(name)
+      return owned
+    }
+    const registry = await readOwnedSkills()
+    owned.add(SKILL_NAMES.project)
+    for (const name of registry.global) owned.add(name)
+    for (const name of registry.projects[projectKey(projectRoot)] ?? []) owned.add(name)
+    return owned
+  }
+
+  function recordOwnedSkill(scope, projectRoot, name) {
+    const registry = join(memoryRoot, 'skills.json')
+    return serialize(registry, async () => {
+      const doc = await readOwnedSkills()
+      let changed = false
+      if (scope === 'global') {
+        if (!doc.global.includes(name)) {
+          doc.global.push(name)
+          changed = true
+        }
+      } else {
+        const key = projectKey(projectRoot)
+        const names = doc.projects[key] ?? []
+        if (!names.includes(name)) {
+          doc.projects[key] = [...names, name]
+          changed = true
+        }
+      }
+      if (changed) await writeDocument(registry, { version: VERSION, ...doc })
+    })
   }
 
   async function readGlobal() {
@@ -311,44 +392,40 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     }
   }
 
-  async function readKnowledge(projectRoot) {
-    const resolved = projectRootOf(projectRoot)
-    const doc = await readDocument(knowledgePath(resolved))
-    return doc === undefined ? [] : knowledgeFrom(doc, resolved)
+  async function readKnowledge() {
+    const doc = await readDocument(knowledgePath())
+    return doc === undefined ? [] : knowledgeFrom(doc)
   }
 
-  async function mutateKnowledge(projectRoot, change) {
-    const resolved = projectRootOf(projectRoot)
-    const path = knowledgePath(resolved)
+  async function mutateKnowledge(change) {
+    const path = knowledgePath()
     return serialize(path, async () => {
       const doc = await readDocument(path)
-      const entries = doc === undefined ? [] : knowledgeFrom(doc, resolved)
+      const entries = doc === undefined ? [] : knowledgeFrom(doc)
       const result = change(entries)
-      if (result.changed) {
-        await writeDocument(path, { version: VERSION, projectRoot: resolved, entries: result.entries })
-      }
+      if (result.changed) await writeDocument(path, { version: VERSION, entries: result.entries })
       return result.value
     })
   }
 
-  async function addKnowledge(projectRoot, value) {
+  async function addKnowledge(value) {
     const text = knowledgeText(value)
-    return mutateKnowledge(projectRoot, entries => {
+    return mutateKnowledge(entries => {
       const existing = entries.find(entry => entry.text === text)
       if (existing) return { changed: false, entries, value: { entry: existing, duplicate: true } }
       if (entries.length >= MAX_KNOWLEDGE_ENTRIES) {
-        throw new RangeError(`Project knowledge is limited to ${MAX_KNOWLEDGE_ENTRIES} entries`)
+        throw new RangeError(`Knowledge base is limited to ${MAX_KNOWLEDGE_ENTRIES} entries`)
       }
       const now = new Date().toISOString()
-      const entry = { id: randomUUID(), text, createdAt: now, updatedAt: now }
+      const entry = { id: nextKnowledgeId(entries), text, createdAt: now, updatedAt: now }
       return { changed: true, entries: [entry, ...entries], value: { entry, duplicate: false } }
     })
   }
 
-  async function updateKnowledge(projectRoot, id, value) {
+  async function updateKnowledge(id, value) {
     const entryId = knowledgeId(id)
     const text = knowledgeText(value)
-    return mutateKnowledge(projectRoot, entries => {
+    return mutateKnowledge(entries => {
       const index = entries.findIndex(entry => entry.id === entryId)
       if (index < 0) throw new Error(`Knowledge entry "${entryId}" was not found`)
       if (entries.some(entry => entry.id !== entryId && entry.text === text)) {
@@ -362,9 +439,9 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function deleteKnowledge(projectRoot, id) {
+  async function deleteKnowledge(id) {
     const entryId = knowledgeId(id)
-    return mutateKnowledge(projectRoot, entries => {
+    return mutateKnowledge(entries => {
       const index = entries.findIndex(entry => entry.id === entryId)
       if (index < 0) throw new Error(`Knowledge entry "${entryId}" was not found`)
       const entry = entries[index]
@@ -372,22 +449,30 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function searchKnowledge(projectRoot, query = '', limit = 10) {
+  async function searchKnowledge(query = '', limit = 10) {
     if (typeof query !== 'string') throw new TypeError('Knowledge query must be a string')
     if (query.length > 500) throw new TypeError('Knowledge query must contain at most 500 characters')
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > KNOWLEDGE_QUERY_LIMIT) {
       throw new TypeError(`Knowledge query limit must be an integer from 1 to ${KNOWLEDGE_QUERY_LIMIT}`)
     }
     const needle = query.trim().toLowerCase()
-    const entries = await readKnowledge(projectRoot)
+    const entries = await readKnowledge()
     return entries
       .filter(entry => !needle || entry.text.toLowerCase().includes(needle))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, limit)
+      .map(entry => ({ ...entry, snippet: knowledgeSnippet(entry.text, needle) }))
   }
 
-  async function readSkill(scope, projectRoot) {
-    const path = skillPath(scope, projectRoot)
+  async function getKnowledge(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) throw new TypeError('Knowledge entry ids are required')
+    const entryIds = ids.map(knowledgeId)
+    const entries = new Map((await readKnowledge()).map(entry => [entry.id, entry]))
+    return entryIds.map(id => ({ id, entry: entries.get(id) }))
+  }
+
+  async function readSkill(scope, projectRoot, name) {
+    const path = skillPath(scope, projectRoot, name)
     let text
     try {
       text = await readFile(path, 'utf8')
@@ -409,13 +494,18 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     const description = fieldValue(changes?.description, 'skillDescription', MAX_SKILL_DESCRIPTION)
     const content = fieldValue(changes?.content, 'skillContent')
     if (!description) return undefined
+    const name = skillNameOf(scope, changes?.name)
     const resolved = scope === 'project' ? projectRootOf(projectRoot) : undefined
-    const path = skillPath(scope, resolved)
+    const path = skillPath(scope, resolved, name)
     return serialize(path, async () => {
-      const current = await readSkill(scope, resolved)
-      if (current && current.description === description && current.content === content) return current
-      await writeTextAtomic(path, skillDocument(skillNameOf(scope), description, content))
-      if (scope === 'project') await excludeProjectSkill(resolved)
+      const current = await readSkill(scope, resolved, name)
+      if (current && current.description === description && current.content === content) {
+        await recordOwnedSkill(scope, resolved, name)
+        return current
+      }
+      await writeTextAtomic(path, skillDocument(name, description, content))
+      if (scope === 'project') await excludeProjectSkill(resolved, name)
+      await recordOwnedSkill(scope, resolved, name)
       return { description, content }
     })
   }
@@ -448,8 +538,10 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     updateKnowledge,
     deleteKnowledge,
     searchKnowledge,
+    getKnowledge,
     readSkill,
     readSkills,
+    ownedSkillNames,
     writeSkill,
     archive: Object.freeze({ write: writeArchive, read: readArchive }),
   }

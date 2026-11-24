@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
         publishRemote: 'Repository', ghRequired: 'A GitHub account is required:',
         noBranch: 'No merge target is available.', noRemote: 'No repository is available.',
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
+        deleteUnmergedHint: 'This worker branch is not merged. Deleting it discards the branch and its worktree; this cannot be undone.',
         deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
         deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
         selectTask: 'Select task', selectedCount: 'Selected',
@@ -45,13 +46,13 @@ window.__ModuleLoader__.load({
         saveSettings: 'Save', settingsInvalid: 'Enter a provider and model, or leave all three model fields blank.',
         queued: 'Queued',
         memoryTab: 'Memory', memoryTitle: 'Memory',
-        memoryIntro: 'Read-only view of saved project memory and knowledge. The memory role maintains it when a task ends.',
+        memoryIntro: 'Read-only view of saved project memory and the global knowledge base. The memory role maintains it when a task ends.',
         memoryProjectLabel: 'Project', memoryGlobal: 'Global memory', memoryProject: 'Project memory',
-        memoryKnowledge: 'Knowledge base', memoryUserProfile: 'User profile',
+        memoryKnowledge: 'Global knowledge base', memoryUserProfile: 'User profile',
         memoryResponsibilities: 'Responsibilities', memoryPositioning: 'Positioning',
         memoryNotSaved: 'Not saved', memoryEmptyKnowledge: 'No knowledge entries yet.',
         memoryLoadFailed: 'Could not load memory. Try refreshing.',
-        memoryNoProject: 'No task identifies a project yet; only global memory is shown.',
+        memoryNoProject: 'No task identifies a project yet; only global memory and knowledge are shown.',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -70,6 +71,7 @@ window.__ModuleLoader__.load({
         publishRemote: '提交仓库', ghRequired: '需要 gh 账号：',
         noBranch: '没有可选的合并目标分支。', noRemote: '没有可选的仓库。',
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
+        deleteUnmergedHint: '该修改分支尚未合并，删除会丢弃该分支及其工作树，且无法恢复。',
         deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
         deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
         selectTask: '选择任务', selectedCount: '已选择',
@@ -94,13 +96,13 @@ window.__ModuleLoader__.load({
         saveSettings: '保存', settingsInvalid: '请填写服务商和模型，或把三个模型字段都留空。',
         queued: '排队中',
         memoryTab: '记忆系统', memoryTitle: '记忆系统',
-        memoryIntro: '只读查看保存的项目记忆和知识库。记忆由 memory 角色在任务收尾时维护。',
+        memoryIntro: '只读查看保存的项目记忆和全局知识库。记忆由 memory 角色在任务收尾时维护。',
         memoryProjectLabel: '项目', memoryGlobal: '全局记忆', memoryProject: '项目记忆',
-        memoryKnowledge: '知识库', memoryUserProfile: '用户画像',
+        memoryKnowledge: '全局知识库', memoryUserProfile: '用户画像',
         memoryResponsibilities: '责任', memoryPositioning: '定位',
         memoryNotSaved: '未保存', memoryEmptyKnowledge: '暂无知识库条目。',
         memoryLoadFailed: '无法加载记忆，请重试。',
-        memoryNoProject: '当前没有任务可确定项目，只显示全局记忆。',
+        memoryNoProject: '当前没有任务可确定项目，只显示全局记忆和知识库。',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -447,14 +449,17 @@ window.__ModuleLoader__.load({
       const optionsFor = key => [...new Set(tasks.map(task => task[key]).filter(value => typeof value === 'string' && value))]
         .sort((a, b) => a.localeCompare(b))
       const scoped = tasks.filter(task => (!team || task.teamId === team) && (!project || task.projectRoot === project))
+      const queuedCount = scoped.filter(task => task.queued === true).length
       const categoryCounts = CATEGORY_ORDER.reduce((counts, key) => {
         counts[key] = scoped.filter(task => task.status === key).length
         return counts
       }, {})
-      const shown = category ? scoped.filter(task => task.status === category) : scoped
-      const groups = CATEGORY_ORDER
-        .filter(key => !category || key === category)
-        .map(key => ({ key, tasks: shown.filter(task => task.status === key) }))
+      // "Queued" is a filter over the running status, not a seventh panel
+      // status: the Running count and group still include queued Tasks.
+      const matchesCategory = (task, key) => key === 'queued' ? task.queued === true : task.status === key
+      const shown = category ? scoped.filter(task => matchesCategory(task, category)) : scoped
+      const groups = (category ? [category] : CATEGORY_ORDER)
+        .map(key => ({ key, tasks: shown.filter(task => matchesCategory(task, key)) }))
         .filter(group => group.tasks.length > 0)
 
       const deletableTask = task => task.queued === true || task.status !== 'running' || task.unconfirmed === true
@@ -493,6 +498,7 @@ window.__ModuleLoader__.load({
         setDialog(null)
       }
       const statusLabel = status => t(Object.hasOwn(dictionaries.en, `status.${status}`) ? `status.${status}` : 'status.failed')
+      const filterLabel = key => key === 'queued' ? t('queued') : statusLabel(key)
       const statusMark = status => {
         const tone = statusTone(status)
         return h('span', { className: 'sl-stage', 'data-state': tone },
@@ -674,12 +680,21 @@ window.__ModuleLoader__.load({
           ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
         }
       }
+      const branchDeletedTask = (task, value) => {
+        const view = value?.view
+        return {
+          ...task,
+          status: view?.status ?? task.status,
+          git: view?.git,
+          ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+        }
+      }
       const openDialog = async (kind, task) => {
         setDialog({ kind, task })
         setDialogData({ phase: 'loading' })
         setDialogChoice('')
         setDialogError('')
-        if (kind === 'delete-task') {
+        if (kind === 'delete-task' || kind === 'delete') {
           setDialogData({ phase: 'ready' })
           return
         }
@@ -722,6 +737,8 @@ window.__ModuleLoader__.load({
           setDialog(null)
           if (action === 'merge') {
             setTasks(current => current.map(item => item.id === task.id ? mergedTask(item, value) : item))
+          } else if (action === 'delete-branch') {
+            setTasks(current => current.map(item => item.id === task.id ? branchDeletedTask(item, value) : item))
           } else {
             refresh()
           }
@@ -782,8 +799,9 @@ window.__ModuleLoader__.load({
                 type: 'button', className: 'sl-btn sl-btn--outline', disabled: busy || !git?.canReview,
                 title: git?.reviewReason, onClick: () => void reviewTask(task),
               }, icon('review'), t('review')),
-              task.status === 'completed' && git?.canDelete && h('button', {
-                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
+              git?.branch && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: busy || !git.canDelete, title: git.deleteReason,
                 onClick: () => void openDialog('delete', task),
               }, icon('trash'), t('deleteBranch')),
               task.queued && h('button', {
@@ -811,7 +829,8 @@ window.__ModuleLoader__.load({
         let body
         if (dialogData.phase === 'loading') body = h('p', { role: 'status' }, t('dialogLoading'))
         else if (dialogData.phase === 'error') body = h('p', { role: 'alert', className: 'sl-error' }, dialogData.error)
-        else if (kind === 'delete') body = h('p', null, `${t('deleteHint')} `, h('code', null, task.git?.branch ?? ''))
+        else if (kind === 'delete') body = h('p', null,
+          `${t(task.git?.merged ? 'deleteHint' : 'deleteUnmergedHint')} `, h('code', null, task.git?.branch ?? ''))
         else if (kind === 'delete-task') body = h('p', null, `${t('deleteTaskHint')} `, h('code', null, task.id))
         else if (kind === 'publish' && !dialogData.gh?.ok) {
           body = h('p', { role: 'alert', className: 'sl-error' },
@@ -877,7 +896,11 @@ window.__ModuleLoader__.load({
           ...CATEGORY_ORDER.map(key => h('button', {
             key, type: 'button', className: 'sl-filter', 'aria-pressed': category === key,
             onClick: () => setCategory(key),
-          }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key]))))),
+          }, statusLabel(key), h('span', { className: 'sl-filter__count' }, String(categoryCounts[key])))),
+          h('button', {
+            type: 'button', className: 'sl-filter', 'aria-pressed': category === 'queued',
+            onClick: () => setCategory('queued'),
+          }, t('queued'), h('span', { className: 'sl-filter__count' }, String(queuedCount)))),
         h('div', { className: 'sl-scope' },
           filter('team', 'allTeams', 'teamId', team, setTeam),
           filter('project', 'allProjects', 'projectRoot', project, setProject)))
@@ -894,7 +917,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'sl-groups' },
           ...groups.map(group => h('section', { key: group.key, className: 'sl-group' },
             h('h2', { className: 'sl-group__title' },
-              statusLabel(group.key),
+              filterLabel(group.key),
               h('span', { className: 'sl-group__count' }, String(group.tasks.length))),
             h('ul', { className: 'sl-list' }, ...group.tasks.map(taskRow))))))
 

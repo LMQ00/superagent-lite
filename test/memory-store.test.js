@@ -44,30 +44,58 @@ test('memory updates reject unknown fields, relative roots and invalid documents
   await assert.rejects(store.readGlobal(), /Invalid or unsupported global memory/)
 })
 
-test('knowledge entries deduplicate, search, correct and delete', async () => {
-  const project = join(root, 'project-knowledge')
-  assert.deepEqual(await store.readKnowledge(project), [])
-  const first = await store.addKnowledge(project, '  The   test command is npm test. ')
+test('the global knowledge base deduplicates, snippets matches, corrects and deletes', async () => {
+  assert.deepEqual(await store.readKnowledge(), [])
+  const first = await store.addKnowledge('  The   test command is npm test. ')
   assert.equal(first.duplicate, false)
+  assert.equal(first.entry.id, '1')
   assert.equal(first.entry.text, 'The test command is npm test.')
-  const again = await store.addKnowledge(project, 'The test command is npm test.')
+  const again = await store.addKnowledge('The test command is npm test.')
   assert.equal(again.duplicate, true)
   assert.equal(again.entry.id, first.entry.id)
-  const second = await store.addKnowledge(project, 'Merge conflicts are resolved in the worktree.')
-  assert.equal((await store.searchKnowledge(project, 'NPM')).length, 1)
-  assert.equal((await store.searchKnowledge(project, '')).length, 2)
-  assert.deepEqual(await store.readKnowledge(join(root, 'project-knowledge-other')), [])
-  await assert.rejects(store.addKnowledge(project, '   '), /cannot be empty/)
-  await assert.rejects(store.searchKnowledge(project, '', 0), /limit must be an integer/)
-  await assert.rejects(store.searchKnowledge(project, 'x'.repeat(501)), /at most 500/)
-  await assert.rejects(store.updateKnowledge(project, 'missing', 'x'), /was not found/)
-  await assert.rejects(store.updateKnowledge(project, second.entry.id, first.entry.text), /identical/)
-  const corrected = await store.updateKnowledge(project, second.entry.id, 'Resolve merge conflicts inside the worktree.')
+  const second = await store.addKnowledge('Merge conflicts are resolved in the worktree.')
+  assert.equal(second.entry.id, '2')
+  assert.equal((await store.searchKnowledge('NPM')).length, 1)
+  assert.equal((await store.searchKnowledge('')).length, 2)
+  const context = 'A long preamble. '.repeat(12)
+  const third = await store.addKnowledge(`${context}The needle appears in the middle. ${'A long tail. '.repeat(12)}`)
+  const matches = await store.searchKnowledge('needle')
+  assert.equal(matches.length, 1)
+  assert.equal(matches[0].id, third.entry.id)
+  assert.match(matches[0].snippet, /^…/)
+  assert.match(matches[0].snippet, /A long preamble\. The needle appears in the middle\./)
+  assert.match(matches[0].snippet, /…$/)
+  assert.ok(matches[0].snippet.length < third.entry.text.length)
+  assert.deepEqual((await store.getKnowledge([second.entry.id])).map(result => [result.id, result.entry.text]), [
+    ['2', 'Merge conflicts are resolved in the worktree.'],
+  ])
+  const missing = await store.getKnowledge([first.entry.id, '999'])
+  assert.equal(missing[0].entry.text, 'The test command is npm test.')
+  assert.equal(missing[1].entry, undefined)
+  await assert.rejects(store.addKnowledge('   '), /cannot be empty/)
+  await assert.rejects(store.searchKnowledge('', 0), /limit must be an integer/)
+  await assert.rejects(store.searchKnowledge('x'.repeat(501)), /at most 500/)
+  await assert.rejects(store.getKnowledge([]), /ids are required/)
+  await assert.rejects(store.getKnowledge(['bad id']), /valid id/)
+  await assert.rejects(store.updateKnowledge('missing', 'x'), /was not found/)
+  await assert.rejects(store.updateKnowledge(second.entry.id, first.entry.text), /identical/)
+  const corrected = await store.updateKnowledge(second.entry.id, 'Resolve merge conflicts inside the worktree.')
   assert.equal(corrected.text, 'Resolve merge conflicts inside the worktree.')
-  assert.equal((await store.searchKnowledge(project, 'resolve')).length, 1)
-  await store.deleteKnowledge(project, first.entry.id)
-  assert.equal((await store.readKnowledge(project)).length, 1)
-  await assert.rejects(store.deleteKnowledge(project, first.entry.id), /was not found/)
+  assert.equal((await store.searchKnowledge('resolve')).length, 1)
+  await store.deleteKnowledge(first.entry.id)
+  assert.equal((await store.readKnowledge()).length, 2)
+  await assert.rejects(store.deleteKnowledge(first.entry.id), /was not found/)
+  const saved = JSON.parse(await readFile(join(root, 'data', 'memory', 'knowledge.json'), 'utf8'))
+  assert.equal(saved.version, 1)
+  assert.equal(saved.entries.length, 2)
+})
+
+test('the knowledge file is global and rejects malformed documents', async () => {
+  const path = join(root, 'data', 'memory', 'knowledge.json')
+  await writeFile(path, JSON.stringify({ version: 99, entries: [] }))
+  await assert.rejects(store.readKnowledge(), /Invalid or unsupported knowledge base/)
+  await writeFile(path, JSON.stringify({ version: 1, entries: 'nope' }))
+  await assert.rejects(store.readKnowledge(), /Invalid knowledge base entries/)
 })
 
 test('global and project skills use their own files and only the description is read for the catalog', async () => {
@@ -99,6 +127,37 @@ test('global and project skills use their own files and only the description is 
     project: { description: 'How to work on this project.', content: 'Run npm test before reporting.' },
   })
   await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
+})
+
+test('memory records the skills it writes and reports them as owned', async () => {
+  const project = join(root, 'project-owned-skills')
+  const other = join(root, 'project-owned-skills-other')
+  await store.writeSkill('global', project, {
+    description: 'Shared inspection skill.', content: 'Inspect first.',
+  })
+  await store.writeSkill('project', project, {
+    description: 'Project skill.', content: 'Run the tests.',
+  })
+  await store.writeSkill('project', project, {
+    name: 'superagent-lite-test-conventions',
+    description: 'Test conventions.', content: 'Run the suite.',
+  })
+  await mkdir(join(project, '.dsh', 'skills', 'manual-skill'), { recursive: true })
+  await writeFile(join(project, '.dsh', 'skills', 'manual-skill', 'SKILL.md'),
+    '---\nname: manual-skill\ndescription: "Not memory-owned."\n---\n\nBody.\n')
+  assert.deepEqual([...(await store.ownedSkillNames(project))].sort(), [
+    'superagent-lite-test-conventions', 'superagent-project-memory', 'superagent-shared-memory',
+  ])
+  assert.equal((await store.ownedSkillNames(project)).has('manual-skill'), false)
+  assert.deepEqual([...(await store.ownedSkillNames(other))].sort(), [
+    'superagent-project-memory', 'superagent-shared-memory',
+  ])
+  assert.deepEqual([...(await store.ownedSkillNames())].sort(), [
+    'superagent-shared-memory',
+  ])
+  assert.deepEqual(await store.readSkill('project', project, 'superagent-lite-test-conventions'), {
+    description: 'Test conventions.', content: 'Run the suite.',
+  })
 })
 
 test('a project skill is kept out of the project checkout status through .git/info/exclude', async () => {

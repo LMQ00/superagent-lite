@@ -15,7 +15,7 @@ const files = [
   'lib/client.js',
 ]
 
-test('agent-message card host patch applies, repeats and reverts on 0.2.2-rc.3', {
+test('role, status and reminder task-card host patch applies, upgrades, repeats and reverts on 0.2.2-rc.3', {
   skip: !anchor,
 }, async (t) => {
   const installed = join(anchor, 'node_modules', packageName)
@@ -35,12 +35,39 @@ test('agent-message card host patch applies, repeats and reverts on 0.2.2-rc.3',
     await copyFile(join(installed, file), target)
   }
   const run = (...args) => spawnSync(process.execPath, [script, '--package', copy, ...args], { encoding: 'utf8' })
+  const read = file => readFile(join(copy, file), 'utf8')
 
-  // Start from the pristine side even when the installed Host already carries the patch.
+  const installedMessage = await read('src/client/conversation-nodes/message.ts')
+  const legacy = installedMessage.includes('const agentCard =')
+    && !installedMessage.includes('const cardedNotice =')
+
+  // A Host that still carries the earlier agent-message-only patch upgrades in
+  // place: `--check` reports the upgrade, applying yields the current snippets,
+  // and reverting restores the pristine package.
+  if (legacy) {
+    let result = run('--check')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /patch is applicable/)
+    result = run()
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /patched/)
+    const narrowed = await read('src/client/conversation-nodes/message.ts')
+    assert.match(narrowed, /const cardedNotice = context\.state\.kind === 'context'/)
+    assert.match(narrowed, /source\.kind === 'subagent-settled'/)
+    assert.match(narrowed, /source\.kind\.startsWith\('superagent-lite-'\)/)
+    assert.doesNotMatch(narrowed, /const agentCard =/)
+    assert.match(await read('lib/client.js'), /const cardedNotice=context\.state\.kind===`context`/)
+    result = run('--check')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /already patched/)
+  }
+
+  // Start from the pristine side even when the installed Host already carries
+  // the patch: revert the copy, then capture the baseline.
   let result = run('--revert')
   assert.equal(result.status, 0, result.stderr)
   const pristine = new Map()
-  for (const file of files.slice(1)) pristine.set(file, await readFile(join(copy, file), 'utf8'))
+  for (const file of files.slice(1)) pristine.set(file, await read(file))
   result = run('--check')
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /patch is applicable/)
@@ -48,27 +75,33 @@ test('agent-message card host patch applies, repeats and reverts on 0.2.2-rc.3',
   result = run()
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /patched/)
-  const message = await readFile(join(copy, 'src/client/conversation-nodes/message.ts'), 'utf8')
-  const trigger = await readFile(join(copy, 'src/client/chat/TurnTriggerNodeView.tsx'), 'utf8')
-  const bundle = await readFile(join(copy, 'lib/client.js'), 'utf8')
-  assert.match(message, /const agentCard = context\.state\.kind === 'context'/)
-  assert.match(message, /waking \|\| agentCard \? 'turn-trigger'/)
+  const message = await read('src/client/conversation-nodes/message.ts')
+  const trigger = await read('src/client/chat/TurnTriggerNodeView.tsx')
+  const bundle = await read('lib/client.js')
   assert.match(message, /ContextMessageNode & \{ readonly waking\?: boolean \}/)
+  assert.match(message, /const cardedNotice = context\.state\.kind === 'context'/)
+  assert.match(message, /source\.kind === 'subagent-settled'/)
+  assert.match(message, /source\.kind\.startsWith\('superagent-lite-'\)/)
+  assert.match(message, /waking \|\| cardedNotice \? 'turn-trigger'/)
+  assert.doesNotMatch(message, /const agentCard =/)
   assert.match(trigger, /\{node\.data\.waking !== false && <p className=\{css\.explanation\}>/)
-  assert.match(bundle, /const agentCard=context\.state\.kind===`context`/)
+  assert.match(bundle, /const cardedNotice=context\.state\.kind===`context`/)
+  assert.match(bundle, /source\.kind===`subagent-settled`/)
+  assert.match(bundle, /source\.kind\.startsWith\(`superagent-lite-`\)/)
+  assert.match(bundle, /\(waking\|\|cardedNotice\)\?`turn-trigger`/)
   assert.match(bundle, /node\.data\.waking!==false&&/)
 
   // A second application must not duplicate anything.
   result = run()
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /already patched/)
-  assert.equal((await readFile(join(copy, 'lib/client.js'), 'utf8')), bundle)
+  assert.equal(await read('lib/client.js'), bundle)
 
   result = run('--revert')
   assert.equal(result.status, 0, result.stderr)
-  const reverted = await readFile(join(copy, 'lib/client.js'), 'utf8')
-  assert.doesNotMatch(reverted, /const agentCard=/)
+  const reverted = await read('lib/client.js')
+  assert.doesNotMatch(reverted, /cardedNotice/)
   assert.doesNotMatch(reverted, /node\.data\.waking!==false/)
-  for (const file of files.slice(1)) assert.equal(await readFile(join(copy, file), 'utf8'), pristine.get(file))
+  for (const file of files.slice(1)) assert.equal(await read(file), pristine.get(file))
   assert.equal(reverted, pristine.get('lib/client.js'))
 })

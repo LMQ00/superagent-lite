@@ -85,6 +85,7 @@ test('installed DSH schemas, dispatched worktree and reviewed commit', {
         }
         ++reviewCalls
         assert.equal(spec.agentPreset, undefined)
+        assert.deepEqual(spec.promptSource, { kind: 'agent-message', form: 'relay', senderSessionId: worker.id })
         assert.match(spec.prompt[0].text, /Inspect it yourself/)
         assert.match(spec.prompt[0].text, /file write\/edit tools are unavailable/)
         assert.match(spec.prompt[0].text, /Uncommitted local changes and assumptions about the repository are not part of the change/)

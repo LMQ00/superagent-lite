@@ -1,6 +1,7 @@
 import { dataRoot, listTasks, updateTask } from './task-store.js'
 import { buildWorkerPrompt } from './worker-prompt.js'
 import { forgetLanding } from './landing.js'
+import { notifyWorkerStatus } from './worker-status.js'
 import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
 
 // Worker launches beyond the configured limit wait as `queued` Task records.
@@ -75,6 +76,7 @@ async function launch(ctx, task) {
       maxDepth: ctx.subagents.resolveMaxDepth(),
     })
     parents.delete(task.id)
+    notifyWorkerStatus(ctx, task, 'starting')
     return true
   } catch (error) {
     parents.delete(task.id)

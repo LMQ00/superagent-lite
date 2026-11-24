@@ -14,6 +14,7 @@ const READ_ONLY_TOOLS = new Set([
   'job_output',
   'job_list',
   'knowledge_query',
+  'knowledge_get',
 ])
 
 const SHELL_TOOLS = ['bash', 'pwsh']
@@ -100,15 +101,15 @@ export function registerReadOnlyGuard(agent) {
 
 // A reviewer may inspect the repository and run commands as it sees fit. The
 // only limits are file write/edit tools and git commands that move branches or
-// history; the change evidence recorded here gates the verdict. Project
-// knowledge stays read-only for reviewers.
+// history; the change evidence recorded here gates the verdict. The global
+// knowledge base stays read-only for reviewers.
 export function registerReviewGuard(agent, reviewScope) {
   agent.ctx.tools.guard(({ name, arguments: input }) => {
     if (WRITE_TOOLS.has(name)) {
       return `Reviewers may not use the "${name}" tool.`
     }
     if (name === 'knowledge_write') {
-      return 'Only the memory role may write project knowledge.'
+      return 'Only the memory role may write knowledge.'
     }
     if (!SHELL_TOOLS.includes(name)) return undefined
     return reviewScope.checkCommand(input?.command)

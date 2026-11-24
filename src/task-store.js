@@ -34,9 +34,11 @@ function serializeForRoot(root, key, operation) {
 export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-lite')) {
   const tasksDir = join(baseDir, 'tasks')
   const sessionsDir = join(tasksDir, 'sessions')
+  const cancelledDir = join(tasksDir, 'cancelled')
 
   async function ensureDirectories() {
     await mkdir(sessionsDir, { recursive: true, mode: 0o700 })
+    await mkdir(cancelledDir, { recursive: true, mode: 0o700 })
   }
 
   async function writeAtomic(path, value) {
@@ -121,6 +123,7 @@ export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-li
 
   async function cancelQueuedTask(id) {
     const safe = safeId(id)
+    await ensureDirectories()
     return serializeForRoot(baseDir, `task:${safe}`, async () => {
       const path = join(tasksDir, `${safe}.json`)
       let task
@@ -131,12 +134,33 @@ export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-li
         throw error
       }
       if (task.status !== 'queued') throw new Error('The task is no longer queued')
+      const cancelled = { ...task, status: 'cancelled', cancelledAt: new Date().toISOString() }
+      await writeAtomic(join(cancelledDir, `${safe}.json`), cancelled)
       await rm(path, { force: true })
       if (task.workerSessionId) {
         await rm(join(sessionsDir, `${sessionKey(task.workerSessionId)}.json`), { force: true })
       }
       return true
     })
+  }
+
+  async function listCancelledTasks() {
+    let names
+    try {
+      names = await readdir(cancelledDir)
+    } catch (error) {
+      if (error.code === 'ENOENT') return []
+      throw error
+    }
+    const tasks = await Promise.all(names.filter(name => /^[a-f0-9]{16}\.json$/.test(name)).map(async name => {
+      try {
+        return JSON.parse(await readFile(join(cancelledDir, name), 'utf8'))
+      } catch (error) {
+        if (error.code === 'ENOENT') return undefined
+        throw error
+      }
+    }))
+    return tasks.filter(Boolean).sort((a, b) => (b.cancelledAt ?? b.updatedAt ?? b.createdAt).localeCompare(a.cancelledAt ?? a.updatedAt ?? a.createdAt))
   }
 
   async function linkWorkerSession(taskId, sessionId) {
@@ -174,9 +198,9 @@ export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-li
     return tasks.filter(Boolean).sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
   }
 
-  return { createTask, readTask, updateTask, removeTask, cancelQueuedTask, listTasks, linkWorkerSession, taskForSession, root: baseDir }
+  return { createTask, readTask, updateTask, removeTask, cancelQueuedTask, listCancelledTasks, listTasks, linkWorkerSession, taskForSession, root: baseDir }
 }
 
 const store = createTaskStore()
-export const { createTask, readTask, updateTask, removeTask, cancelQueuedTask, listTasks, linkWorkerSession, taskForSession } = store
+export const { createTask, readTask, updateTask, removeTask, cancelQueuedTask, listCancelledTasks, listTasks, linkWorkerSession, taskForSession } = store
 export const dataRoot = store.root

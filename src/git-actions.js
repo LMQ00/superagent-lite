@@ -13,6 +13,8 @@ const TASK_ID = /^[a-f0-9]{16}$/
 const PR_CACHE_MS = 30_000
 const PR_TIMEOUT_MS = 10_000
 const DELIVERY_STATUSES = ['review-required', 'awaiting-merge', 'awaiting-ci', 'merge-queued', 'publishing', 'merging', 'delivery-blocked']
+const RUNNING_STATUSES = ['queued', 'starting', 'running', 'resuming', 'publishing', 'merging']
+const FAILED_STATUSES = ['failed', 'delivery-blocked', 'merge-conflict', 'interrupted', 'cancelled']
 const HEALABLE = ['review-required', 'delivery-blocked', 'failed', 'ready']
 
 const FAILED_CHECKS = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'ERROR', 'STARTUP_FAILURE', 'STALE'])
@@ -282,7 +284,13 @@ export function createGitManager(ctx, dependencies = {}) {
       task = await settle(task, { status: 'completed' })
     }
     const branch = task.worktree?.branch
-    if (!branch) return { status: panelStatus(task), git: undefined }
+    if (!branch) {
+      // A deleted worker branch leaves nothing to review, merge or publish, so
+      // the row settles as completed unless the Task had already failed.
+      const status = task.branchDeletedAt && task.mode !== 'report' && !FAILED_STATUSES.includes(task.status)
+        ? 'completed' : panelStatus(task)
+      return { status, git: undefined }
+    }
     const facts = await worktreeFacts(task, signal)
     const head = facts?.head
     const base = task.worktree?.baseCommit ?? task.baseCommit
@@ -329,7 +337,9 @@ export function createGitManager(ctx, dependencies = {}) {
       : !hasCommits ? 'This worker branch has no commits'
         : reviewed ? 'This commit is already reviewed'
           : !worker ? 'The worker Session is not running; open it to review the commit there' : undefined
-    const canDelete = Boolean(task.status === 'merged' || merged) && !task.branchDeletedAt
+    const running = RUNNING_STATUSES.includes(task.status)
+    const canDelete = !running && !task.branchDeletedAt
+    const deleteReason = running ? 'The task is still running; wait for it to finish before deleting the branch' : undefined
     return {
       status: panelStatus(task, { merged, reviewed, hasCommits, closed, branch: true }),
       git: {
@@ -362,6 +372,7 @@ export function createGitManager(ctx, dependencies = {}) {
         canReview,
         reviewReason,
         canDelete,
+        deleteReason,
       },
     }
   }
@@ -491,10 +502,18 @@ export function createGitManager(ctx, dependencies = {}) {
   async function deleteAction(task, signal) {
     requireFullAccess(task)
     const removed = await removeBranch(task, signal)
+    // The panel updates this row in place instead of reloading the list, so
+    // return the same view a fresh read would have produced.
+    const record = await store.readTask(task.id).catch(() => undefined)
+    const view = record
+      ? await list([record], signal).then(views => views.get(task.id), () => undefined)
+      : undefined
     return result(task, 'delete-branch', {
-      status: 'merged',
+      status: record?.status ?? task.status,
       branch: removed.branch,
       deleted: removed.deleted,
+      ...(typeof record?.updatedAt === 'string' ? { updatedAt: record.updatedAt } : {}),
+      ...(view ? { view } : {}),
       message: removed.deleted
         ? `Deleted the worker branch ${removed.branch} for ${task.id}.`
         : `Task ${task.id} has no worker branch left to delete.`,

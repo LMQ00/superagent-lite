@@ -278,7 +278,7 @@ test('the settings tab edits the worker model and concurrency limit', async () =
   board.dispose()
 })
 
-test('the memory tab browses global memory, project memory and knowledge read-only', async () => {
+test('the memory tab browses global memory, project memory and global knowledge read-only', async () => {
   const requests = []
   const tasks = [
     task({ id: 'a', projectRoot: '/two', updatedAt: '2026-02-01T00:00:00.000Z' }),
@@ -289,14 +289,17 @@ test('the memory tab browses global memory, project memory and knowledge read-on
       global: { userProfile: 'Prefers Chinese reports.' },
       project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
       knowledge: [{
-        id: 'k1', text: 'Run npm test before reporting.',
+        id: '1', text: 'Run npm test before reporting.',
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
       }],
     },
     '/two': {
       global: { userProfile: 'Prefers Chinese reports.' },
       project: { projectRoot: '/two', responsibilities: 'Watch the second project.', positioning: '' },
-      knowledge: [],
+      knowledge: [{
+        id: '1', text: 'Run npm test before reporting.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      }],
     },
   }
   const board = setup({
@@ -322,7 +325,7 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   tree = board.render()
   assert.equal(tab(tree, '项目任务').props['aria-selected'], false)
   assert.equal(tab(tree, '设置').props['aria-selected'], false)
-  assert.match(text(tree), /只读查看保存的项目记忆和知识库/)
+  assert.match(text(tree), /只读查看保存的项目记忆和全局知识库/)
   assert.match(text(tree), /全局记忆/)
   assert.match(text(tree), /用户画像/)
   assert.match(text(tree), /Prefers Chinese reports/)
@@ -331,8 +334,8 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   assert.match(text(tree), /Watch the second project/)
   assert.match(text(tree), /定位/)
   assert.match(text(tree), /未保存/)
-  assert.match(text(tree), /知识库0/)
-  assert.match(text(tree), /暂无知识库条目/)
+  assert.match(text(tree), /全局知识库1/)
+  assert.match(text(tree), /Run npm test before reporting/)
   // The most recently updated task's project is the current project.
   const projectSelect = nodes(tree).find(node => node.type === 'select')
   assert.equal(projectSelect.props.value, '/two')
@@ -348,7 +351,7 @@ test('the memory tab browses global memory, project memory and knowledge read-on
   assert.match(text(tree), /Keep the board accurate/)
   assert.match(text(tree), /Local-first tools/)
   assert.doesNotMatch(text(tree), /未保存/)
-  assert.match(text(tree), /知识库1/)
+  assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   assert.match(text(tree), /更新时间/)
   const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))
@@ -470,7 +473,9 @@ test('a queued task carries its own label and becomes running in place when a sl
   board.render()
   await flush()
   let tree = board.render()
-  assert.match(text(tree), /排队中/)
+  const rowOf = target => byClass(target, 'sl-task').find(row => text(row).includes('Task A'))
+  assert.match(text(rowOf(tree)), /排队中/)
+  assert.ok(text(tree).includes('排队中1'))
   assert.doesNotMatch(text(tree), /未确认/)
   assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
   assert.equal(scheduled.length, 1)
@@ -479,13 +484,72 @@ test('a queued task carries its own label and becomes running in place when a sl
   await scheduled[0].callback()
   await flush()
   tree = board.render()
-  assert.doesNotMatch(text(tree), /排队中/)
+  assert.doesNotMatch(text(rowOf(tree)), /排队中/)
+  assert.ok(text(tree).includes('排队中0'))
   assert.doesNotMatch(text(tree), /正在加载任务/)
   assert.match(text(tree), /运行中/)
   assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['运行中1'])
   assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 2)
   assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').at(-1).options.credentials, 'same-origin')
   assert.deepEqual(cleared, [1])
+  board.dispose()
+})
+
+test('filters queued tasks into their own group while keeping the queued label and cancel action', async () => {
+  let tasks = [
+    task({ id: 'a', title: 'Task A', status: 'running', queued: true, workerSessionId: 'worker-a' }),
+    task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
+    task({ id: 'c', title: 'Task C', status: 'unmerged', git: gitFacts() }),
+  ]
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
+        assert.equal(options.method, 'DELETE')
+        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
+        tasks = tasks.filter(item => item.id !== removed)
+        return { ok: true, json: async () => ({ deleted: removed }) }
+      }
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
+      return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.ok(text(tree).includes('运行中2'))
+  assert.ok(text(tree).includes('排队中1'))
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1', '运行中2'])
+
+  filterButton(tree, '排队中').props.onClick()
+  tree = board.render()
+  assert.equal(filterButton(tree, '排队中').props['aria-pressed'], true)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['排队中1'])
+  assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)), ['Task A'])
+  const row = byClass(tree, 'sl-task').find(item => text(item).includes('Task A'))
+  assert.match(text(row), /排队中/)
+  const cancelIn = target => nodes(target).find(node => node.type === 'button' && text(node) === '取消')
+  assert.equal(cancelIn(row).props.title, '取消排队中的任务')
+
+  filterButton(tree, '全部').props.onClick()
+  tree = board.render()
+  assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)), ['Task C', 'Task A', 'Task B'])
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1', '运行中2'])
+
+  filterButton(tree, '排队中').props.onClick()
+  tree = board.render()
+  cancelIn(byClass(tree, 'sl-task')[0]).props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.doesNotMatch(text(tree), /Task A/)
+  assert.match(text(tree), /该状态下暂无任务/)
+  assert.match(text(tree), /已取消排队任务/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
   board.dispose()
 })
 
@@ -677,17 +741,22 @@ test('starts a review from the unreviewed row and reports the verdict', async ()
   board.dispose()
 })
 
-test('deletes the worker branch from a completed merged row after confirmation', async () => {
+test('deletes the worker branch from a merged row after confirmation without reloading', async () => {
   const requests = []
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
       if (path === '/superagent-lite/git') {
         assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'delete-branch' })
-        return { ok: true, json: async () => ({ message: 'Deleted the worker branch sl-a.' }) }
-      }
-      if (path === '/superagent-lite/git?taskId=a') {
-        return { ok: true, json: async () => detail({ branches: [{ name: 'main', current: true }] }) }
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'merged',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            view: { status: 'completed' },
+            message: 'Deleted the worker branch sl-a.',
+          }),
+        }
       }
       return { ok: true, json: async () => ({ tasks: [task({
         status: 'completed', git: gitFacts({ merged: true, canMerge: false, canPublish: false, canDelete: true }),
@@ -698,16 +767,109 @@ test('deletes the worker branch from a completed merged row after confirmation',
   board.render()
   await flush()
   button(board.render(), '删除分支').props.onClick()
-  await flush()
   let tree = board.render()
   assert.match(text(tree), /删除修改分支/)
+  assert.match(text(tree), /已审查的提交已合并/)
   assert.match(text(tree), /sl-a/)
+  // Deleting a branch confirms in place; it does not need the branch-history read.
+  assert.equal(requests.filter(request => request.path.startsWith('/superagent-lite/git?')).length, 0)
   button(tree, '删除').props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
   }
-  assert.match(text(board.render()), /Deleted the worker branch sl-a/)
+  tree = board.render()
+  assert.match(text(tree), /Deleted the worker branch sl-a/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已完成1'])
+  assert.equal(buttons(tree, '删除分支').length, 0)
+  board.dispose()
+})
+
+test('offers delete branch on an unmerged row, warns, and settles the row in place', async () => {
+  const requests = []
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/git') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'delete-branch' })
+        return {
+          ok: true,
+          json: async () => ({
+            status: 'awaiting-merge',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            view: { status: 'completed' },
+            message: 'Deleted the worker branch sl-a for a.',
+          }),
+        }
+      }
+      return { ok: true, json: async () => ({ tasks: [task({ status: 'unmerged', git: gitFacts({ canDelete: true }) })] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  let tree = board.render()
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['未合并1'])
+  assert.equal(buttons(tree, '合并').length, 1)
+  button(tree, '删除分支').props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /尚未合并/)
+  assert.match(text(tree), /丢弃该分支/)
+  assert.match(text(tree), /sl-a/)
+  assert.equal(requests.filter(request => request.path.startsWith('/superagent-lite/git?')).length, 0)
+  button(tree, '删除').props.onClick()
+  for (let step = 0; step < 4; step += 1) {
+    board.render()
+    await flush()
+  }
+  tree = board.render()
+  assert.match(text(tree), /Deleted the worker branch sl-a/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.deepEqual(byClass(tree, 'sl-group__title').map(node => text(node)), ['已完成1'])
+  assert.equal(buttons(tree, '合并').length, 0)
+  assert.equal(buttons(tree, '提交 PR').length, 0)
+  assert.equal(buttons(tree, '删除分支').length, 0)
+  board.dispose()
+})
+
+test('disables delete branch while the worker is still running and explains why', async () => {
+  const reason = 'The task is still running; wait for it to finish before deleting the branch'
+  const board = setup({
+    fetch: async path => ({ ok: true, json: async () => path === '/superagent-lite/tasks'
+      ? { tasks: [task({ status: 'running', git: gitFacts({ canDelete: false, deleteReason: reason }) })] }
+      : { records: [] } }),
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  const deleteBranch = button(board.render(), 'Delete branch')
+  assert.equal(deleteBranch.props.disabled, true)
+  assert.equal(deleteBranch.props.title, reason)
+  board.dispose()
+})
+
+test('offers delete branch on every row that still has a worker branch', async () => {
+  const rows = ['unmerged', 'unreviewed', 'completed', 'failed'].map((status, index) => task({
+    id: String(index), title: `Task ${status}`, status,
+    git: gitFacts({
+      canDelete: true, merged: status === 'completed', reviewed: status !== 'unreviewed',
+      canMerge: false, canPublish: false, canReview: false,
+    }),
+  }))
+  rows.push(task({
+    id: 'running', title: 'Task running', status: 'running',
+    git: gitFacts({ canDelete: false, deleteReason: 'The task is still running' }),
+  }))
+  const board = setup({
+    fetch: async () => ({ ok: true, json: async () => ({ tasks: rows }) }),
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  const buttonsOnRows = buttons(board.render(), 'Delete branch')
+  assert.equal(buttonsOnRows.length, 5)
+  assert.equal(buttonsOnRows.filter(node => node.props.disabled).length, 1)
   board.dispose()
 })
 

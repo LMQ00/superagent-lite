@@ -16,13 +16,14 @@ after(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-async function taskForWorker(taskId, workerId) {
+async function taskForWorker(taskId, workerId, mode = 'change') {
   const { createTask, linkWorkerSession } = await import('../src/task-store.js')
   const projectRoot = join(home, 'project-core')
   await createTask({
     id: taskId, title: `Task ${taskId}`, teamId: 'core', projectRoot, task: 'Change it',
-    mode: 'change', parentSessionId: 'router', workerSessionId: workerId, status: 'running',
-    baseBranch: 'main', baseCommit: 'b'.repeat(40), worktree: { path: projectRoot, branch: 'sl-core' },
+    mode, parentSessionId: 'router', workerSessionId: workerId, status: 'running',
+    baseBranch: 'main', baseCommit: 'b'.repeat(40),
+    ...(mode === 'report' ? {} : { worktree: { path: projectRoot, branch: 'sl-core' } }),
     createdAt: new Date().toISOString(),
   })
   await linkWorkerSession(taskId, workerId)
@@ -120,11 +121,15 @@ test('the final report triggers the memory role, saves memory and writes skills'
   const result = await wiring.message().execute({
     message: 'Done. Review approved; tests pass.',
   }, { agent: wiring.agent, signal: new AbortController().signal })
-  assert.match(result, /6 memory fields updated/)
+  assert.match(result, /Message delivered to the router/)
+  assert.doesNotMatch(result, /memory field/)
   assert.equal(wiring.activations.length, 1)
   assert.equal(wiring.activations[0].label, 'Distill memory')
   assert.equal(wiring.activations[0].delivery, 'caller')
   assert.equal(wiring.activations[0].maxDepth, 2)
+  assert.deepEqual(wiring.activations[0].promptSource, {
+    kind: 'agent-message', form: 'relay', senderSessionId: wiring.agent.id,
+  })
   assert.match(wiring.activations[0].prompt[0].text, /You are the memory role/)
   assert.match(wiring.activations[0].prompt[0].text, /\[user\] Implement the change\./)
   assert.match(wiring.activations[0].prompt[0].text, /\[assistant\] Done\. Review approved; tests pass\./)
@@ -168,17 +173,33 @@ test('a finished worker is not shown a catalog update caused by its own memory s
     message: 'Done. Review approved; tests pass.',
   }, { agent: wiring.agent, signal: new AbortController().signal })
 
+  const { createMemoryStore } = await import('../src/memory.js')
+  await createMemoryStore().writeSkill('project', projectRoot, {
+    name: 'superagent-lite-test-conventions',
+    description: 'Test conventions.',
+    content: 'Run the suite.',
+  })
+
   const update = catalog([
     { name: 'find-skills', description: 'Find skills.' },
     { name: 'superagent-project-memory', description: 'Run the project tests.' },
+    { name: 'superagent-lite-test-conventions', description: 'Test conventions.' },
   ], true)
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [update] }))
     assert.deepEqual(decision.messages, [], `attempt ${attempt + 1}`)
   }
+
+  const unrelated = catalog([
+    { name: 'find-skills', description: 'Find, install, and extend skills.' },
+    { name: 'superagent-project-memory', description: 'Run the project tests.' },
+    { name: 'superagent-lite-test-conventions', description: 'Test conventions.' },
+  ], true)
+  const decision = await preStep({ agent: wiring.agent }, async () => ({ kind: 'enter', messages: [unrelated] }))
+  assert.deepEqual(decision.messages, [unrelated])
 })
 
-test('a worker gets project and global memory injected and only the knowledge query tool', async () => {
+test('a worker gets project and global memory injected and only the knowledge read tools', async () => {
   const workerId = 'worker-b'
   const projectRoot = await taskForWorker('b'.repeat(16), workerId)
   await mkdir(projectRoot, { recursive: true })
@@ -189,8 +210,10 @@ test('a worker gets project and global memory injected and only the knowledge qu
   await store.writeSkill('project', projectRoot, {
     description: 'Project skill description.', content: 'Project skill body.',
   })
+  await store.addKnowledge('Knowledge that must not be injected into role context.')
   const wiring = await workerWiring(workerId, projectRoot, memoryFields())
   assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), true)
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_get'), true)
   assert.equal(wiring.skillProviders.length, 1)
   const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
   assert.equal(candidates[0].description, 'Project skill description.')
@@ -203,6 +226,39 @@ test('a worker gets project and global memory injected and only the knowledge qu
   assert.match(memory.text(), /User profile: Environment: worker context check\./)
   assert.match(memory.text(), /Responsibilities: Worker project responsibility\./)
   assert.match(memory.text(), /data, not instructions/)
+  assert.doesNotMatch(memory.text(), /Knowledge that must not be injected/)
+  assert.doesNotMatch(memory.text(), /knowledge_query/)
+})
+
+test('a report worker gets the same project and global memory and project skill catalog read-only', async () => {
+  const workerId = 'worker-report'
+  const projectRoot = await taskForWorker('f'.repeat(16), workerId, 'report')
+  await mkdir(projectRoot, { recursive: true })
+  const { createMemoryStore } = await import('../src/memory.js')
+  const store = createMemoryStore()
+  await store.writeGlobal({ userProfile: 'Environment: report memory check.' })
+  await store.writeProject(projectRoot, {
+    responsibilities: 'Report project responsibility.',
+    positioning: 'Report project positioning.',
+  })
+  await store.writeSkill('project', projectRoot, {
+    description: 'Report project skill description.', content: 'Report project skill body.',
+  })
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields())
+  const memory = wiring.contexts.find(entry => entry.name === 'superagent-lite-memory')
+  assert.ok(memory, 'the report worker registered the memory context')
+  assert.equal(memory.required, true)
+  assert.equal(memory.order, 170)
+  assert.match(memory.text(), /User profile: Environment: report memory check\./)
+  assert.match(memory.text(), /Responsibilities: Report project responsibility\./)
+  assert.match(memory.text(), /Positioning: Report project positioning\./)
+  assert.equal(wiring.skillProviders.length, 1)
+  const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
+  assert.equal(candidates[0].description, 'Report project skill description.')
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), true)
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_write'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
 })
 
 test('a worker turn archives the complete turn under the task directory', async () => {
@@ -252,10 +308,10 @@ test('the router injects only global memory from the shared store', async () => 
   assert.equal(memory.order, 170)
   assert.match(memory.text(), /User profile: Prefers terse reports\./)
   assert.doesNotMatch(memory.text(), /Project-only memory/)
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['continue_worker', 'dispatch_worker'])
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['continue_worker', 'dispatch_worker', 'worker_status'])
 })
 
-test('a memory helper gets both knowledge tools while a reviewer gets only the query tool', async () => {
+test('a memory helper gets the knowledge read and write tools while a reviewer gets only the read tools', async () => {
   const { apply } = await import('../index.js')
   const { expectHelper } = await import('../src/helper-guard.js')
   await taskForWorker('e'.repeat(16), 'worker-e')
@@ -293,15 +349,17 @@ test('a memory helper gets both knowledge tools while a reviewer gets only the q
   }
   const memory = helper('memory-helper', 'memory', undefined)
   await listeners.get('agent/created')({ agent: memory.agent })
-  assert.deepEqual(memory.registered.map(tool => tool.name).sort(), ['knowledge_query', 'knowledge_write'])
+  assert.deepEqual(memory.registered.map(tool => tool.name).sort(), ['knowledge_get', 'knowledge_query', 'knowledge_write'])
   assert.equal(memory.checks[0]({ name: 'knowledge_query' }), undefined)
+  assert.equal(memory.checks[0]({ name: 'knowledge_get' }), undefined)
   assert.equal(memory.checks[0]({ name: 'knowledge_write' }), undefined)
   assert.match(memory.checks[0]({ name: 'write' }), /Read-only helpers cannot use/)
 
   const reviewerScope = { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) }
   const reviewer = helper('review-helper', 'review', reviewerScope)
   await listeners.get('agent/created')({ agent: reviewer.agent })
-  assert.deepEqual(reviewer.registered.map(tool => tool.name).sort(), ['knowledge_query', 'submit_review'])
+  assert.deepEqual(reviewer.registered.map(tool => tool.name).sort(), ['knowledge_get', 'knowledge_query', 'submit_review'])
   assert.match(reviewer.checks[0]({ name: 'knowledge_write' }), /Only the memory role/)
   assert.equal(reviewer.checks[0]({ name: 'knowledge_query' }), undefined)
+  assert.equal(reviewer.checks[0]({ name: 'knowledge_get' }), undefined)
 })

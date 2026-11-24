@@ -124,6 +124,9 @@ test('the reviewer prompt carries scope and the worktree instead of the diff', a
 
   assert.equal(activations.length, 1)
   assert.equal(activations[0].cwd, repo)
+  assert.deepEqual(activations[0].promptSource, {
+    kind: 'agent-message', form: 'relay', senderSessionId: worker.id,
+  })
   const text = activations[0].prompt[0].text
   assert.ok(text.includes(repo), 'worktree path is in the prompt')
   assert.ok(text.includes(baseCommit), 'base commit is in the prompt')
