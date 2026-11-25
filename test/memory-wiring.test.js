@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import test, { after } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -135,8 +135,15 @@ test('the final report triggers the memory role, saves memory and writes skills'
     kind: 'agent-message', form: 'relay', senderSessionId: wiring.agent.id,
   })
   assert.match(wiring.activations[0].prompt[0].text, /You are the memory role/)
-  assert.match(wiring.activations[0].prompt[0].text, /\[user\] Implement the change\./)
-  assert.match(wiring.activations[0].prompt[0].text, /\[assistant\] Done\. Review approved; tests pass\./)
+  assert.match(wiring.activations[0].prompt[0].text, /- Role: worker/)
+  assert.match(wiring.activations[0].prompt[0].text, /- Branch: sl-core/)
+  assert.doesNotMatch(wiring.activations[0].prompt[0].text, /Implement the change\./)
+  assert.doesNotMatch(wiring.activations[0].prompt[0].text, /Done\. Review approved; tests pass\./)
+  const recordPath = /^- Record path: (.+)$/m.exec(wiring.activations[0].prompt[0].text)?.[1]
+  assert.ok(recordPath, wiring.activations[0].prompt[0].text)
+  const record = await readFile(recordPath, 'utf8')
+  assert.match(record, /\[user\] Implement the change\./)
+  assert.match(record, /\[assistant\] Done\. Review approved; tests pass\./)
 
   const repeated = await wiring.message().execute({
     message: 'Done again.',

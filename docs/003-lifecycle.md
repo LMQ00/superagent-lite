@@ -78,12 +78,12 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### Memory 角色
 
-memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。它直接读取 Worker 的完整会话记录，不使用 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`）。
+memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径和任务、角色、分支、Session、项目根等元信息，不含对话正文；memory 自己用 `read` / `grep` 读取，不使用 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
 
 | 属性 | 值 |
 | --- | --- |
 | 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
-| 输入 | Worker 的完整对话记录（含各轮 follow-up）：`[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目；单条最多 4,000 字符，tool call 参数最多 500 字符，总长最多 60,000 字符，超长保留首尾 |
+| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
 | 输出 | 全局 `userProfile`、`sharedSkills`；项目 `responsibilities`、`positioning`、`projectSkills`；技能项含 `name`、`description`、`content`，每个文本字段最多 4,000 字符，skill description 最多 500 字符 |
 | 知识库 | 用 `knowledge_query` 按关键词查编号和上下文片段，再用 `knowledge_get` 按编号取完整条目；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
 | 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |
@@ -105,7 +105,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 | `references` | 每个事件从 1 开始的轮内编号、Session 序号和事件类型 |
 | `events` | 完整事件快照 |
 
-归档只由 Host 写入，模型工具没有读取入口；同一来源再次写入会覆盖该来源的记录。
+归档只由 Host 写入，其他模型工具没有专用读取入口；同一来源再次写入会覆盖该来源的记录。change worker 的 memory 触发时还会写一份完整会话记录 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，只把它的路径交给 memory 角色自行读取；记录按 Session 而不是按项目位置生成，因此 Git Worktree 和非 Git 项目目录都使用同一可读路径（`src/memory-store.js`、`src/memory.js`）。
 
 ## 并发
 

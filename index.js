@@ -174,7 +174,7 @@ export async function apply(ctx) {
       if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
       memoryAttempted = true
       try {
-        return await runMemoryExtraction(ctx, agent, { projectRoot: task.projectRoot }, exec.signal)
+        return await runMemoryExtraction(ctx, agent, { projectRoot: task.projectRoot, task }, exec.signal)
       } catch (error) {
         ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
         return undefined

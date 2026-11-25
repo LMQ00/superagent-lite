@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { after, beforeEach } from 'node:test'
@@ -402,7 +402,14 @@ test('a non-git worker gets memory and context injection before any worktree exi
     { message: 'Done; review approved.' },
     { agent: harness.worker, signal: new AbortController().signal },
   )
-  assert.ok(harness.activations.some(spec => spec.label === 'Distill memory'), 'the memory role runs without a worktree')
+  const memoryRequest = harness.activations.find(spec => spec.label === 'Distill memory')
+  assert.ok(memoryRequest, 'the memory role runs without a worktree')
+  assert.match(memoryRequest.prompt[0].text, /- Branch: none \(not a git repository\)/)
+  assert.doesNotMatch(memoryRequest.prompt[0].text, /\[user\] Update notes\.txt\./)
+  assert.doesNotMatch(memoryRequest.prompt[0].text, /\[assistant\] Done; review approved\./)
+  const recordPath = /^- Record path: (.+)$/m.exec(memoryRequest.prompt[0].text)?.[1]
+  assert.ok(recordPath, memoryRequest.prompt[0].text)
+  assert.match(await readFile(recordPath, 'utf8'), /\[user\] Update notes\.txt\./)
   const { createMemoryStore } = await import('../src/memory.js')
   assert.equal((await createMemoryStore().readMemory(projectRoot)).project.responsibilities, 'Extracted non-git responsibility.')
 

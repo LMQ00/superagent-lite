@@ -116,7 +116,7 @@ bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提�
 
 ## 记忆系统
 
-「记忆系统」标签页展示记忆、memory 管理的 skill 和全局知识库，并允许安装 owner 删除单条内容；写入仍只由 memory 角色在 change 任务收尾时完成。
+「记忆系统」标签页展示记忆、memory 管理的 skill 和全局知识库，并允许安装 owner 删除单条内容；写入仍只由 memory 角色在 change 任务收尾时完成。聊天里 memory 的触发请求仍显示为「收到任务消息」卡片，但正文只有会话记录路径、任务/角色/分支等元信息和读取指引，不内联对话正文（`docs/HOST-PATCH.md`、`src/memory.js`）。
 
 | 项 | 行为 |
 | --- | --- |
