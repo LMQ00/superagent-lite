@@ -6,25 +6,29 @@ record steered into a running router Turn falls back to the plain
 `上下文注入 · <kind>` context row. The patch below makes every role message,
 settled-role status notification and plugin-owned notice use the existing
 task-card chrome, whether it woke the Turn or was steered into it. The patch is
-version-aware (`0.2.2-rc.3`, `0.2.2-rc.1` and the DSH-go Host), idempotent,
-upgrades the earlier agent-message-only rc.3 patch, and can be reverted.
+version-aware (`0.2.2-rc.5`, `0.2.2-rc.3`, `0.2.2-rc.1` and the DSH-go Host),
+idempotent, upgrades the earlier agent-message-only rc.3 patch, and can be
+reverted.
 
 The earlier creation-card work carries its own host patch and note
-(`scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch` and `docs/HOST-PATCH.md`).
-That source patch remains `0.2.2-rc.3`-only; this note covers only the separate
-Chat client change.
+(`scripts/dsh-subagent-0.2.2-prompt-source.patch` and `docs/HOST-PATCH.md`).
+That source patch covers the source-and-bundle releases `0.2.2-rc.5` and
+`0.2.2-rc.3` only; this note covers only the separate Chat client change.
 
 ## Supported installs
 
 | Install | Detection | Files patched | Notes |
 | --- | --- | --- | --- |
-| dsh `0.2.2-rc.3` (npm) | `package.json` version, and `src/client/conversation-nodes/message.ts` plus `src/client/chat/TurnTriggerNodeView.tsx` exist | those two source files and the minified `lib/client.js` | The source and runtime bundle are both patched. |
+| dsh `0.2.2-rc.5` (npm) | `@deepseek-ai/dsh-client-ui-chat` `package.json` version, and `src/client/conversation-nodes/message.ts` plus `src/client/chat/TurnTriggerNodeView.tsx` exist | those two source files and the minified `lib/client.js` | The source and runtime bundle are both patched. |
+| dsh `0.2.2-rc.3` (npm) | same detection as rc.5 | those two source files and the minified `lib/client.js` | rc.5 and rc.3 ship a byte-identical Chat client, including `lib/client.js`, so both versions use the same patch target. |
 | dsh `0.2.2-rc.1` (npm) | `package.json` version, and the `src/` files above are absent | `lib/client.js` only | The published rc.1 package ships no `src/`; its bundle is esbuild-formatted, not minified. |
 | DSH-go Host with DSH `0.2.2-rc.1` | `--dsh-go <dir>` (rootfs, prefix, or checkout), or a resolved path under `opt/dsh/node_modules/` / `dsh-prefix/node_modules/` | the rc.1 `lib/client.js` inside the DSH-go PRoot rootfs or build prefix | DSH-go's own engine patches (for example `web-empty-reply-notice.diff`) stay in place. |
 
-Any other `@deepseek-ai/dsh-client-ui-chat` version is rejected with exit code 1
-and no writes. `0.2.1-rc.4` (an older DSH-go pin) and `0.2.2-rc.4`/`rc.5` are
-not supported.
+Version equality alone is not enough: the script also verifies the expected
+layout (source plus bundle for rc.5/rc.3, bundle only for rc.1) and every target
+snippet before writing. Any other `@deepseek-ai/dsh-client-ui-chat` version is
+rejected with exit code 1 and no writes. `0.2.1-rc.4` (an older DSH-go pin),
+`0.2.2-rc.4`, and `0.2.3-alpha.*` are not supported.
 
 ## Which message forms exist
 
@@ -64,7 +68,12 @@ does not touch any of these contents.
 
 ## Version and layout differences
 
-| | `0.2.2-rc.3` | `0.2.2-rc.1` / DSH-go |
+rc.5 and rc.3 publish the same Chat client: the source files and `lib/client.js`
+have the same SHA-256 in both releases. The script therefore maps both versions
+to the same source-and-bundle target. rc.1 and DSH-go keep the older
+bundle-only layout.
+
+| | `0.2.2-rc.5` / `0.2.2-rc.3` | `0.2.2-rc.1` / DSH-go |
 | --- | --- | --- |
 | Install layout | `src/` plus `lib/client.js` | `lib/` only; no `src/` |
 | Bundle format | minified, backtick template literals | esbuild output with tabs and double-quoted strings |
@@ -90,8 +99,8 @@ change to ordinary app users it has to go into the DSH-go engine build instead.
 
 | File | Change |
 | --- | --- |
-| `src/client/conversation-nodes/message.ts` (rc.3 only) | `agent-message`, `subagent-settled` and every `superagent-lite-*` notice also select `turn-trigger` when they did not wake the Turn; the `turn-trigger` data type keeps the optional `waking` flag. |
-| `src/client/chat/TurnTriggerNodeView.tsx` (rc.3 only) | The `这条通知触发了本轮回复。` explanation is shown only when `waking !== false`, because a steered message did not open the Turn. |
+| `src/client/conversation-nodes/message.ts` (rc.5 and rc.3) | `agent-message`, `subagent-settled` and every `superagent-lite-*` notice also select `turn-trigger` when they did not wake the Turn; the `turn-trigger` data type keeps the optional `waking` flag. |
+| `src/client/chat/TurnTriggerNodeView.tsx` (rc.5 and rc.3) | The `这条通知触发了本轮回复。` explanation is shown only when `waking !== false`, because a steered message did not open the Turn. |
 | `lib/client.js` (all supported installs) | The same three edits in the runtime bundle the browser actually loads. |
 
 No delivery semantics change: every message still arrives at the same point and
@@ -112,7 +121,10 @@ reclassifying an existing `user/message` node. The dispatch, review and memory
 requests additionally need the `promptSource` patch in
 [HOST-PATCH](HOST-PATCH.md); without it the Host records those prompts as ordinary
 `user` messages, which the Chat patch deliberately leaves alone. Without either
-patch the plugin still works and the affected messages render as before.
+patch the plugin still works and the affected messages render as before. Both
+patches are mandatory only for the card presentation; the rc.5 and rc.3
+`promptSource` work is the same unified diff, shipped as
+`scripts/dsh-subagent-0.2.2-prompt-source.patch`.
 
 ## Apply
 
@@ -139,6 +151,7 @@ node scripts/dsh-client-ui-chat-agent-message-card.mjs --dsh-go /path/to/dsh-Go 
 Expected `--check` output:
 
 ```text
+@deepseek-ai/dsh-client-ui-chat 0.2.2-rc.5 (source-and-bundle): patch is applicable (src/client/conversation-nodes/message.ts, src/client/chat/TurnTriggerNodeView.tsx, lib/client.js)
 @deepseek-ai/dsh-client-ui-chat 0.2.2-rc.3 (source-and-bundle): patch is applicable (src/client/conversation-nodes/message.ts, src/client/chat/TurnTriggerNodeView.tsx, lib/client.js)
 @deepseek-ai/dsh-client-ui-chat 0.2.2-rc.1 (bundle-only): patch is applicable (lib/client.js)
 @deepseek-ai/dsh-client-ui-chat 0.2.2-rc.1 (DSH-go Host, bundle-only): patch is applicable (lib/client.js)
@@ -172,7 +185,7 @@ If more than one candidate exists, the script refuses and lists them; pass
 node scripts/dsh-client-ui-chat-agent-message-card.mjs --check
 ```
 
-For rc.3, check both the source and the runtime bundle:
+For rc.5 and rc.3, check both the source and the runtime bundle:
 
 ```sh
 grep -n "cardedNotice" \
@@ -209,8 +222,8 @@ exactly once.
 
 | Message | Meaning | Action |
 | --- | --- | --- |
-| `supported versions are 0.2.2-rc.3, 0.2.2-rc.1` | The installed package version is not covered. | Do not patch. Add a version-specific target after checking its bundle. |
-| `expected the 0.2.2-rc.3 source-and-bundle layout, but ... is missing` | The rc.3 install was pruned or hand-assembled. | Reinstall the package or patch only after adding a verified bundle-only rule. |
+| `supported versions are 0.2.2-rc.5, 0.2.2-rc.3, 0.2.2-rc.1` | The installed package version is not covered. | Do not patch. Add a version-specific target after checking its bundle. |
+| `expected the 0.2.2-rc.5 source-and-bundle layout, but ... is missing` | The rc.5 or rc.3 install was pruned or hand-assembled. | Reinstall the package or patch only after adding a verified bundle-only rule. |
 | `this 0.2.2-rc.1 install ships ...; ... only supports the published bundle` | An rc.1 tree unexpectedly contains source files. | Stop; the bundle rules do not describe that tree. |
 | `does not contain "<label>"` | The bundle differs from the supported build (wrong version, future patch, or DSH-go pin). | Do not patch. Compare the bundle with the target version and add a new target only after review. |
 | `contains "<label>" 2 times; refusing an ambiguous patch` | The snippet is duplicated, so the intended location is unclear. | Restore a clean package copy; do not patch. |
@@ -229,7 +242,7 @@ An already-patched or already-reverted tree exits 0 with `already patched` /
 - Roll back with the same target option:
   `node scripts/dsh-client-ui-chat-agent-message-card.mjs --revert`,
   `... --dsh-go <dir> --revert`, or `... --package <dir> --revert`.
-  The script restores both source files and the bundle (rc.3) or the bundle
+  The script restores both source files and the bundle (rc.5/rc.3) or the bundle
   (rc.1 / DSH-go), including when the Host only carries the earlier
   agent-message-only patch. Restart the Host (or DSH-go local engine) afterwards.
 - If an upgrade lands between apply and revert, the patched snippets may be

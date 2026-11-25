@@ -237,7 +237,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写多个 skill 或删除某个 memory skill 后已结束 Worker 不再收到 catalog 更新、非 memory 管理的 skill 变化仍正常送达。 |
 | `test/memory-panel.test.js` | 记忆端点的 owner 准入、项目根校验、全局/项目记忆、全局/项目 skill 与全局知识库返回、字段/skill/知识删除、skill 删除参数校验和存储失败，以及删除后查询不再返回。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话按作者拦截多个 memory skill 的新增、修改和删除，其他 skill 变化和 Router 会话不受影响。 |
-| `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁在 `0.2.2-rc.3`、`0.2.2-rc.1` 和 DSH-go 形态下的检查、旧补丁升级、应用、重复应用、回滚，以及版本/布局/片段不匹配时的拒绝。 |
+| `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁在 `0.2.2-rc.5`、`0.2.2-rc.3`、`0.2.2-rc.1` 和 DSH-go 形态下的检查、旧补丁升级、应用、重复应用、回滚，以及版本/布局/片段不匹配时的拒绝；真实安装用例从 `DSH_INSTALL_DIR` 解析，rc.5/rc.3 共用同一源码补丁。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
 | `test/merge-tool.test.js` | merge worker 的目标分支合并、冲突保留和 worktree 状态限制。 |

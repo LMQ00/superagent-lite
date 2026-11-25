@@ -20,7 +20,9 @@
  * compact context row. No delivery semantics change.
  *
  * Supported installs:
- *   - dsh 0.2.2-rc.3: source files plus the minified `lib/client.js` bundle.
+ *   - dsh 0.2.2-rc.5 and 0.2.2-rc.3: source files plus the minified
+ *     `lib/client.js` bundle. The two releases publish the same Chat client, so
+ *     they share one target.
  *   - dsh 0.2.2-rc.1: the shipped `lib/client.js` bundle only (no `src/`).
  *   - DSH-go Host: the DSH 0.2.2-rc.1 bundle in the DSH-go PRoot rootfs or its
  *     build prefix. DSH-go's own engine patches are left untouched.
@@ -64,7 +66,7 @@ const CLIENT_BUNDLE = 'lib/client.js'
  * applying over that Host upgrades it instead of failing; `--revert` restores
  * the first.
  */
-export const TARGETS = {
+const PUBLISHED_TARGETS = {
   '0.2.2-rc.3': {
     layout: 'source-and-bundle',
     files: [MESSAGE, TRIGGER_VIEW, CLIENT_BUNDLE],
@@ -195,6 +197,15 @@ export const TARGETS = {
       },
     ],
   },
+}
+
+/**
+ * The supported version matrix. rc.5 and rc.3 publish a byte-identical Chat
+ * client (source files and `lib/client.js`), so both share the rc.3 target.
+ */
+export const TARGETS = {
+  '0.2.2-rc.5': PUBLISHED_TARGETS['0.2.2-rc.3'],
+  ...PUBLISHED_TARGETS,
 }
 
 class PatchError extends Error {}

@@ -3,19 +3,25 @@
 The plugin's subagent requests can show as "任务消息" cards only when the Host
 records the initial child prompt with a non-`user` message source. That covers the
 `dispatch_worker` task, the worker's review request (`src/review.js`) and the
-worker's memory distillation request (`src/memory.js`). DSH `0.2.2-rc.3`
-hard-codes that source in `@deepseek-ai/dsh-subagent`, so the installed copy needs
-the patch below. This note is the application and rollback guide; the
-unified diff is [`scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch`](../scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch).
+worker's memory distillation request (`src/memory.js`). DSH `0.2.2-rc.5` and
+`0.2.2-rc.3` hard-code that source in `@deepseek-ai/dsh-subagent`, so the
+installed copy needs the patch below. This note is the application and rollback
+guide; the unified diff is
+[`scripts/dsh-subagent-0.2.2-prompt-source.patch`](../scripts/dsh-subagent-0.2.2-prompt-source.patch).
 
 ## Affected versions
 
-- DSH CLI: `@deepseek-ai/dsh` **0.2.2-rc.3** (`dsh --version`).
-- Patched package: `@deepseek-ai/dsh-subagent` **0.2.2-rc.3**, installed as
-  `<dsh-package>/node_modules/@deepseek-ai/dsh-subagent`.
-- The plugin's `engines.dsh` is `0.2.2-rc.3`, so this is the supported pairing.
-  Any other DSH version must re-check the diff (`patch --dry-run`) before applying;
-  line numbers and the bundle layout may differ.
+- DSH CLI: `@deepseek-ai/dsh` **0.2.2-rc.5** (the plugin's `engines.dsh`) and
+  **0.2.2-rc.3** (`dsh --version`).
+- Patched package: `@deepseek-ai/dsh-subagent` **0.2.2-rc.5** or **0.2.2-rc.3**,
+  installed as `<dsh-package>/node_modules/@deepseek-ai/dsh-subagent`.
+- rc.5 and rc.3 publish the same `dsh-subagent` source and runtime bundle; only
+  the `package.json` version and dependency versions differ. The same diff
+  applies to both, and the line numbers below match either release.
+- Any other DSH version must re-check the diff (`patch --dry-run`) before
+  applying; line numbers and the bundle layout may differ. In particular, do not
+  apply it to `0.2.2-rc.1` or the DSH-go Host, which pin a different subagent
+  package.
 
 ## What the patch changes
 
@@ -40,11 +46,12 @@ name the worker that started the helper.
 
 ## Related client patch
 
-The separate agent-message task-card patch supports dsh `0.2.2-rc.1`,
-`0.2.2-rc.3`, and the DSH-go Host with its pinned `0.2.2-rc.1` engine; see
-[HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md). This subagent source
-patch is not part of that matrix and remains `0.2.2-rc.3`-only; do not apply the
-diff below to a `0.2.2-rc.1` or DSH-go package without re-checking it.
+The separate agent-message task-card patch supports dsh `0.2.2-rc.5`,
+`0.2.2-rc.3`, `0.2.2-rc.1`, and the DSH-go Host with its pinned `0.2.2-rc.1`
+engine; see [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md). This
+subagent source patch is not part of that matrix and covers only the
+source-and-bundle releases `0.2.2-rc.5` and `0.2.2-rc.3`; do not apply the diff
+below to a `0.2.2-rc.1` or DSH-go package without re-checking it.
 
 ## Apply
 
@@ -54,8 +61,8 @@ Resolve the installed package from the `dsh` executable:
 DSH_PKG="$(dirname "$(dirname "$(readlink -f "$(command -v dsh)")")")"
 DSUBAGENT="$DSH_PKG/node_modules/@deepseek-ai/dsh-subagent"
 test -f "$DSUBAGENT/package.json" || { echo "dsh-subagent not found under $DSH_PKG"; exit 1; }
-patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch
-patch -p1 -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch
+patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch
+patch -p1 -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch
 ```
 
 `patch` must run from the repository root so the relative patch path resolves, or
@@ -66,7 +73,7 @@ For example, in this installation:
 
 ```sh
 DSUBAGENT=/home/LMQ/.npm_global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-subagent
-patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-rc.3-prompt-source.patch
+patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch
 ```
 
 ## Verify

@@ -20,12 +20,24 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 
 | 要求 | 值 |
 | --- | --- |
-| DeepSeek Harness | `0.2.2-rc.3`，即 `package.json` 的 `engines.dsh` |
+| DeepSeek Harness | `0.2.2-rc.5`，即 `package.json` 的 `engines.dsh` |
 | Node.js | 24.9 或更新，跟随 DSH 引擎要求 |
 | Git | 支持 `git merge-tree --write-tree HEAD HEAD` 的版本 |
 | GitHub CLI | 发送 PR 需要；`gh auth status --hostname github.com` 必须成功 |
 | 项目 checkout | Git 项目需已检出且有分支、工作区干净；普通目录也可作为项目根，直接执行 change/report |
 | 非 Git 目录 | 不需要 `.git`、分支或提交；change/report 直接在工作区执行，审查当前文件。merge、PR 和 `land` 不可用 |
+
+### 版本矩阵与检测
+
+Bundle 的 `engines.dsh` 是 `0.2.2-rc.5`，Host 版本不满足时插件管理器拒绝安装或启用。Host 补丁则按 `@deepseek-ai/dsh-client-ui-chat` 与 `@deepseek-ai/dsh-subagent` 的 `package.json` 版本和实际文件布局分别检测，不受 bundle 的 `engines.dsh` 限制。
+
+| 组件 | 支持版本 | 检测方式 |
+| --- | --- | --- |
+| Bundle | `0.2.2-rc.5` | `dsh --version`；`package.json` 的 `engines.dsh` |
+| 客户端任务卡补丁 | npm `0.2.2-rc.5` / `0.2.2-rc.3`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle）、DSH-go 的 `0.2.2-rc.1` Host | `node scripts/dsh-client-ui-chat-agent-message-card.mjs --check` 输出匹配的版本、布局和待改文件；版本或片段不匹配时退出码 1 且不写入 |
+| 子代理 promptSource 补丁 | `0.2.2-rc.5` / `0.2.2-rc.3`（两个版本发布相同的 subagent 源码与 bundle） | `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch` 成功，且补丁后 `src/manager.ts`、`lib/index.js`、`lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }` |
+
+rc.5 和 rc.3 的 `@deepseek-ai/dsh-client-ui-chat` 发布内容逐字节相同，因此客户端补丁脚本把两个版本映射到同一个 source-and-bundle 目标；`0.2.2-rc.4` 与 `0.2.3-alpha.*` 未验证，脚本会拒绝。
 
 Bundle 自带 worktree 服务，不要与另一个挂载 worktree 服务的 bundle 同时启用。
 
@@ -61,7 +73,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `worktree.retainOnArchive` | 是，默认 `true` | Session 归档后保留 worker 分支和检出 |
 | Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
-| `engines.dsh` | 是，`0.2.2-rc.3` | Bundle 面向的 Host 版本 |
+| `engines.dsh` | 是，`0.2.2-rc.5` | Bundle 面向的 Host 版本 |
 | 面板「设置」 | 否 | worker 模型（留空跟随 DSH 默认模型）与并发 worker 上限（1–16，默认 3），保存在 `~/.dsh/superagent-lite/worker-settings.json` |
 | Router skill 根 | 是 | Router 预设只扫描全局 skill 根（`~/.dsh/skills` 与 `~/.agents/skills`），不扫描项目 skill；Worker 预设保留项目 + 全局 skill 根（`cordis.patch.yml`） |
 
@@ -73,7 +85,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | GitHub remote | 发送 PR | `git remote -v` 显示一个 remote，fetch 与 push URL 指向同一个 GitHub 仓库；面板列出 remote 供选择 |
 | `gh` 登录 | 发送 PR | `gh auth status --hostname github.com` |
 | GitHub 分支保护与必需检查 | 在 GitHub 上合并 PR | 在 GitHub 仓库设置；插件不预检检查状态 |
-| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；客户端卡片补丁支持 npm `0.2.2-rc.1` / `0.2.2-rc.3` 与 DSH-go 的 `0.2.2-rc.1` Host；不打补丁也能运行 |
+| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | 见 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md)；客户端卡片补丁支持 npm `0.2.2-rc.5` / `0.2.2-rc.3` / `0.2.2-rc.1` 与 DSH-go 的 `0.2.2-rc.1` Host，子代理 promptSource 补丁支持 `0.2.2-rc.5` / `0.2.2-rc.3`；不打补丁也能运行 |
 
 ## 启停与状态
 
