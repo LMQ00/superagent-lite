@@ -88,7 +88,7 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:65-83`、`src/review.js:42-89`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:42-89`）。
 
 ## 装配顺序
 
@@ -106,7 +106,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:65-83`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:67-85`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
