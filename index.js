@@ -15,6 +15,7 @@ import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
+import { reconcileHostPatches } from './src/host-patch.js'
 import {
   archiveWorkerTurn, createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool,
   memoryAuthoredSkillNames, registerMemoryContext, registerProjectSkillProvider, runMemoryExtraction,
@@ -23,6 +24,7 @@ import {
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
+  await reconcileHostPatches(ctx)
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
     authoredSkills: async agent => {
       const parent = agent.session?.header?.parentSession

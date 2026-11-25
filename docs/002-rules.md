@@ -84,13 +84,13 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 ## Worker 规则
 
-- Git 项目的 change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 外，工作目录不在分配的 Worktree 时所有工具被拦。非 Git 项目不注册可用的 `create_worktree`，工作目录从一开始就是项目根（`index.js:57-66`、`src/dispatch.js`）。
+- Git 项目的 change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 外，工作目录不在分配的 Worktree 时所有工具被拦。非 Git 项目不注册可用的 `create_worktree`，工作目录从一开始就是项目根（`index.js:59-68`、`src/dispatch.js`）。
 - Git 项目的 `create_worktree` 向 worktree 服务请求名字 `sl-<worktreeName>-<taskId 前 12 位>` 的 Worktree，目录和分支同名，例如 `sl-fix-plan-color-0123456789ab`（`src/worktree-tool.js:42-46`）。旧 Task 没有 `worktreeName` 时沿用原命名 `sl-<team slug>-<taskId>`。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:48-55`）。非 Git 项目调用 `create_worktree` 会被拒绝。
 - 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
-- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:121`、`index.js:98`）。
-- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:65-83`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
-- `review_worker_commit` 和 `message_router` 只在 Worker 活跃且工作目录在分配的工作区时可用；非 Git 项目的工作区就是项目根。`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:65-98`）。
-- report worker 在项目 checkout 中可使用 `read`、`glob`、`grep`、`read_image`、`bash`、`pwsh`、`todo_write`、`skill`，在 checkout 之外可使用只读检索工具 `web_search`、`web_fetch`、`read_page`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`，并以 `report_task` 结束；写改文件、创建 Worktree 等其他工具被拒绝（`index.js:121-145`）。
+- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:123`、`index.js:100`）。
+- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:67-85`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
+- `review_worker_commit` 和 `message_router` 只在 Worker 活跃且工作目录在分配的工作区时可用；非 Git 项目的工作区就是项目根。`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:67-100`）。
+- report worker 在项目 checkout 中可使用 `read`、`glob`、`grep`、`read_image`、`bash`、`pwsh`、`todo_write`、`skill`，在 checkout 之外可使用只读检索工具 `web_search`、`web_fetch`、`read_page`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`，并以 `report_task` 结束；写改文件、创建 Worktree 等其他工具被拒绝（`index.js:123-147`）。
 - report worker 的任务消息要求按仓库 `AGENTS.md` 的约定执行，但该约定不能扩大 report 的只读授权，也不能放宽不建 Worktree、不改文件、不提交和不审查的边界（`src/worker-prompt.js:36-61`）。
 - Git 项目的 `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:21-31`）。非 Git 项目没有 HEAD 和工作区状态可校验，`report_task` 直接交付结论。
 - `message_router` 的报告 1–4,000 字符；Worker 在工作结束时发一次，不发过程进度。`COMPLETED` 只用于已审查且相关检查通过的实现，需要等待的任务不能报 `COMPLETED`（`src/message-router.js:6-25`）。
@@ -106,7 +106,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:109-122`）。
 - 面板的 `review` 动作对 `unreviewed` 的 Git Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`。非 Git Task 没有分支，面板不提供该动作（`src/git-actions.js:401-423`）。
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:257-274`、`src/git-actions.js:291-303`）。
-- 审查没有通过不直接改 Task 状态；Worker 修完再提交（非 Git 项目则继续改文件）、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`；非 Git 项目审查通过后结束时落到 `completed`（`index.js:136-139`）。
+- 审查没有通过不直接改 Task 状态；Worker 修完再提交（非 Git 项目则继续改文件）、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`；非 Git 项目审查通过后结束时落到 `completed`（`index.js:138-141`）。
 
 ## 记忆规则
 
@@ -213,6 +213,6 @@ Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变�
 
 ## 不完成时
 
-无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；面板显示对应状态，由用户决定下一步（`index.js:119-151`）。
+无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；面板显示对应状态，由用户决定下一步（`index.js:121-153`）。
 
 无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE` 并说明剩下什么（`src/worker-prompt.js:61-68`）。
