@@ -167,6 +167,8 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签；`queued` 显示「排队中」，不算未确认（`src/board.js:60-74`）。排队取消的 `cancelled` 墓碑保存在 `tasks/cancelled/`，只供 `worker_status` 查询。这样的残留 merge Task 不会被新的 merge 请求追加；新的请求会新派发 merge worker。
 
+这类残留记录不会自动收尾。Task 状态只由 Worker 生命周期事件写入；Host 重启或插件重载时子会话被 dispose，`subagent/end` 不一定会到达，即使到达，插件关闭路径已经 abort 时也会直接跳过处理（`index.js:223-269`）。插件启动时也不扫描旧记录，所以失联记录会一直停在原状态。判定条件是「存储状态是 `starting`、`running` 或 `resuming`，且 `ctx.agents.get(workerSessionId)` 为空」，面板据此显示「运行中 + 未确认」（`src/board.js:60-74`）。`running` 的失联记录不占启动队列名额，因为只有活着的 Worker 才计入；`starting` 和 `resuming` 则无条件计入名额（`src/launch-queue.js:32-36`）。手工收尾前先核对交付事实：`review.approved`、review head、worktree HEAD 与分支都在时按 `awaiting-merge` 收尾，否则按 `failed` 收尾并写清会话在恢复前结束、已被回收。`continue_worker` 对这类记录仍按 `running` 处理，会话无法唤醒时发送失败并保持原状（`src/continue.js:174-219`）。
+
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入；已有 `queued` 的同名 Task 直接返回，不重复入队（`src/dispatch.js:51-58`）。
 
 ### GitHub 交付失败
