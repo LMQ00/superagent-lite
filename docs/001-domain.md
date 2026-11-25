@@ -47,7 +47,7 @@ flowchart LR
 | Worker branch | Worktree 所在的分支。 | 仅 Git 项目有；分支名取自 worktree 服务的返回值并写入 `task.worktree.branch`；只有审查过的 HEAD 会被合并或发布（`src/worktree-tool.js:40-49`、`src/git-actions.js:168-179`）。 |
 | Review | 独立子代理对已提交 diff 或非 Git 工作区内容的裁决。 | Reviewer 用 `submit_review` 记录裁决：内容「通过」即通过，其他内容记为审查意见；工具记录 reviewed HEAD 或工作区标识与 reviewer Session；裁决针对 Task 保存的需求，follow-up 只作上下文；审查本身不改 Task 状态（`src/review.js:12-34`、`src/review.js:81-119`）。 |
 | Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-22`、`index.js:121-153`）。 |
-| Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；发送失败时回滚记录；排队中的 Task 返回「稍后再试」而不投递（`src/continue.js:194-211`、`src/continue.js:257-259`、`src/continue.js:271-285`）。 |
+| Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；发送失败时回滚记录；排队中的 Task 返回「稍后再试」而不投递（`src/continue.js:194-211`、`src/continue.js:257-259`、`src/continue.js:274-288`）。 |
 | Worker status | Router 查询本会话 Worker 和 Task 状态的工具与后台通知。 | `worker_status` 只返回本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，并给出 Task ID、标题、Team、模式和 Worker Session；排队取消留下 `cancelled` 记录，排队 Worker 开始和取消会向 Router 注入背景通知，不打开新回合、不算新输入（`src/worker-status.js`、`src/task-store.js`、`src/launch-queue.js`）。 |
 | 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查，可联网检索和读取网页。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；Git 项目的 checkout 必须保持原样，非 Git 项目没有 git 事实可校验。worker 按仓库 `AGENTS.md` 的约定执行，但该约定不扩大只读授权（`index.js:56-65`、`src/report-tool.js:19-41`、`src/worker-prompt.js:36-61`）。 |
 | Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 删除仍是 worker 分支的分支及其干净 Worktree，已合并、已发布和未合并的分支都可删除，运行中、工作树脏或被其他 Worktree 检出时拒绝。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；合并、发送 PR 和删除分支要求 full access，合并与发送 PR 还要求未移动的 reviewed HEAD（`src/git-actions.js:502-521`、`src/merge.js:121-170`）。 |
@@ -121,7 +121,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 派发 | `queued` | 记录已创建，等待并发名额外再启动 Worker；尚未开始执行时可以取消，取消后活动记录和会话映射被移除，并留下 `cancelled` 墓碑供 `worker_status` 查询（`src/dispatch.js:67-85`、`src/launch-queue.js`、`src/task-store.js`） |
 | 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:67-85`、`src/launch-queue.js`） |
 | 工作 | `running` | Worker 已创建，或 Git 项目的 Worktree 已保存，任务进行中；非 Git 项目在 Worker 创建后即为工作目录（`index.js:53-54`、`src/worktree-tool.js:49`） |
-| 工作 | `resuming` | 已结束或在恢复中的 Task 被 follow-up 重新打开（`src/continue.js:260-270`） |
+| 工作 | `resuming` | 已结束或在恢复中的 Task 被 follow-up 重新打开（`src/continue.js:260-273`） |
 | 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:133-142`） |
 | 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作（`index.js:151`、`src/git-actions.js:291-302`） |
 | 交付 | `merging` | 面板或命令触发的本地合并已开始（`src/merge.js:64-68`） |
@@ -130,7 +130,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 交付 | `merged` | 提交已进入基础分支：本地合并、外部合并 PR，或面板读取时确认已包含在基础分支（`src/merge.js:85-87`、`src/git-actions.js:309-317`） |
 | 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:144-146`、`src/git-actions.js:273-277`、`src/merge.js:81-82`） |
 | 结束 | `completed` | 只报告任务通过 `report_task` 交付了结论，或非 Git 的 change 任务在审查通过后结束（`src/report-tool.js:34-39`、`index.js`） |
-| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:104-112`、`index.js:130-135`、`src/continue.js:278-285`） |
+| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:104-112`、`index.js:130-135`、`src/continue.js:281-288`） |
 
 删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
 

@@ -380,6 +380,22 @@ test('continue_worker retries a task stuck in resuming instead of refusing it', 
   assert.deepEqual(await followUpTexts(id), ['Continue the resume'])
 })
 
+test('a failed delivery to a resuming task keeps it resuming', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000007'
+  await taskFixture(id)
+  await updateTask(id, { status: 'resuming', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const tool = createContinueTool({ subagents: { async sendMessage() { throw new Error('worker is gone') } } })
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'Continue the resume' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /worker is gone/,
+  )
+  const task = await readTask(id)
+  assert.equal(task.status, 'resuming')
+  assert.deepEqual(task.followUps ?? [], [])
+})
+
 test('continue_worker refuses a task whose branch was already merged', async () => {
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask, updateTask } = await import('../src/task-store.js')

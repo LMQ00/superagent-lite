@@ -32,9 +32,9 @@
 - 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:216`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。合并请求也是新任务：即使点名已有任务，也走 `dispatch_worker mode=merge`，不续派该任务；没有运行中的 merge worker 时新建 worker，已有则追加。
 - Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:238-256`）。
 - Task 处于 `queued` 或 `starting` 时还没有 Worker 回合可唤醒：`continue_worker` 不投递、不记录 follow-up、不授予 `land`，返回明确的「稍后再试」，Router 应在 Worker 启动后重试（`src/continue.js:257-259`）。
-- Worker 空闲或已结束时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。非 Git 项目改为项目目录、非 Git 说明、直接修改和再次审查的规则；report 任务改为只读检查、允许联网检索和以 `report_task` 结束的规则。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required`、`failed` 或 `resuming` 时先标为 `resuming`；不再要求 Task 已有 Worktree，BLOCKED 在创建 Worktree 前就结束的 Git Task 也能恢复，续派发消息会要求 Worker 先创建 Worktree。已经合并、已删除 worker 分支、记录的 Worktree 已不存在，或处于交付中的 Task 仍拒绝恢复（`src/continue.js:38-62`、`src/continue.js:64-166`、`src/continue.js:260-270`）。
-- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败到已结束的 Task 时标为 `failed`；发送失败到运行中的 Task 保持 `running`（`src/continue.js:194-211`、`src/continue.js:271-285`）。
-- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；在 `continue_worker` 里它只授权推送和 PR，不授权合并；非 Git 项目拒绝 `land=true`；发送失败时回滚这次新增的授权（`src/continue.js:168-188`、`src/continue.js:260-285`）。
+- Worker 空闲或已结束时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。非 Git 项目改为项目目录、非 Git 说明、直接修改和再次审查的规则；report 任务改为只读检查、允许联网检索和以 `report_task` 结束的规则。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required`、`failed` 或 `resuming` 时先标为 `resuming`；不再要求 Task 已有 Worktree，BLOCKED 在创建 Worktree 前就结束的 Git Task 也能恢复，续派发消息会要求 Worker 先创建 Worktree。已经合并、已删除 worker 分支、记录的 Worktree 已不存在，或处于交付中的 Task 仍拒绝恢复（`src/continue.js:38-62`、`src/continue.js:64-166`、`src/continue.js:260-273`）。
+- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败时，只有本次把已结束 Task 重新打开的才标为 `failed`；运行中的保持 `running`，恢复中的保持 `resuming`（`src/continue.js:194-211`、`src/continue.js:260-288`）。
+- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；在 `continue_worker` 里它只授权推送和 PR，不授权合并；非 Git 项目拒绝 `land=true`；发送失败时回滚这次新增的授权（`src/continue.js:168-188`、`src/continue.js:260-288`）。
 - 已发布的 Task 不继续；发布后的下一个输入是新工作。
 
 ### 不交叉

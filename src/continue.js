@@ -258,6 +258,9 @@ ${text}`,
         return `Task ${taskId} is still ${record.status}; its worker has not started, so the follow-up was not delivered. Retry continue_worker after it starts.`
       }
       const resuming = record.status !== 'running'
+      // Only this call reopening a settled task may fall back to `failed`;
+      // a task already running or resuming keeps its state on delivery failure.
+      const reopened = resuming && record.status !== 'resuming'
       if (resuming) {
         await updateTask(taskId, current => {
           const refusal = resumeRefusal(current)
@@ -277,7 +280,7 @@ ${text}`,
         }], { signal: exec.signal })
       } catch (error) {
         if (followUpId) await dropFollowUp(ctx, taskId, followUpId)
-        if (resuming) {
+        if (reopened) {
           await updateTask(taskId, current => ['resuming', 'running'].includes(current.status) ? { status: 'failed' } : {})
         }
         if (granted) await rollbackTaskLanding(ctx, taskId)
