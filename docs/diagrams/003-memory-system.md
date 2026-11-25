@@ -44,7 +44,7 @@ flowchart TB
 | Skills | Stored as normal skill files; only their descriptions enter the skill catalog, and the full body loads only through the `skill` tool. |
 | Knowledge base | Global and reached only through the query, read, and write tools; only the memory role may use the write tool, and its content is never injected. |
 | Raw conversation | The worker's original conversation is retained and archived. |
-| Memory role | The `memory` role reads the raw worker conversation, summarizes it, and writes the project layer, global memory, and global knowledge base. |
+| Memory role | The `memory` role receives the readable session-record path plus task, role, and branch metadata, reads the record itself, summarizes it, and writes the project layer, global memory, and global knowledge base. |
 
 ## Implementation mapping
 
@@ -58,10 +58,10 @@ flowchart TB
 | Router injection | `refreshGlobalMemory` / `registerGlobalMemoryContext` (`src/memory.js`, `router.js`) |
 | Worker injection | `registerMemoryContext` reads project + global memory at Worker creation (`src/memory.js`, `index.js`) |
 | Reviewer injection | `memoryPromptForProject` is added to the review prompt on every review (`src/memory.js`, `src/review.js`) |
-| Raw conversation | `workerConversation` builds the transcript from the Worker Session (`src/memory.js`) |
-| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper with the knowledge query, read, and write tools (`src/memory.js`, `index.js`) |
+| Raw conversation | `workerConversation` builds the transcript, `writeSessionRecord` writes it to `task/archive/sessions/<sha256(Session ID)>.md` (`src/memory.js`, `src/memory-store.js`) |
+| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper with the knowledge query, read, and write tools; the prompt carries the record path and task, role, and branch metadata but not the conversation body (`src/memory.js`, `index.js`) |
 | Summary write | `runMemoryExtraction` writes only non-empty changed fields and changed skills (`src/memory.js`) |
-| Archive | `archiveWorkerTurn` writes each turn under `task/archive/` (`src/memory.js`) |
+| Archive | `archiveWorkerTurn` writes each turn under `task/archive/`; `runMemoryExtraction` writes the session record under `task/archive/sessions/` (`src/memory.js`, `src/memory-store.js`) |
 
 ## Rules
 

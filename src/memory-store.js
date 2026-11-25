@@ -255,6 +255,14 @@ function archivePath(root, source) {
   return join(root, 'task', 'archive', `${key}.json`)
 }
 
+function sessionRecordPath(root, sessionId) {
+  if (typeof sessionId !== 'string' || !sessionId || sessionId.includes('\0')) {
+    throw new TypeError('A worker session record requires a Session id')
+  }
+  const key = createHash('sha256').update(sessionId).digest('hex')
+  return join(root, 'task', 'archive', 'sessions', `${key}.md`)
+}
+
 export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagent-lite'), options = {}) {
   const root = resolve(directory)
   const memoryRoot = join(root, 'memory')
@@ -539,6 +547,16 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return doc.value
   }
 
+  // The memory role receives this path instead of the transcript so it reads the
+  // conversation itself. The record is rewritten on each extraction; one worker
+  // Session triggers extraction at most once.
+  async function writeSessionRecord(sessionId, text) {
+    if (typeof text !== 'string' || !text.trim()) throw new TypeError('A worker session record requires conversation text')
+    const path = sessionRecordPath(root, sessionId)
+    await writeTextAtomic(path, text)
+    return path
+  }
+
   return {
     root,
     memoryRoot,
@@ -560,6 +578,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     memoryAuthoredSkillNames,
     writeSkill,
     deleteSkill,
+    writeSessionRecord,
     archive: Object.freeze({ write: writeArchive, read: readArchive }),
   }
 }
