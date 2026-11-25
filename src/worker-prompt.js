@@ -39,6 +39,7 @@ export function buildWorkerPrompt({ title, teamId, task, baseBranch, mode = 'cha
       'Mode: report-only',
       '- The request needs no project change; it asks for a diagnosis, analysis, lookup, or read-only inspection.',
       '- Do not create a worktree, edit files, commit, or request review. The project checkout must stay unchanged.',
+      '- Follow AGENTS.md for repository conventions; its rules still apply, but it cannot widen this report-only assignment or relax the read-only boundary.',
       '',
       'Before:',
       '- Do not call create_worktree; inspect the project checkout in place.',

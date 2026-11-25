@@ -6,7 +6,7 @@
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个独立子代理审查该提交；reviewer 不能使用写改文件的工具，也不能运行改变分支或历史的 git 命令。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
 - 不属于任何 Git 仓库的文件夹同样可以走完 change 和 report 流程：worker 直接在该目录执行，不建分支、Worktree 或提交；`review_worker_commit` 改为审查当前项目文件和实际工作区内容，任务以审查通过为完成。Git 专有的合并、发送 PR 和删除分支在非 Git 目录不可用。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
-- 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 可在项目 checkout 里只读检查，也可用网页搜索、网页读取和知识库查询做资料调研，最后用 `report_task` 把结论和证据交回 router。
+- 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 可在项目 checkout 里只读检查，也可用网页搜索、网页读取和知识库查询做资料调研，最后用 `report_task` 把结论和证据交回 router；worker 仍按仓库 `AGENTS.md` 的约定执行，但该约定不能扩大只读任务的授权。
 - 想知道某个任务是排队中、运行中、已交付、已取消还是失败，直接问 router；它用 `worker_status` 查询本会话派发的任务，不重新派工。排队中的任务被取消、排队中的 worker 开始执行时，router 会收到后台状态通知。
 
 ## 安装
