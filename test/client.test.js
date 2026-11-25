@@ -370,7 +370,10 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   const projectSelect = nodes(tree).find(node => node.type === 'select')
   assert.equal(projectSelect.props.value, '/two')
   // Deleting is an inline action with a confirmation dialog, not an edit form.
-  assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 0)
+  const searchInput = nodes(tree).find(node => node.type === 'input' && node.props?.type === 'search')
+  assert.ok(searchInput, 'the memory tab has a search box')
+  assert.equal(searchInput.props['aria-label'], '搜索记忆')
+  assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 1)
   assert.equal(buttons(tree, '删除').length, 5)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'tabpanel').length, 1)
 
@@ -381,6 +384,11 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   assert.match(text(tree), /Keep the board accurate/)
   assert.match(text(tree), /Local-first tools/)
   assert.match(text(tree), /Test conventions/)
+  assert.doesNotMatch(text(tree), /Prefer node --test/)
+  // Skill content stays collapsed until the summary row is opened.
+  nodes(tree).find(node => node.type === 'button' && node.props?.['aria-expanded'] === false &&
+    text(node).includes('superagent-lite-test-conventions')).props.onClick()
+  tree = board.render()
   assert.match(text(tree), /Prefer node --test/)
   assert.match(text(tree), /superagent-lite-test-conventions/)
   assert.doesNotMatch(text(tree), /未保存/)
@@ -388,7 +396,8 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
   assert.match(text(tree), /更新时间/)
-  assert.equal(nodes(tree).filter(node => node.type === 'button' && node.props?.['aria-label']).length, 7)
+  assert.equal(nodes(tree).filter(node => node.type === 'button' &&
+    /^删除: /.test(node.props?.['aria-label'] ?? '')).length, 7)
   const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))
   assert.deepEqual(memoryRequests.map(request => new URL(request.path, 'http://localhost').searchParams.get('projectRoot')),
     ['/two', '/one'])
@@ -422,6 +431,131 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   assert.match(text(tree), /Keep the board accurate/)
   board.dispose()
   assert.ok(requests.filter(request => request.options.signal).every(request => request.options.signal.aborted))
+})
+
+test('the memory tab filters all sections locally and keeps collapse, expand and delete behaviour', async () => {
+  const requests = []
+  const longProfile = 'Prefers terse reports. '.repeat(12)
+  const longKnowledge = 'Keep the feedback loop short. '.repeat(8)
+  const view = {
+    global: { userProfile: longProfile },
+    project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
+    knowledge: [
+      {
+        id: '7', text: 'Always run the test suite.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+      {
+        id: '8', text: longKnowledge,
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+    ],
+    skills: {
+      global: [{ name: 'shared-memory', description: 'Inspect the repository first.', content: 'Read AGENTS.md before editing.' }],
+      project: [{ name: 'board-memory', description: 'Keep the board accurate.', content: 'Run npm test.' }],
+    },
+  }
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task({ projectRoot: '/one' })] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      return { ok: true, json: async () => view }
+    },
+    language: 'en',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, 'Memory').props.onClick()
+  board.render()
+  await flush()
+  tree = board.render()
+  const search = (value, current = board.render()) => {
+    nodes(current).find(node => node.type === 'input' && node.props?.type === 'search')
+      .props.onChange({ target: { value } })
+    return board.render()
+  }
+  const sectionCount = current => byClass(current, 'sl-memory__section').length
+  const deleteLabels = current => nodes(current).filter(node => node.type === 'button' &&
+    /^Delete: /.test(node.props?.['aria-label'] ?? '')).map(node => node.props['aria-label'])
+
+  // Long memory and knowledge text is clamped until expanded; skill content
+  // starts folded and shows only the name and description.
+  assert.equal(sectionCount(tree), 3)
+  assert.match(text(tree), /Global knowledge base2/)
+  assert.match(text(tree), /Inspect the repository first/)
+  assert.doesNotMatch(text(tree), /Read AGENTS.md before editing/)
+  const profile = nodes(tree).find(node => node.type === 'p' &&
+    (node.props?.className ?? '').startsWith('sl-memory-field__value') && text(node).includes('Prefers terse'))
+  assert.match(profile.props.className, /sl-memory-field__value--clamped/)
+  nodes(tree).find(node => node.type === 'button' && node.props?.['aria-label'] === 'Show more: User profile')
+    .props.onClick()
+  tree = board.render()
+  assert.doesNotMatch(nodes(tree).find(node => node.type === 'p' &&
+    (node.props?.className ?? '').startsWith('sl-memory-field__value') && text(node).includes('Prefers terse'))
+    .props.className, /--clamped/)
+  const knowledgeText = nodes(tree).find(node => node.type === 'p' &&
+    (node.props?.className ?? '').startsWith('sl-memory-entry__text') &&
+    text(node).includes('Keep the feedback loop short.'))
+  assert.match(knowledgeText.props.className, /sl-memory-entry__text--clamped/)
+  nodes(tree).find(node => node.type === 'button' && node.props?.['aria-label'] === 'Show more: #8').props.onClick()
+  tree = board.render()
+  assert.equal(nodes(tree).find(node => node.type === 'p' &&
+    (node.props?.className ?? '').startsWith('sl-memory-entry__text') && text(node).includes('Keep the feedback loop short.'))
+    .props.className.includes('--clamped'), false)
+
+  // A project field and the project skill description match; the global
+  // section and the knowledge section are hidden while filtering.
+  tree = search('accurate')
+  assert.equal(sectionCount(tree), 1)
+  assert.match(text(tree), /Keep the board accurate/)
+  assert.match(text(tree), /board-memory/)
+  assert.doesNotMatch(text(tree), /Prefers terse/)
+  assert.doesNotMatch(text(tree), /Inspect the repository first/)
+  assert.doesNotMatch(text(tree), /Global knowledge base/)
+  // Delete stays available on a filtered row and still opens the confirmation.
+  assert.ok(deleteLabels(tree).includes('Delete: Responsibilities'))
+  nodes(tree).find(node => node.type === 'button' && node.props?.['aria-label'] === 'Delete: Responsibilities')
+    .props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /Delete memory content/)
+  button(tree, 'Cancel').props.onClick()
+  board.render()
+
+  // Matching is case-insensitive and searches skill content, which stays
+  // collapsed until opened.
+  tree = search('TEST')
+  assert.equal(sectionCount(tree), 2)
+  assert.match(text(tree), /Global knowledge base1/)
+  assert.match(text(tree), /Always run the test suite/)
+  assert.match(text(tree), /Keep the board accurate/)
+  assert.doesNotMatch(text(tree), /Run npm test\./)
+  nodes(tree).find(node => node.type === 'button' && node.props?.['aria-expanded'] === false &&
+    text(node).includes('board-memory')).props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /Run npm test\./)
+
+  tree = search('shared')
+  assert.equal(sectionCount(tree), 1)
+  assert.match(text(tree), /shared-memory/)
+  assert.doesNotMatch(text(tree), /board-memory/)
+
+  tree = search('zzz')
+  assert.equal(sectionCount(tree), 0)
+  assert.match(text(tree), /No memory content matches the search/)
+  assert.equal(deleteLabels(tree).length, 0)
+
+  // Clearing the query restores the already-loaded view without another read.
+  tree = search('')
+  assert.equal(sectionCount(tree), 3)
+  assert.match(text(tree), /Prefers terse/)
+  assert.match(text(tree), /Keep the board accurate/)
+  assert.match(text(tree), /Global knowledge base2/)
+  assert.equal(requests.filter(request => request.path.startsWith('/superagent-lite/memory')).length, 1)
+  board.dispose()
 })
 
 test('the memory tab reports a load failure and can retry from the same panel', async () => {

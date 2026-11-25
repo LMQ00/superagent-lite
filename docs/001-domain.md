@@ -58,7 +58,7 @@ flowchart LR
 | 原始归档（Raw archive） | Worker 完整回合的原始记录。 | 每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口；位于 `~/.dsh/superagent-lite/task/archive/`（`src/memory.js`、`src/memory-store.js`）。 |
 | Role message | 角色消息、子代理状态通知和插件系统提醒在聊天里的卡片。 | 角色间消息（`agent-message`，含派发任务、worker 报告、follow-up、reviewer 审查请求和 memory 蒸馏请求）、子代理结束通知（`subagent-settled`）和插件自有通知（`superagent-lite-*`，当前是派发守卫提醒）在应用 Host 补丁后统一渲染为任务消息卡片，包括被 steer 进运行中回合的消息；没有补丁时按普通用户消息或上下文行显示。审查和记忆 helper 的结果通过工具结果返回，不是会话消息（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`）。 |
 | Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可取消，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取和删除记忆；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、取消排队和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限；「记忆系统」标签页展示记忆、全局/项目 skill 和知识库，并允许 owner 删除单条记忆字段、memory 管理的 skill 或知识条目（`src/board.js:7-66`、`src/status.js:14-53`、`src/memory-panel.js`、`client.js:311-1237`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取和删除记忆；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、取消排队和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限；「记忆系统」标签页可本地搜索并展示记忆、全局/项目 skill 和知识库，并允许 owner 删除单条记忆字段、memory 管理的 skill 或知识条目（`src/board.js:7-66`、`src/status.js:14-53`、`src/memory-panel.js`、`client.js:346-1347`）。 |
 
 ## 聚合
 
@@ -133,7 +133,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 
 删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
 
-面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案，但活动 Task 没有写入这些状态；`cancelled` 只出现在排队取消后保留的墓碑记录里，供 `worker_status` 查询，面板列表不显示（`client.js:14-15`、`client.js:71-72`、`src/status.js:8-10`、`src/task-store.js`）。
+面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案，但活动 Task 没有写入这些状态；`cancelled` 只出现在排队取消后保留的墓碑记录里，供 `worker_status` 查询，面板列表不显示（`client.js:14-15`、`client.js:76-77`、`src/status.js:8-10`、`src/task-store.js`）。
 
 ## 面板状态
 
