@@ -104,6 +104,39 @@ test('a non-git folder dispatches change work directly in place without a worktr
   assert.doesNotMatch(text, /Commit on the assigned branch/)
 })
 
+test('a dispatch attaches local images to the worker first message and records their references', async () => {
+  const projectRoot = await projectFixture('dispatch-images')
+  await writeFile(join(projectRoot, 'screenshot.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]))
+  const { ctx, activations } = commandContext(projectRoot)
+  const saved = []
+  ctx.attachments = {
+    imageLimits: { maxImagesPerMessage: 20, maxMessageImageBytes: 1_000_000 },
+    async saveImage(input) {
+      saved.push(input)
+      return { attachmentId: `sha256:${'b'.repeat(64)}`, mediaType: input.mediaType, bytes: input.data.byteLength, width: 1, height: 1, name: input.name }
+    },
+  }
+  const result = await createDispatchTool(ctx).execute({
+    mode: 'change',
+    title: 'Update notes with screenshot',
+    worktreeName: 'update-notes',
+    teamId: 'team-native-images',
+    task: 'Use the attached screenshot.',
+    images: ['screenshot.png'],
+  }, exec('dispatch-images'))
+  assert.equal(result.delegated, true)
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].mediaType, 'image/png')
+  const task = await readTask(result.taskId)
+  assert.equal(task.images.length, 1)
+  assert.equal(task.images[0].name, 'screenshot.png')
+  assert.equal(activations.length, 1)
+  assert.equal(activations[0].prompt.length, 2)
+  assert.equal(activations[0].prompt[0].type, 'text')
+  assert.equal(activations[0].prompt[1].type, 'image')
+  assert.equal(activations[0].prompt[1].attachment.name, 'screenshot.png')
+})
+
 test('report-only work in a non-git folder keeps its read-only prompt', async () => {
   const projectRoot = await projectFixture('dispatch-report')
   const { ctx, activations } = commandContext(projectRoot)

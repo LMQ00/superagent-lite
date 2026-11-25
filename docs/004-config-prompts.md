@@ -6,14 +6,14 @@
 
 | 区 | 装什么 | 位置 |
 | --- | --- | --- |
-| Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」 | `cordis.patch.yml:21-45`，预设 `superagent-lite` 的 `persona.prefix` |
-| Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
-| 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权，以及按排队、运行、已交付、已取消和失败查询任务 | `src/dispatch.js:40-51`、`src/continue.js:120-131`、`src/worker-status.js` |
-| Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-147` |
-| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
-| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-112`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
-| 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
+| Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」，以及给 worker 附带本地图片的提示 | `cordis.patch.yml:21-48`，预设 `superagent-lite` 的 `persona.prefix` |
+| Worker persona | 一行身份和模型变量 | `cordis.patch.yml:91`，预设 `superagent-lite-worker` |
+| 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-134` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务 | `src/dispatch.js:147-283`、`src/continue.js:150-227`、`src/worker-status.js` |
+| Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-152` |
+| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:11-72` |
+| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:16-38`、`src/review.js:58-88`、`src/review.js:169-188`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
+| 报告与路由消息 | 工具描述、`images` 参数和长度限制 | `src/report-tool.js:7-49`、`src/message-router.js:4-29` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-537` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
 | 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-131` |
@@ -44,6 +44,20 @@
 
 判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。合并请求即使用户点名已有任务，也按新工作走 `mode=merge`，不续派原任务；已有运行中的 merge worker 时追加给它。判定只读输入本身，不先检查仓库。项目是否属于 Git 仓库不影响 change/report 的选择；派发时再检测，非 Git 项目自动走直接工作区路径，`merge` 和 `land=true` 会被拒绝。
 
+## 消息图片
+
+Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment: ImageAttachmentRef }`。插件把本地 PNG/JPEG/WebP/GIF 文件交给 Host 的 `ctx.attachments.saveImage` 持久化，再把返回的附件引用放进消息内容（`src/message-images.js:23-96`）。路由工具的参数是 JSON，只能传文件路径，不能传 URL、base64 或 GUI 上传的附件；路径按当前会话工作目录解析（Router 是项目根，Worker 是 Worktree 或项目根）。
+
+| 链路 | 工具参数 | 消息构造 | 模型要求 |
+| --- | --- | --- | --- |
+| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:61-73`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
+| router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:176`、`src/dispatch.js:68-103`） | 目标 worker 模型声明图片输入 |
+| worker → router 报告 | `message_router.images` | 追加到报告文本之后（`src/message-router.js:23-24`） | router 模型声明图片输入 |
+| worker → router report 结论 | `report_task.images` | 追加到报告文本之后（`src/report-tool.js:37-38`） | router 模型声明图片输入 |
+| worker → review | `review_worker_commit.images` | 追加到审查提示词文本之后（`src/review.js:90-140`） | reviewer 模型声明图片输入 |
+
+数量、单张字节数、整条消息字节数、像素和格式由 Host 的附件服务校验；插件在保存前还会按 `imageLimits` 复核单条消息的图片数量和总字节。文件缺失、不是受支持图片或附件保存失败都会让工具调用失败，不发送半条消息（`src/message-images.js:54-90`）。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`）。
+
 ## Worker 状态查询
 
 `worker_status` 是 Router 的路由工具之一，不派发工作。它只查询本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，返回 Task ID、标题、Team、模式、Worker Session 和存储状态；传 `taskId` 只查一个任务。排队中的任务被取消、排队中的 Worker 开始执行时，插件向 Router 注入 `source.kind = superagent-lite-worker-status` 的后台状态通知；通知不打开新回合、不算新输入，`worker_status` 提供当前全量状态。
@@ -71,7 +85,7 @@ Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入 s
 
 ## 回复规则
 
-Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
+Router persona 固定可见回复（`cordis.patch.yml:36-44`）：
 
 - Router 客观、按逻辑回答：评估并按原样转述请求，不附和、不称赞、不重述或改写用户观点；路由不添加需求、实现计划、验收标准或重复的政策清单。
 - 一句话给出结果和下一步：`Started: <具体改动>` 或 `<结果>；<下一步>`。写明具体对象和预期结果，不用笼统的「已处理」。
@@ -88,7 +102,7 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:42-89`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:43-90`）。
 
 ## 装配顺序
 
@@ -98,15 +112,15 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 2. 预设 persona：Router 或 Worker 的 `persona.prefix`。
 3. 已挂载工具各自注册的工具指导。
 4. 记忆运行时上下文：Worker（包括 report 只读 worker）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取，Router 只读取全局记忆；以 order `170` 注册并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、排队开始/取消的 `worker-status` 后台通知。
+5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、排队开始/取消的 `worker-status` 后台通知。任务消息、续派消息、报告和审查请求可以携带 `images` 指定的本地图片块。
 
-两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:44-53`、`cordis.patch.yml:81-86`、`src/worker-prompt.js:16-19`、`src/worker-prompt.js:36-61`）。
+两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:45-54`、`cordis.patch.yml:82-87`、`src/worker-prompt.js:17-20`、`src/worker-prompt.js:37-63`）。
 
 ## 优先级
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:67-85`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:67-85`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
@@ -131,4 +145,4 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | `knowledge_query` / `knowledge_get` 每次查询时读取；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` 和 `task/archive/sessions/<sha256(Session ID)>.md` | 每个 Worker 回合 `turn/end` 时写回合事件；memory 触发时写会话记录并只把路径交给 memory；其他模型工具没有专用读取入口，Git 与非 Git 项目位置相同 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:56-71`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:68-81`、`src/review.js:57-72`）。

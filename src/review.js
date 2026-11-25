@@ -4,6 +4,7 @@ import { setLandingReview } from './landing.js'
 import { memoryPromptForProject } from './memory.js'
 import { createReviewScope } from './review-scope.js'
 import { runCommand } from './process.js'
+import { imageBlocks, imagesParameter } from './message-images.js'
 
 export const reviewToolName = 'review_worker_commit'
 export const reviewResultToolName = 'submit_review'
@@ -86,7 +87,7 @@ ${memory ? `${memory}\n` : ''}${JSON.stringify({ requirements: task.task, follow
 
 // Runs one independent review of `task`'s current head. The caller owns the Task
 // checks; the worker Session is the parent so its composition supplies the tools.
-export async function runReview(ctx, agent, task, signal) {
+export async function runReview(ctx, agent, task, signal, images = []) {
   const git = task.git !== false
   let head
   let root
@@ -135,7 +136,7 @@ export async function runReview(ctx, agent, task, signal) {
           followUps: (task.followUps ?? []).map(item => typeof item === 'string' ? item : item.text),
           projectRoot: root,
           memory,
-        }) }],
+        }) }, ...images],
     })
   } finally {
     clearHelperExpectation(agent.session.id)
@@ -168,16 +169,17 @@ export async function runReview(ctx, agent, task, signal) {
 export function createReviewTool(ctx, agent, taskId) {
   return {
     name: reviewToolName,
-    description: 'Review the current clean, committed worker diff, or the current project files when the project is not a git repository, for a task that changed project files. Report-only tasks never review and use report_task instead. Fix reported issues, commit when the project uses git, and repeat until approved.',
-    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    description: 'Review the current clean, committed worker diff, or the current project files when the project is not a git repository, for a task that changed project files. Report-only tasks never review and use report_task instead. Fix reported issues, commit when the project uses git, and repeat until approved. Pass local PNG/JPEG/WebP/GIF paths in images to attach screenshots or diagrams to the review request; the reviewer model must accept image input, and a path cannot be a URL or a GUI upload.',
+    parameters: { type: 'object', additionalProperties: false, properties: { images: imagesParameter } },
     output: {
       schema: { type: 'string' },
       render: (_args, text) => [{ type: 'text', text }],
     },
-    async execute(_args, exec) {
+    async execute({ images }, exec) {
       const task = await readTask(taskId)
       if (exec.agent !== agent || task?.status !== 'running' || !(task.worktree || task.git === false)) throw new Error('No active worker worktree')
-      const verdict = await runReview(ctx, agent, task, exec.signal)
+      const imageContent = await imageBlocks(ctx, images, ctx.workingDirectory?.get(agent.session), exec.signal)
+      const verdict = await runReview(ctx, agent, task, exec.signal, imageContent)
       await updateTask(taskId, { review: { head: verdict.head, reviewerSessionId: verdict.reviewerSessionId, approved: verdict.approved } })
       setLandingReview(taskId, verdict)
       return `${verdict.approved ? 'Approved' : 'Changes requested'} for ${verdict.head}: ${verdict.findings.slice(0, 6000)}`

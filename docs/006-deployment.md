@@ -4,7 +4,7 @@
 
 ## 运行什么
 
-Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:16-32`）。
+Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-124`、`index.js:16-32`）。
 
 | 组件 | 作用 |
 | --- | --- |
@@ -189,6 +189,12 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `Report-only tasks must leave the project checkout unchanged` | 还原 checkout 改动后再调用 `report_task` |
 | `Report-only task ended without report_task` | 回合结束前必须调用 `report_task`；重新派发报告任务 |
 | `Only the active worker for this task can message its router` | `message_router` 是 Worker 工具，Router 不能调用 |
+| `Image "<path>" was not found` / `Image "<path>" could not be read: ...` | `images` 里的路径按当前会话目录解析；修正路径，或改用绝对路径 |
+| `Image "<path>" is not a PNG, JPEG, WebP, or GIF file` | 只接受这四种格式；转换后再附带 |
+| `Image messages need the Host attachment store, which is not mounted` | 当前 Host 没有挂载附件服务；恢复 `dsh-attachment-local` 后重启 |
+| `Image "<path>" could not be attached: ...` | 附件解码、尺寸或写入失败；按错误信息压缩图片或检查 `~/.dsh/attachments/` 的权限 |
+| `Model "<model>" does not support image input.` | 接收方模型没有声明 image 输入；换用图片模型，或不发图片 |
+| `This Host accepts at most N images in one message` / `The attached images exceed this Host's N-byte message limit` | 附件服务的单条消息限制更小；减少图片或压缩后再发 |
 | `The reviewer did not submit a usable verdict` | 重新运行审查；Reviewer 必须调用 `submit_review` 写「通过」或具体意见 |
 | `The pull request was closed; reopen it or dispatch a new task` | 在 GitHub 重新打开 PR，或派发新任务 |
 | `This branch is already merged` | 分支已合并；不需要再执行合并或发送 |
