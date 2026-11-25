@@ -58,7 +58,7 @@
 | 取消排队 | 安装 owner 在「排队中」的 Task 行点击「取消」 | 原子地只移除仍为 `queued` 的活动 Task 记录和会话映射，并留下 `cancelled` 墓碑供 `worker_status` 查询；之后不会再被派发，任务已离开队列时拒绝 | 否；需要明确点击，运行中或已交付的 Task 没有入口 |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支和 Worktree | 否；需要明确点击，运行中或合并/发布中的 Task 除外 |
 | 修改设置 | owner 在面板「设置」保存 | 保存 worker 模型和并发上限，只影响之后启动的 worker | 否；需要 owner 明确点击 |
-| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | memory 角色读取 Worker 原始会话，写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
+| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | Host 把完整 Worker 会话写成可读归档并把路径、任务、角色、分支等元信息发给 memory；memory 自己按路径读取后写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
 
 ## 准入
 
@@ -125,13 +125,13 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
-- memory 角色只在 change worker 的最终报告后触发一次，读取完整原始会话；最终报告工具的参数不进入 transcript（`src/memory.js`、`src/message-router.js`、`index.js`）。
+- memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径和任务、角色、分支等元信息，不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
 - 面板的「记忆系统」标签页经 owner-only `/superagent-lite/memory` 读取与删除全局记忆、所选项目的项目记忆、memory 管理的全局/项目 skill 和全局知识库：GET 读取；DELETE 按 `kind`（memory/skill/knowledge）、`scope`、`field`/`name` 或知识 `id` 只删除用户确认的单条内容，skill 需要 `name`，项目作用域需要绝对 `projectRoot`；没有新增或编辑接口，写入仍只由 memory 角色完成。删除知识后 `knowledge_query` 不再返回该条目，删除 skill 后之后新派发的会话不再看到它（`src/memory-panel.js`、`src/memory-store.js`、`src/memory.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
-- 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；只由 Host 写入，模型工具没有读取入口（`src/memory.js`、`src/memory-store.js`）。
+- 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；memory 触发时另写一份 `task/archive/sessions/<sha256(Session ID)>.md` 完整会话记录并把路径交给 memory；两者都只由 Host 写入，Git 与非 Git 项目走同一位置，其他模型工具没有专用读取入口（`src/memory.js`、`src/memory-store.js`）。
 
 ### 审查限制
 

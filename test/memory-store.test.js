@@ -251,6 +251,15 @@ test('worker turns archive under task/archive with their source key', async () =
   await assert.rejects(store.archive.write({ sessionId: 'x', seq: -1 }, {}), /non-negative/)
 })
 
+test('a worker session record is written to a readable path under task/archive', async () => {
+  const path = await store.writeSessionRecord('session-record', '# Worker session record\n\n[user] Read me.\n')
+  assert.equal(path, join(root, 'data', 'task', 'archive', 'sessions',
+    `${(await import('node:crypto')).createHash('sha256').update('session-record').digest('hex')}.md`))
+  assert.equal(await readFile(path, 'utf8'), '# Worker session record\n\n[user] Read me.\n')
+  await assert.rejects(store.writeSessionRecord('', 'Body.'), /Session id/)
+  await assert.rejects(store.writeSessionRecord('session-record', '  '), /conversation text/)
+})
+
 test('deleting memory fields clears them and deleting a skill removes its file', async () => {
   const { createMemoryStore } = await import('../src/memory-store.js')
   const directory = join(root, 'delete-store')
