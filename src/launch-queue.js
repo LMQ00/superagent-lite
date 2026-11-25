@@ -10,6 +10,11 @@ const pumps = new Map()
 const parents = new Map()
 const lifetimes = new Map()
 
+// `starting` and `resuming` reserve a slot while the Host brings a Session up,
+// even before `agents.get` can see it. A Task that stays in either state without
+// a live Session past this window has no recoverable worker and is reclaimed.
+export const STALE_ACTIVE_MS = 2 * 60_000
+
 function lifetime() {
   let controller = lifetimes.get(dataRoot)
   if (!controller) {
@@ -29,10 +34,55 @@ function runningAgent(ctx, task) {
   return Boolean(agents.get(task.workerSessionId))
 }
 
-export function occupiedSlots(ctx, tasks) {
-  return tasks.filter(task =>
-    task.status === 'starting' || task.status === 'resuming' ||
-    (task.status === 'running' && runningAgent(ctx, task))).length
+function lastUpdate(task) {
+  const time = Date.parse(task.updatedAt ?? task.createdAt ?? '')
+  return Number.isFinite(time) ? time : 0
+}
+
+function reservesSlot(task, now) {
+  return now - lastUpdate(task) <= STALE_ACTIVE_MS
+}
+
+function reclaimedFailure(status) {
+  return `The worker Session is no longer running; the task was reclaimed from ${status} and no longer occupies a worker slot`
+}
+
+// A Task can enter `starting` or `resuming` and then lose its Session without a
+// terminal event, for example when the Host accepts a follow-up but never
+// resumes the Worker. Pumping reclaims such records so they stop showing as
+// unconfirmed and stop reserving a slot. A fresh record or one with a live
+// agent is left alone.
+export async function reclaimStaleWorkers(ctx, tasks, now = Date.now()) {
+  let reclaimed = false
+  for (const task of tasks) {
+    if (task.status !== 'starting' && task.status !== 'resuming') continue
+    if (runningAgent(ctx, task) || reservesSlot(task, now)) continue
+    try {
+      const updated = await updateTask(task.id, current => {
+        if ((current.status !== 'starting' && current.status !== 'resuming') ||
+            runningAgent(ctx, current) || reservesSlot(current, now)) return {}
+        return {
+          status: 'failed',
+          failure: reclaimedFailure(current.status),
+          finishedAt: new Date(now).toISOString(),
+        }
+      })
+      if (updated.status === 'failed') reclaimed = true
+    } catch (error) {
+      if (error.code === 'ENOENT') continue
+      ctx.logger?.warn(`superagent-lite worker queue: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  return reclaimed
+}
+
+export function occupiedSlots(ctx, tasks, now = Date.now()) {
+  return tasks.filter(task => {
+    if (task.status === 'starting' || task.status === 'resuming') {
+      return runningAgent(ctx, task) || reservesSlot(task, now)
+    }
+    return task.status === 'running' && runningAgent(ctx, task)
+  }).length
 }
 
 async function launch(ctx, task) {
@@ -95,9 +145,11 @@ async function launch(ctx, task) {
 
 async function run(ctx) {
   for (;;) {
-    const tasks = await listTasks()
+    let tasks = await listTasks()
+    const now = Date.now()
+    if (await reclaimStaleWorkers(ctx, tasks, now)) tasks = await listTasks()
     const settings = await readWorkerSettings()
-    if (occupiedSlots(ctx, tasks) >= settings.maxWorkers) return
+    if (occupiedSlots(ctx, tasks, now) >= settings.maxWorkers) return
     const next = tasks
       .filter(task => task.status === 'queued')
       .sort((left, right) => (left.createdAt ?? '').localeCompare(right.createdAt ?? ''))[0]
