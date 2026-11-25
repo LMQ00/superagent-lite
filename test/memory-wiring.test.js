@@ -16,14 +16,14 @@ after(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-async function taskForWorker(taskId, workerId, mode = 'change') {
+async function taskForWorker(taskId, workerId, mode = 'change', { worktree = true } = {}) {
   const { createTask, linkWorkerSession } = await import('../src/task-store.js')
   const projectRoot = join(home, 'project-core')
   await createTask({
     id: taskId, title: `Task ${taskId}`, teamId: 'core', projectRoot, task: 'Change it',
     mode, parentSessionId: 'router', workerSessionId: workerId, status: 'running',
     baseBranch: 'main', baseCommit: 'b'.repeat(40),
-    ...(mode === 'report' ? {} : { worktree: { path: projectRoot, branch: 'sl-core' } }),
+    ...(mode === 'report' || !worktree ? {} : { worktree: { path: projectRoot, branch: 'sl-core' } }),
     createdAt: new Date().toISOString(),
   })
   await linkWorkerSession(taskId, workerId)
@@ -57,6 +57,11 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     agents: { get() {} },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
     workingDirectory: { get: () => projectRoot },
+    worktrees: {
+      async create(_agent, { name }) {
+        return { path: projectRoot, branch: name, baseCommit: 'b'.repeat(40), repositoryRoot: projectRoot }
+      },
+    },
     subagents: {
       async startActivation(spec) {
         activations.push(spec)
@@ -162,6 +167,24 @@ test('the final report triggers the memory role, saves memory and writes skills'
   assert.deepEqual(await store.readSkill('project', projectRoot), {
     description: 'Run the project tests.', content: 'Run npm test before reporting.', author: 'memory',
   })
+})
+
+test('the memory request reads the worker branch written after agent creation', async () => {
+  const workerId = 'worker-late-branch'
+  const taskId = 'ad'.repeat(8)
+  const projectRoot = await taskForWorker(taskId, workerId, 'change', { worktree: false })
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields())
+  const worktree = wiring.registered.find(tool => tool.name === 'create_worktree')
+  assert.ok(worktree)
+  const created = await worktree.execute({}, { agent: wiring.agent, signal: new AbortController().signal })
+  assert.match(created.branch, /^sl-core-/)
+  const result = await wiring.message().execute({
+    message: 'Done. Review approved; tests pass.',
+  }, { agent: wiring.agent, signal: new AbortController().signal })
+  assert.match(result, /Message delivered to the router/)
+  const prompt = wiring.activations[0].prompt[0].text
+  assert.match(prompt, new RegExp(`- Branch: ${created.branch}`))
+  assert.doesNotMatch(prompt, /- Branch: main/)
 })
 
 test('a finished worker is not shown a catalog update caused by its own memory skill write', async () => {

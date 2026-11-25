@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { taskForSession, updateTask } from './src/task-store.js'
+import { readTask, taskForSession, updateTask } from './src/task-store.js'
 import { cancelQueuedWorker } from './src/worker-status.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
@@ -174,7 +174,13 @@ export async function apply(ctx) {
       if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
       memoryAttempted = true
       try {
-        return await runMemoryExtraction(ctx, agent, { projectRoot: task.projectRoot, task }, exec.signal)
+        // create_worktree writes the Worker branch into the Task after this
+        // agent was created, so the memory request reads the current record
+        // instead of the snapshot captured in agent/created.
+        const current = await readTask(task.id) ?? task
+        return await runMemoryExtraction(ctx, agent, {
+          projectRoot: current.projectRoot, task: current,
+        }, exec.signal)
       } catch (error) {
         ctx.logger.warn(`superagent-lite memory extraction: ${error instanceof Error ? error.message : String(error)}`)
         return undefined
