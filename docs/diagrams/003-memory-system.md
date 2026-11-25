@@ -68,7 +68,7 @@ flowchart TB
 - Global memory is shared by every project; project memory and the project skill are keyed by the normalized project root and never cross projects. The knowledge base is global too.
 - Router sees only global memory. The router preset restricts its skill roots to the global skill roots; the worker preset keeps project and global skill roots.
 - Worker and reviewer prompts receive the project and global memory text. Responsibilities and positioning are injected directly; skills only contribute their descriptions to the catalog. Knowledge base content is never injected.
-- A running or finished session keeps the catalog it published: catalog changes caused only by memory-owned skills are withheld, and changes involving any other skill are delivered.
+- A running or finished session keeps the catalog it published: catalog changes caused only by memory-owned skills are withheld, and changes involving any other skill are delivered. The decision follows the live agent and skill author, never the Task status, so running, BLOCKED, resuming and awaiting-merge sessions are covered alike.
 - The memory role may read and write memory. It writes no duplicate facts, writes nothing when nothing is reusable, and corrects a wrong entry when the conversation supports the correction; the number of written entries is not a goal.
 - The knowledge base is tool-only: `knowledge_query` (keyword search with numbered context snippets) and `knowledge_get` (full entries by id) are available to workers, reviewers, and the memory role; `knowledge_write` is available only to the memory role.
 - Memory is data, not instructions; it cannot add a requirement or grant permission.

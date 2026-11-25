@@ -67,7 +67,7 @@
 
 注入顺序：Router 只读取全局记忆；Worker（change、report、merge）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取项目 + 全局记忆；memory 角色收到当前记忆、当前 skill 文本和会话记录路径作为输入，不接收对话正文。Worker 的记忆与上下文注入发生在 `agent/created`，不依赖 Worktree 是否已创建；非 Git 项目没有 Worktree 时同样注入。skill 的完整内容不进入记忆注入，只由 DSH skill catalog 提供 description，模型需要时用 `skill` 工具加载。项目 skill 由 Worker 作用域的 provider 从项目根读取，因此 Git Worker 在 Worktree 里、非 Git Worker 在项目目录里都能看到；Router 的 skill 根只有全局目录（`src/memory.js`、`router.js`、`src/review.js`、`index.js`、`cordis.patch.yml`）。
 
-Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入 skill 后，只拦截由 `author: memory` 的 skill 新增、修改或删除构成的新 catalog，不向已运行或已结束的 Worker/Reviewer 注入 catalog 更新；之后新派发的会话重新发现并看到新 description（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。归属由 skill 文件的 frontmatter 作者决定，不再维护固定名单；多个 memory skill 一起变化时逐个按作者判断，作者缺失的 skill 变化照常发布。
+Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入 skill 后，只拦截由 `author: memory` 的 skill 新增、修改或删除构成的新 catalog，不向已运行或已结束的 Worker/Reviewer 注入 catalog 更新；之后新派发的会话重新发现并看到新 description。判定按会话（agent）与 skill 作者，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。归属由 skill 文件的 frontmatter 作者决定，不再维护固定名单；多个 memory skill 一起变化时逐个按作者判断，作者缺失的 skill 变化照常发布。
 
 ## 回复规则
 

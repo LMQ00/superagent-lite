@@ -214,7 +214,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/review-scope.js` | 记录 Reviewer 是否读过改动或项目文件，并拒绝会改变 git 分支或历史的命令。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射，按锁取消仍在排队的 Task，并保存取消墓碑供状态查询。 |
 | `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
-| `src/skill-catalog.js` | 稳定已运行 Worker/Reviewer 会话的 skill catalog，按 skill 文件的 `author: memory` 拦截由 memory skill 新增、修改或删除构成的 catalog 更新；作者缺失按普通 skill 处理。 |
+| `src/skill-catalog.js` | 稳定已运行 Worker/Reviewer 会话的 skill catalog，按 skill 文件的 `author: memory` 拦截由 memory skill 新增、修改或删除构成的 catalog 更新；以 `prepend` 注册在预设 catalog 监听器外层，才能看到并过滤它们在 `next()` 之后追加的 catalog；作者缺失按普通 skill 处理。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发、续派或状态查询决定，并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
 | `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
@@ -260,7 +260,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射、排队取消墓碑和路径形 ID 拒绝。 |
 | `test/turn-guard.test.js` | 每个输入一个决定、状态查询决定、状态通知不算输入、提醒预算、idle 投递和中止处理。 |
 | `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report/merge 的参数规则和 `worktreeName` 校验。 |
-| `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒。 |
+| `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒；catalog 守卫注册在最外层，能过滤预设监听器在 `next()` 之后追加的 memory skill 更新。 |
 | `test/worker-prompt.test.js` | change、report 与非 Git change 任务消息、段顺序和范围限制。 |
 | `test/worker-status.test.js` | 状态分类、`worker_status` 按 Router 隔离和单任务查询、排队取消墓碑、取消与启动通知，以及通知来源。 |
 | `test/worktree-tool.test.js` | 可读 Worktree 与分支名、重复调用重新进入，以及旧 Task 的原命名回退。 |
