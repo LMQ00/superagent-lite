@@ -106,3 +106,37 @@ test('the catalog guard wraps preset listeners that add the catalog after next()
   assert.deepEqual((await step()).messages, [initial])
   assert.deepEqual((await step()).messages, [])
 })
+
+test('apply reclaims a stale running record without a live worker', async () => {
+  const { createTask, listTasks, readTask } = await import('../src/task-store.js')
+  const { STALE_ACTIVE_MS } = await import('../src/launch-queue.js')
+  const stale = new Date(Date.now() - STALE_ACTIVE_MS - 60_000).toISOString()
+  const task = {
+    id: 'abcdefabcdefabcd', title: 'Lost worker', teamId: 'team', task: 'Do the work',
+    mode: 'change', git: false, parentSessionId: 'router', projectRoot: home,
+    workerSessionId: 'lost-worker', status: 'running', createdAt: stale, updatedAt: stale,
+  }
+  assert.equal(await createTask(task), true)
+  const { apply } = await import('../index.js')
+  const listeners = new Map()
+  const ctx = {
+    logger: { warn() {} },
+    inject() {},
+    effect() { return () => {} },
+    on(name, handler) { listeners.set(name, handler) },
+    agents: { get: () => undefined },
+    agentPresets: { composedPreset: () => 'superagent-lite' },
+  }
+
+  await apply(ctx)
+
+  let record
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    record = await readTask(task.id)
+    if (record.status !== 'running') break
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.equal(record.status, 'failed')
+  assert.match(record.failure, /without a turn\/end/)
+  assert.equal((await listTasks()).length, 1)
+})

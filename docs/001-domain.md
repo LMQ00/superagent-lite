@@ -123,14 +123,14 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 工作 | `running` | Worker 已创建，或 Git 项目的 Worktree 已保存，任务进行中；非 Git 项目在 Worker 创建后即为工作目录（`index.js:101-102`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束或在恢复中的 Task 被 follow-up 重新打开（`src/continue.js:260-273`） |
 | 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:240-286`） |
-| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作（`index.js:278`、`src/git-actions.js:291-302`） |
+| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作；失联的 `running` 记录在 Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 时也回收到这里（`index.js:278`、`src/git-actions.js:291-302`、`src/launch-queue.js:54-105`） |
 | 交付 | `merging` | 面板或命令触发的本地合并已开始（`src/merge.js:64-68`） |
 | 交付 | `publishing` | 发送 PR 的路径已开始（`src/git-actions.js:440-444`、`src/git-actions.js:476-478`） |
 | 交付 | `awaiting-ci` | reviewed HEAD 的 PR 已打开；面板读取时用 `gh` 同步 PR 状态（`src/github.js:92-109`、`src/git-actions.js:278-283`） |
 | 交付 | `merged` | 提交已进入基础分支：本地合并、外部合并 PR，或面板读取时确认已包含在基础分支（`src/merge.js:85-87`、`src/git-actions.js:309-317`） |
 | 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:279-281`、`src/git-actions.js:273-277`、`src/merge.js:81-82`） |
 | 结束 | `completed` | 只报告任务通过 `report_task` 交付了结论，或非 Git 的 change 任务在审查通过后结束（`src/report-tool.js:34-39`、`index.js`） |
-| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败，或失联的 `starting`/`resuming` 被启动队列回收（`src/dispatch.js:104-112`、`index.js:250-266`、`src/continue.js:281-288`、`src/launch-queue.js:50-86`） |
+| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败，或失联的 `starting`/`running`/`resuming` 被启动扫描或队列回收且没有可交付的 reviewed HEAD（`src/dispatch.js:104-112`、`index.js:250-266`、`src/continue.js:281-288`、`src/launch-queue.js:54-105`） |
 | 结束 | `cancelled` | 安装 owner 在面板停止运行中或排队中的 Task；worker 被中断，并发名额立即释放，记录保留在面板并归入「失败」分组（`src/worker-stop.js:6-29`、`src/task-store.js:126-146`） |
 
 删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:290-295`）。

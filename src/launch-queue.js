@@ -5,6 +5,7 @@ import { notifyWorkerStatus } from './worker-status.js'
 import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
 import { interruptWorker } from './worker-control.js'
 import { imageBlocksFromReferences } from './message-images.js'
+import { runCommand } from './process.js'
 
 // Worker launches beyond the configured limit wait as `queued` Task records.
 // The queue is serialized per data root so two dispatches cannot claim the same slot.
@@ -12,11 +13,13 @@ const pumps = new Map()
 const parents = new Map()
 const lifetimes = new Map()
 
-// `starting` and `resuming` reserve a slot while the Host brings a Session up,
-// even before `agents.get` can see it. A Task that stays in either state without
-// a live Session past this window has no recoverable worker and is reclaimed.
+// A Task can stay in `starting`, `running` or `resuming` after its Session is
+// gone; a lost `subagent/end` never moves it to a terminal state. The active
+// states survive this window without a live agent only when no terminal event
+// can arrive, so they are reclaimed by the next scan.
 export const STALE_ACTIVE_MS = 2 * 60_000
 
+const ACTIVE_STATUSES = new Set(['starting', 'running', 'resuming'])
 function lifetime() {
   let controller = lifetimes.get(dataRoot)
   if (!controller) {
@@ -45,39 +48,66 @@ function reservesSlot(task, now) {
   return now - lastUpdate(task) <= STALE_ACTIVE_MS
 }
 
-function reclaimedFailure(status) {
-  return `The worker Session is no longer running; the task was reclaimed from ${status} and no longer occupies a worker slot`
+function staleActiveTask(task, now) {
+  return ACTIVE_STATUSES.has(task.status) && !reservesSlot(task, now)
 }
 
-// A Task can enter `starting` or `resuming` and then lose its Session without a
-// terminal event, for example when the Host accepts a follow-up but never
-// resumes the Worker. Pumping reclaims such records so they stop showing as
-// unconfirmed and stop reserving a slot. A fresh record or one with a live
-// agent is left alone.
+function reclaimedFailure(task) {
+  const reason = task.status === 'running'
+    ? 'The worker Session ended without a turn/end'
+    : `The worker Session ended before the task ${task.status === 'resuming' ? 'resumed' : 'started'}`
+  return `${reason}; the stale ${task.status} record was reclaimed and no longer occupies a worker slot`
+}
+
+// A lost Session may have delivered its reviewed commit before it disappeared.
+// Read the recorded review, the worker branch and the worktree HEAD so the
+// reclaimed Task lands where `subagent/end` would have put it.
+async function reclaimedOutcome(ctx, task) {
+  const { path, branch } = task.worktree ?? {}
+  if (task.git !== false && task.review?.approved === true && typeof task.review.head === 'string' &&
+      typeof path === 'string' && typeof branch === 'string') {
+    try {
+      await runCommand(ctx, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`], path)
+      if (await runCommand(ctx, ['rev-parse', '--verify', 'HEAD^{commit}'], path) === task.review.head) {
+        return { status: 'awaiting-merge' }
+      }
+    } catch {
+      // A missing branch or worktree has no reviewed HEAD left to deliver.
+    }
+  }
+  return { status: 'failed', failure: reclaimedFailure(task) }
+}
+
+// A Task can lose its Session without a terminal event, for example when the
+// Host restarts before a `turn/end` arrives. A scan reclaims such records so
+// they stop showing as unconfirmed and stop reserving a slot. A fresh record or
+// one with a live agent is left alone; the write re-checks both under the Task
+// lock so a Worker that starts mid-scan is never touched.
 export async function reclaimStaleWorkers(ctx, tasks, now = Date.now()) {
   let reclaimed = false
   for (const task of tasks) {
-    if (task.status !== 'starting' && task.status !== 'resuming') continue
-    if (runningAgent(ctx, task) || reservesSlot(task, now)) continue
+    if (!staleActiveTask(task, now) || runningAgent(ctx, task)) continue
+    const outcome = await reclaimedOutcome(ctx, task)
+    let wrote = false
     try {
-      const updated = await updateTask(task.id, current => {
-        if ((current.status !== 'starting' && current.status !== 'resuming') ||
-            runningAgent(ctx, current) || reservesSlot(current, now)) return {}
-        return {
-          status: 'failed',
-          failure: reclaimedFailure(current.status),
-          finishedAt: new Date(now).toISOString(),
-        }
+      await updateTask(task.id, current => {
+        if (!staleActiveTask(current, now) || runningAgent(ctx, current)) return {}
+        wrote = true
+        return { ...outcome, finishedAt: new Date(now).toISOString() }
       })
-      if (updated.status === 'failed') reclaimed = true
     } catch (error) {
       if (error.code === 'ENOENT') continue
       ctx.logger?.warn(`superagent-lite worker queue: ${error instanceof Error ? error.message : String(error)}`)
+      continue
     }
+    if (wrote) reclaimed = true
   }
   return reclaimed
 }
 
+export async function reclaimStaleTasks(ctx, now = Date.now()) {
+  return reclaimStaleWorkers(ctx, await listTasks(), now)
+}
 export function occupiedSlots(ctx, tasks, now = Date.now()) {
   return tasks.filter(task => {
     if (task.status === 'starting' || task.status === 'resuming') {
