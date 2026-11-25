@@ -9,6 +9,7 @@ export const MAX_FIELD_LENGTH = 4_000
 export const MAX_SKILL_DESCRIPTION = 500
 export const MAX_KNOWLEDGE_TEXT = 2_000
 export const MAX_KNOWLEDGE_ENTRIES = 200
+export const MAX_PROJECT_SKILLS = 10
 export const KNOWLEDGE_QUERY_LIMIT = 20
 
 export const GLOBAL_FIELDS = Object.freeze(['userProfile'])
@@ -494,26 +495,85 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return new Set(skills.filter(skill => skill.author === SKILL_AUTHOR).map(skill => skill.name))
   }
 
+  async function projectSkillCount(projectRoot) {
+    return (await listSkills('project', projectRoot)).length
+  }
+
+  // Validates every skill before any file is written so a batch that would
+  // exceed the project skill limit leaves no partial skill state. The whole
+  // batch runs under one skill-root lock, so concurrent batches cannot both
+  // pass the limit check.
+  async function skillWritePlan(scope, resolved, entries) {
+    const planned = []
+    for (const entry of entries) {
+      const name = skillNameOf(scope, entry?.name)
+      const description = fieldValue(entry?.description, 'skillDescription', MAX_SKILL_DESCRIPTION)
+      const content = fieldValue(entry?.content, 'skillContent')
+      if (!description) {
+        planned.push({ name, skipped: true })
+        continue
+      }
+      const current = await readSkill(scope, resolved, name)
+      if (current && current.author !== SKILL_AUTHOR &&
+          !(current.author === undefined && name === SKILL_NAMES[scope])) {
+        throw new Error(`Skill "${name}" already exists and is not managed by memory`)
+      }
+      planned.push({
+        name,
+        description,
+        content,
+        current,
+        unchanged: Boolean(current && current.author === SKILL_AUTHOR &&
+          current.description === description && current.content === content),
+      })
+    }
+    if (scope === 'project') {
+      const existing = await listSkills('project', resolved)
+      const names = new Set(existing.map(skill => skill.name))
+      const added = planned.filter(entry =>
+        !entry.skipped && !entry.unchanged && entry.current === undefined && !names.has(entry.name))
+      if (added.length > 0 && existing.length + added.length > MAX_PROJECT_SKILLS) {
+        throw new RangeError(
+          `Project skills are limited to ${MAX_PROJECT_SKILLS}; cannot create "${added[0].name}" ` +
+          `(${existing.length} already saved, this update would add ${added.length}). ` +
+          'Reuse an existing memory-managed project skill name with its complete updated content, ' +
+          'or save the content as knowledge.',
+        )
+      }
+    }
+    return planned
+  }
+
   async function writeSkill(scope, projectRoot, changes) {
     const description = fieldValue(changes?.description, 'skillDescription', MAX_SKILL_DESCRIPTION)
     const content = fieldValue(changes?.content, 'skillContent')
     if (!description) return undefined
     const name = skillNameOf(scope, changes?.name)
     const resolved = scope === 'project' ? projectRootOf(projectRoot) : undefined
-    const path = skillPath(scope, resolved, name)
-    return serialize(path, async () => {
-      const current = await readSkill(scope, resolved, name)
-      if (current && current.author !== SKILL_AUTHOR &&
-          !(current.author === undefined && name === SKILL_NAMES[scope])) {
-        throw new Error(`Skill "${name}" already exists and is not managed by memory`)
-      }
-      if (current && current.author === SKILL_AUTHOR &&
-          current.description === description && current.content === content) {
-        return current
-      }
-      await writeTextAtomic(path, skillDocument(name, description, content))
+    return serialize(skillRoot(scope, resolved), async () => {
+      const [planned] = await skillWritePlan(scope, resolved, [{ name, description, content }])
+      if (planned.unchanged) return planned.current
+      await writeTextAtomic(skillPath(scope, resolved, name),
+        skillDocument(name, planned.description, planned.content))
       if (scope === 'project') await excludeProjectSkill(resolved, name)
-      return { description, content, author: SKILL_AUTHOR }
+      return { description: planned.description, content: planned.content, author: SKILL_AUTHOR }
+    })
+  }
+
+  async function writeSkills(scope, projectRoot, entries) {
+    if (!Array.isArray(entries)) throw new TypeError('Skill updates must be an array')
+    const resolved = scope === 'project' ? projectRootOf(projectRoot) : undefined
+    return serialize(skillRoot(scope, resolved), async () => {
+      const planned = await skillWritePlan(scope, resolved, entries)
+      const written = []
+      for (const entry of planned) {
+        if (entry.skipped || entry.unchanged) continue
+        await writeTextAtomic(skillPath(scope, resolved, entry.name),
+          skillDocument(entry.name, entry.description, entry.content))
+        if (scope === 'project') await excludeProjectSkill(resolved, entry.name)
+        written.push(entry.name)
+      }
+      return { written }
     })
   }
 
@@ -521,7 +581,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     const skillName = skillNameOf(scope, name)
     const resolved = scope === 'project' ? projectRootOf(projectRoot) : undefined
     const path = skillPath(scope, resolved, skillName)
-    return serialize(path, async () => {
+    return serialize(skillRoot(scope, resolved), async () => {
       const current = await readSkill(scope, resolved, skillName)
       if (current === undefined) return false
       if (current.author !== SKILL_AUTHOR &&
@@ -575,8 +635,10 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     getKnowledge,
     readSkill,
     readSkills,
+    projectSkillCount,
     memoryAuthoredSkillNames,
     writeSkill,
+    writeSkills,
     deleteSkill,
     writeSessionRecord,
     archive: Object.freeze({ write: writeArchive, read: readArchive }),

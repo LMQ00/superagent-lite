@@ -1,14 +1,24 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import test from 'node:test'
+import test, { after } from 'node:test'
 
 const home = await mkdtemp(join(tmpdir(), 'superagent-lite-wiring-'))
+const originalHome = process.env.HOME
+const originalAgentsHome = process.env.DSH_AGENTS_HOME
 process.env.HOME = home
+delete process.env.DSH_AGENTS_HOME
 
-test('apply wires turn/end into a reminder delivered on agent idle', async (t) => {
-  t.after(() => rm(home, { recursive: true, force: true }))
+after(async () => {
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  if (originalAgentsHome === undefined) delete process.env.DSH_AGENTS_HOME
+  else process.env.DSH_AGENTS_HOME = originalAgentsHome
+  await rm(home, { recursive: true, force: true })
+})
+
+test('apply wires turn/end into a reminder delivered on agent idle', async () => {
   const { apply } = await import('../index.js')
   const listeners = new Map()
   const followups = []
@@ -36,4 +46,97 @@ test('apply wires turn/end into a reminder delivered on agent idle', async (t) =
   emit('agent/status', { agent, status: 'idle' })
   assert.equal(followups.length, 1)
   assert.match(followups[0].content[0].text, /dispatch_worker/)
+})
+
+test('the catalog guard wraps preset listeners that add the catalog after next()', async () => {
+  const { apply } = await import('../index.js')
+  const skillRoot = join(home, '.agents', 'skills', 'superagent-npm-publish')
+  await mkdir(skillRoot, { recursive: true })
+  await writeFile(join(skillRoot, 'SKILL.md'), [
+    '---',
+    'name: superagent-npm-publish',
+    'author: memory',
+    'description: "Publish the package."',
+    '---',
+    '',
+    'Body.',
+    '',
+  ].join('\n'))
+  const catalog = (entries, update = false) => ({
+    id: update ? 'catalog-update' : 'catalog',
+    source: { kind: 'skill-catalog', form: 'catalog', ...update ? { update: true } : {}, entries },
+  })
+  const initial = catalog([{ name: 'find-skills', description: 'Find skills.' }])
+  const update = catalog([
+    { name: 'find-skills', description: 'Find skills.' },
+    { name: 'superagent-npm-publish', description: 'Publish the package.' },
+  ], true)
+  const chain = []
+  let calls = 0
+  const ctx = {
+    logger: { warn() {} },
+    inject() {},
+    effect() { return () => {} },
+    on(name, handler, options) {
+      if (name !== 'agent/pre-step') return
+      if (options?.prepend) chain.unshift(handler)
+      else chain.push(handler)
+    },
+    agents: { get() {} },
+    agentPresets: { composedPreset: () => 'superagent-lite-worker' },
+  }
+  // The worker preset's tool-skill listener is mounted before this plugin and
+  // appends the catalog on its way out.
+  ctx.on('agent/pre-step', async (_payload, next) => {
+    const decision = await next()
+    return { ...decision, messages: [...decision.messages, calls++ === 0 ? initial : update] }
+  })
+  await apply(ctx)
+  const agent = {
+    id: 'worker-catalog-wiring',
+    session: { id: 'worker-catalog-wiring', header: { origin: 'subagent', parentSession: 'router' } },
+    ctx: {},
+  }
+  const step = () => {
+    const run = index => index === chain.length
+      ? { kind: 'enter', messages: [] }
+      : chain[index]({ agent }, () => run(index + 1))
+    return run(0)
+  }
+  assert.deepEqual((await step()).messages, [initial])
+  assert.deepEqual((await step()).messages, [])
+})
+
+test('apply reclaims a stale running record without a live worker', async () => {
+  const { createTask, listTasks, readTask } = await import('../src/task-store.js')
+  const { STALE_ACTIVE_MS } = await import('../src/launch-queue.js')
+  const stale = new Date(Date.now() - STALE_ACTIVE_MS - 60_000).toISOString()
+  const task = {
+    id: 'abcdefabcdefabcd', title: 'Lost worker', teamId: 'team', task: 'Do the work',
+    mode: 'change', git: false, parentSessionId: 'router', projectRoot: home,
+    workerSessionId: 'lost-worker', status: 'running', createdAt: stale, updatedAt: stale,
+  }
+  assert.equal(await createTask(task), true)
+  const { apply } = await import('../index.js')
+  const listeners = new Map()
+  const ctx = {
+    logger: { warn() {} },
+    inject() {},
+    effect() { return () => {} },
+    on(name, handler) { listeners.set(name, handler) },
+    agents: { get: () => undefined },
+    agentPresets: { composedPreset: () => 'superagent-lite' },
+  }
+
+  await apply(ctx)
+
+  let record
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    record = await readTask(task.id)
+    if (record.status !== 'running') break
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.equal(record.status, 'failed')
+  assert.match(record.failure, /without a turn\/end/)
+  assert.equal((await listTasks()).length, 1)
 })

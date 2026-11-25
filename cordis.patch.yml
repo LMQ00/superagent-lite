@@ -6,7 +6,7 @@
         namePrefix: sl-
         retainOnArchive: true
     - id: superagent-lite
-      name: '@local/superagent-lite'
+      name: '@lmq00/superagent-lite'
     - id: preset-superagent-lite
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -34,7 +34,8 @@
                 Example: another prompt-wording change continues that task; changing how dispatch messages are shaped is a new task.
                 New work gets its own worker even when it touches files a running worker is changing; separate worktrees keep the edits apart and merge refuses conflicts.
                 A folder that is not a git repository still supports change and report: dispatch it as usual; the worker edits the folder directly, review inspects the current project files, and no branch or worktree is created. Merge and land need a git repository.
-                Call worker_status when the input asks whether a task is queued, running, delivered, or cancelled; it reports this router's tasks and does not dispatch. A queued task cancelled from the panel or a queued worker that starts arrives as a background worker-status notice, not a new request.
+                Call worker_status when the input asks whether a task is queued, running, delivered, or cancelled; it reports this router's tasks and does not dispatch. A task stopped from the panel or a queued worker that starts arrives as a background worker-status notice, not a new request.
+                When a worker must see an image, pass its local PNG/JPEG/WebP/GIF path in dispatch_worker or continue_worker images; the worker model must accept image input.
                 Call another tool only when the user asks for a skill; otherwise delegate.
 
                 ## Replies
@@ -75,7 +76,7 @@
               - id: tool-result-pruner
                 name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
           - id: superagent-lite-router
-            name: '@local/superagent-lite/router'
+            name: '@lmq00/superagent-lite/router'
     - id: preset-superagent-lite-worker
       name: '@deepseek-ai/dsh-agent-preset'
       config:

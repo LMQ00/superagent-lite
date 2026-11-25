@@ -1,22 +1,24 @@
 import { taskForSession, updateTask } from './task-store.js'
 import { runCommand } from './process.js'
+import { imageBlocks, imagesParameter } from './message-images.js'
 
 export const reportToolName = 'report_task'
 
 export function createReportTool(ctx, agent, taskId, admit, onReported) {
   return {
     name: reportToolName,
-    description: 'Finish a report-only task: send the router the conclusion and evidence of a diagnosis, analysis, lookup, or read-only inspection. Use it instead of creating a worktree, committing, or requesting review; it ends the task without a branch, commit, review, or pull request.',
+    description: 'Finish a report-only task: send the router the conclusion and evidence of a diagnosis, analysis, lookup, or read-only inspection. Use it instead of creating a worktree, committing, or requesting review; it ends the task without a branch, commit, review, or pull request. Pass local PNG/JPEG/WebP/GIF paths in images to attach them to the conclusion; the router model must accept image input, and a path cannot be a URL or a GUI upload.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
         report: { type: 'string', description: 'Conclusion and evidence: findings, the files or checks actually inspected, and remaining risk.' },
+        images: imagesParameter,
       },
       required: ['report'],
     },
     output: { schema: { type: 'string' }, render: (_args, text) => [{ type: 'text', text }] },
-    async execute({ report }, exec) {
+    async execute({ report, images }, exec) {
       const task = await taskForSession(taskId, agent.id)
       if (exec.agent !== agent || !admit() || !task || task.status !== 'running') throw new Error('No active report-only worker')
       if (task.mode !== 'report') throw new Error('This task is not report-only')
@@ -32,7 +34,8 @@ export function createReportTool(ctx, agent, taskId, admit, onReported) {
         }
       }
       const message = `Report-only task ${taskId} (no branch, commit, review, or pull request):\n${text}`
-      await ctx.subagents.sendMessage(agent, task.parentSessionId, [{ type: 'text', text: message }], { signal: exec.signal })
+      const imageContent = await imageBlocks(ctx, images, ctx.workingDirectory?.get(agent.session), exec.signal)
+      await ctx.subagents.sendMessage(agent, task.parentSessionId, [{ type: 'text', text: message }, ...imageContent], { signal: exec.signal })
       await updateTask(taskId, {
         status: 'completed',
         report: { message: text, at: new Date().toISOString() },

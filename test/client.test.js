@@ -108,11 +108,16 @@ const tab = (tree, label) => nodes(tree).find(node => node.type === 'button' && 
 const buttons = (tree, label) => nodes(tree).filter(node => node.type === 'button' && text(node) === label)
 const select = (tree, predicate) => nodes(tree).find(node => node.type === 'select' && predicate?.(node))
 
-const task = overrides => ({
-  id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', mode: 'change', status: 'unmerged',
-  workerSessionId: 'worker-a', parentSessionId: 'parent-a', updatedAt: '2026-01-01T00:00:00.000Z',
-  ...overrides,
-})
+const task = overrides => {
+  const value = {
+    id: 'a', title: 'Task A', teamId: 'alpha', projectRoot: '/one', mode: 'change', status: 'unmerged',
+    workerSessionId: 'worker-a', parentSessionId: 'parent-a', updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+  if (value.stoppable === undefined) value.stoppable = value.status === 'running' || value.queued === true
+  if (value.deletable === undefined) value.deletable = true
+  return value
+}
 
 const gitFacts = overrides => ({
   branch: 'sl-a', baseBranch: 'main', reviewed: true, approved: true, merged: false, hasCommits: true,
@@ -145,7 +150,7 @@ test('renders the six status categories, navigation and session links without a 
     openSession: target => opened.push(target),
     language: 'zh',
   })
-  assert.equal(board.definition.id, '@local/superagent-lite')
+  assert.equal(board.definition.id, '@lmq00/superagent-lite')
   const sidebar = board.slots.get('sidebar.panellist')
   assert.equal(sidebar.options.label(), '项目任务')
 
@@ -203,10 +208,11 @@ test('keeps the task list scrollable beside the settings tab', async () => {
   await flush()
   const tree = board.render()
   const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
-  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置', '记忆系统'])
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置', '记忆系统', '分支 / worktree'])
   assert.equal(tabs[0].props['aria-selected'], true)
   assert.equal(tabs[1].props['aria-selected'], false)
   assert.equal(tabs[2].props['aria-selected'], false)
+  assert.equal(tabs[3].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
@@ -812,7 +818,7 @@ test('a queued task carries its own label and becomes running in place when a sl
   board.dispose()
 })
 
-test('filters queued tasks into their own group while keeping the queued label and cancel action', async () => {
+test('filters queued tasks into their own group while keeping the queued label and stop action', async () => {
   let tasks = [
     task({ id: 'a', title: 'Task A', status: 'running', queued: true, workerSessionId: 'worker-a' }),
     task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
@@ -822,11 +828,12 @@ test('filters queued tasks into their own group while keeping the queued label a
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
-      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
-        assert.equal(options.method, 'DELETE')
-        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
-        tasks = tasks.filter(item => item.id !== removed)
-        return { ok: true, json: async () => ({ deleted: removed }) }
+      if (path === '/superagent-lite/tasks' && options.method === 'POST') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'stop' })
+        tasks = tasks.map(item => item.id === 'a'
+          ? { ...item, status: 'failed', cancelled: true, queued: false, stoppable: false }
+          : item)
+        return { ok: true, json: async () => ({ stopped: 'a', status: 'cancelled', cancelled: true, updatedAt: '2026-01-02T00:00:00.000Z' }) }
       }
       if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
       return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
@@ -847,8 +854,8 @@ test('filters queued tasks into their own group while keeping the queued label a
   assert.deepEqual(byClass(tree, 'sl-task__title').map(node => text(node)), ['Task A'])
   const row = byClass(tree, 'sl-task').find(item => text(item).includes('Task A'))
   assert.match(text(row), /排队中/)
-  const cancelIn = target => nodes(target).find(node => node.type === 'button' && text(node) === '取消')
-  assert.equal(cancelIn(row).props.title, '取消排队中的任务')
+  const stopIn = target => nodes(target).find(node => node.type === 'button' && text(node) === '停止')
+  assert.equal(stopIn(row).props.title, '停止 worker 并释放并发名额')
 
   filterButton(tree, '全部').props.onClick()
   tree = board.render()
@@ -857,7 +864,7 @@ test('filters queued tasks into their own group while keeping the queued label a
 
   filterButton(tree, '排队中').props.onClick()
   tree = board.render()
-  cancelIn(byClass(tree, 'sl-task')[0]).props.onClick()
+  stopIn(byClass(tree, 'sl-task')[0]).props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
@@ -865,8 +872,8 @@ test('filters queued tasks into their own group while keeping the queued label a
   tree = board.render()
   assert.doesNotMatch(text(tree), /Task A/)
   assert.match(text(tree), /该状态下暂无任务/)
-  assert.match(text(tree), /已取消排队任务/)
-  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
+  assert.match(text(tree), /任务已停止/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks' && request.options.method === 'GET').length, 1)
   board.dispose()
 })
 
@@ -1190,7 +1197,7 @@ test('offers delete branch on every row that still has a worker branch', async (
   board.dispose()
 })
 
-test('deletes a task from the panel after confirmation and disables deletion for a running worker', async () => {
+test('deletes a task after confirmation and allows deleting a running worker', async () => {
   let tasks = [
     task({ id: 'a', title: 'Task A', status: 'answer', mode: 'report', workerSessionId: 'worker-a' }),
     task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
@@ -1217,13 +1224,12 @@ test('deletes a task from the panel after confirmation and disables deletion for
   const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
   const deleteIn = row => nodes(row).find(node => node.type === 'button' && text(node) === '删除任务')
   const runningDelete = deleteIn(rowFor('Task B'))
-  assert.equal(runningDelete.props.disabled, true)
-  assert.match(runningDelete.props.title, /worker 仍在运行/)
+  assert.equal(runningDelete.props.disabled, false)
   assert.equal(deleteIn(rowFor('Task C')).props.disabled, false)
   deleteIn(rowFor('Task A')).props.onClick()
   tree = board.render()
   assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 1)
-  assert.match(text(tree), /任务记录将从面板移除/)
+  assert.match(text(tree), /运行中或排队中的 worker 会先被停止/)
   button(tree, '删除').props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
@@ -1233,13 +1239,14 @@ test('deletes a task from the panel after confirmation and disables deletion for
   assert.doesNotMatch(text(tree), /Task A/)
   assert.match(text(tree), /Task B/)
   assert.match(text(tree), /操作已完成/)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks' && request.options.method === 'GET').length, 1)
   const deletion = requests.find(request => request.options.method === 'DELETE')
   assert.equal(deletion.path, '/superagent-lite/tasks?taskId=a')
   assert.equal(deletion.options.credentials, 'same-origin')
   board.dispose()
 })
 
-test('cancels a queued task in place without reloading the task list', async () => {
+test('stops a running or queued task in place without reloading the task list', async () => {
   let tasks = [
     task({ id: 'a', title: 'Task A', status: 'running', queued: true, workerSessionId: 'worker-a' }),
     task({ id: 'b', title: 'Task B', status: 'running', workerSessionId: 'worker-b' }),
@@ -1248,11 +1255,12 @@ test('cancels a queued task in place without reloading the task list', async () 
   const board = setup({
     fetch: async (path, options = {}) => {
       requests.push({ path, options })
-      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
-        assert.equal(options.method, 'DELETE')
-        const removed = new URL(path, 'http://localhost').searchParams.get('taskId')
-        tasks = tasks.filter(item => item.id !== removed)
-        return { ok: true, json: async () => ({ deleted: removed }) }
+      if (path === '/superagent-lite/tasks' && options.method === 'POST') {
+        assert.deepEqual(JSON.parse(options.body), { taskId: 'a', action: 'stop' })
+        tasks = tasks.map(item => item.id === 'a'
+          ? { ...item, status: 'failed', cancelled: true, queued: false, stoppable: false }
+          : item)
+        return { ok: true, json: async () => ({ stopped: 'a', status: 'cancelled', cancelled: true, updatedAt: '2026-01-02T00:00:00.000Z' }) }
       }
       if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks }) }
       return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
@@ -1263,37 +1271,38 @@ test('cancels a queued task in place without reloading the task list', async () 
   await flush()
   let tree = board.render()
   const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
-  const cancelIn = row => nodes(row).find(node => node.type === 'button' && text(node) === '取消')
-  assert.ok(cancelIn(rowFor('Task A')))
-  assert.equal(cancelIn(rowFor('Task B')), undefined)
+  const stopIn = row => nodes(row).find(node => node.type === 'button' && text(node) === '停止')
+  assert.ok(stopIn(rowFor('Task A')))
+  assert.ok(stopIn(rowFor('Task B')))
   assert.match(text(rowFor('Task A')), /排队中/)
 
-  cancelIn(rowFor('Task A')).props.onClick()
+  stopIn(rowFor('Task A')).props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
   }
   tree = board.render()
-  assert.doesNotMatch(text(tree), /Task A/)
+  assert.match(text(tree), /Task A/)
   assert.match(text(tree), /Task B/)
-  assert.match(text(tree), /已取消排队任务/)
+  assert.match(text(tree), /已取消/)
+  assert.match(text(tree), /任务已停止/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
-  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks').length, 1)
-  const cancellation = requests.find(request => request.options.method === 'DELETE')
-  assert.equal(cancellation.path, '/superagent-lite/tasks?taskId=a')
-  assert.equal(cancellation.options.credentials, 'same-origin')
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/tasks' && request.options.method === 'GET').length, 1)
+  const stop = requests.find(request => request.options.method === 'POST')
+  assert.equal(stop.path, '/superagent-lite/tasks')
+  assert.equal(stop.options.credentials, 'same-origin')
+  assert.equal(stop.options.headers['content-type'], 'application/json')
   board.dispose()
 })
 
-test('keeps a queued task and shows the host error when cancellation is refused', async () => {
+test('keeps a task and shows the host error when stopping is refused', async () => {
   const board = setup({
     fetch: async (path, options = {}) => {
-      if (path.startsWith('/superagent-lite/tasks?taskId=')) {
-        assert.equal(options.method, 'DELETE')
-        return { ok: false, json: async () => ({ error: 'The task is no longer queued' }) }
+      if (path === '/superagent-lite/tasks' && options.method === 'POST') {
+        return { ok: false, json: async () => ({ error: 'The worker did not stop in time' }) }
       }
       if (path === '/superagent-lite/tasks') {
-        return { ok: true, json: async () => ({ tasks: [task({ id: 'a', title: 'Task A', status: 'running', queued: true })] }) }
+        return { ok: true, json: async () => ({ tasks: [task({ id: 'a', title: 'Task A', status: 'running' })] }) }
       }
       return { ok: true, json: async () => ({ settings: { workerModel: null, maxWorkers: 3 } }) }
     },
@@ -1303,14 +1312,14 @@ test('keeps a queued task and shows the host error when cancellation is refused'
   await flush()
   let tree = board.render()
   const row = byClass(tree, 'sl-task').find(item => text(item).includes('Task A'))
-  nodes(row).find(node => node.type === 'button' && text(node) === '取消').props.onClick()
+  nodes(row).find(node => node.type === 'button' && text(node) === '停止').props.onClick()
   for (let step = 0; step < 4; step += 1) {
     board.render()
     await flush()
   }
   tree = board.render()
   assert.match(text(tree), /Task A/)
-  assert.match(text(tree), /The task is no longer queued/)
+  assert.match(text(tree), /The worker did not stop in time/)
   board.dispose()
 })
 
@@ -1372,8 +1381,8 @@ test('selects several tasks and deletes them in one confirmed batch', async () =
   const rowFor = title => byClass(tree, 'sl-task').find(row => text(row).includes(title))
   const checkIn = row => nodes(row).find(node => node.type === 'input' && node.props.type === 'checkbox')
   const runningCheck = checkIn(rowFor('Task B'))
-  assert.equal(runningCheck.props.disabled, true)
-  assert.match(runningCheck.props.title, /worker 仍在运行/)
+  assert.equal(runningCheck.props.disabled, false)
+  assert.equal(runningCheck.props.title, undefined)
   checkIn(rowFor('Task A')).props.onChange()
   checkIn(rowFor('Task C')).props.onChange()
   tree = board.render()
@@ -1455,4 +1464,129 @@ test('keeps failed task selections for retry and shows the host error', async ()
   assert.match(text(tree), /所选任务已删除/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
   board.dispose()
+})
+
+test('the branches tab lists only plugin objects and deletes each kind in place', async () => {
+  const requests = []
+  const rows = [
+    {
+      projectRoot: '/one', branch: 'sl-feature', path: '/one/.agents/worktrees/sl-feature',
+      task: { id: 'a', title: 'Task A', status: 'running', running: true },
+      canDeleteWorktree: false, worktreeReason: 'The task is still running; stop its worker before deleting the worktree',
+      canDeleteBranch: false, branchReason: 'The task is still running; stop its worker before deleting the branch',
+    },
+    {
+      projectRoot: '/one', branch: 'sl-delivered', path: '/one/.agents/worktrees/sl-delivered',
+      task: { id: 'b', title: 'Task B', status: 'unmerged', running: false },
+      canDeleteWorktree: true,
+      canDeleteBranch: false,
+      branchReason: 'Delete the worktree at /one/.agents/worktrees/sl-delivered before deleting its branch',
+    },
+    {
+      projectRoot: '/one', branch: 'sl-orphan',
+      canDeleteWorktree: false, worktreeReason: 'This branch has no worktree to delete',
+      canDeleteBranch: true,
+    },
+  ]
+  let rejectBranchDelete = false
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task({ projectRoot: '/one' })] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      if (path.startsWith('/superagent-lite/branches') && options.method === 'DELETE') {
+        const params = new URL(path, 'http://localhost').searchParams
+        if (params.get('kind') === 'worktree') {
+          assert.equal(params.get('projectRoot'), '/one')
+          assert.equal(params.get('branch'), 'sl-delivered')
+          assert.equal(params.get('path'), '/one/.agents/worktrees/sl-delivered')
+          return {
+            ok: true,
+            json: async () => ({
+              branch: 'sl-delivered',
+              path: '/one/.agents/worktrees/sl-delivered',
+              deleted: true,
+              row: {
+                projectRoot: '/one', branch: 'sl-delivered',
+                task: { id: 'b', title: 'Task B', status: 'unmerged', running: false },
+                canDeleteWorktree: false, worktreeReason: 'This branch has no worktree to delete',
+                canDeleteBranch: true,
+              },
+              message: 'Deleted the worktree at /one/.agents/worktrees/sl-delivered for sl-delivered.',
+            }),
+          }
+        }
+        assert.equal(params.get('branch'), 'sl-orphan')
+        if (rejectBranchDelete) {
+          rejectBranchDelete = false
+          return { ok: false, json: async () => ({ error: 'The worker branch sl-orphan is still checked out' }) }
+        }
+        return { ok: true, json: async () => ({ branch: 'sl-orphan', deleted: true, message: 'Deleted the worker branch sl-orphan.' }) }
+      }
+      if (path === '/superagent-lite/branches') return { ok: true, json: async () => ({ branches: rows }) }
+      return { ok: true, json: async () => ({ records: [] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '分支 / worktree').props.onClick()
+  tree = board.render()
+  assert.equal(tab(tree, '分支 / worktree').props['aria-selected'], true)
+  assert.match(text(tree), /正在加载任务/)
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /只显示和删除本插件创建的 worktree/)
+  for (const branch of ['sl-feature', 'sl-delivered', 'sl-orphan', 'Task A', 'Task B', '无任务记录']) {
+    assert.match(text(tree), new RegExp(branch))
+  }
+  assert.equal(byClass(tree, 'sl-task').length, 3)
+
+  let delWorktree = buttons(tree, '删除 worktree')
+  const delBranch = buttons(tree, '删除分支')
+  assert.deepEqual(delWorktree.map(node => node.props.disabled), [true, false, true])
+  assert.match(delWorktree[0].props.title, /still running/)
+  assert.match(delBranch[1].props.title, /Delete the worktree/)
+  assert.equal(delBranch[2].props.disabled, false)
+
+  // Deleting the branch without a worktree removes only that row in place.
+  rejectBranchDelete = true
+  delBranch[2].props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /删除分支/)
+  assert.match(text(tree), /sl-orphan/)
+  button(tree, '删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /still checked out/)
+  assert.equal(byClass(tree, 'sl-task').length, 3)
+  button(tree, '删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.equal(byClass(tree, 'sl-task').some(row => text(row).includes('sl-orphan')), false)
+  assert.equal(byClass(tree, 'sl-task').length, 2)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
+
+  // Deleting the worktree keeps the branch row and enables its branch action.
+  buttons(tree, '删除 worktree')[1].props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /删除 worktree/)
+  assert.match(text(tree), /sl-delivered · \/one\/\.agents\/worktrees\/sl-delivered/)
+  button(tree, '删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.equal(byClass(tree, 'sl-task').length, 2)
+  const delivered = byClass(tree, 'sl-task').find(row => text(row).includes('sl-delivered'))
+  assert.ok(delivered)
+  assert.doesNotMatch(text(delivered), /\/one\/\.agents\/worktrees\/sl-delivered/)
+  assert.match(text(delivered), /无 worktree/)
+  delWorktree = buttons(tree, '删除 worktree')
+  assert.equal(delWorktree[1].props.disabled, true)
+  assert.equal(buttons(tree, '删除分支')[1].props.disabled, false)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/branches').length, 1)
+  board.dispose()
+  assert.ok(requests.filter(request => request.options.signal).every(request => request.options.signal.aborted))
 })

@@ -4,13 +4,13 @@
 
 ## 运行什么
 
-Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:16-32`）。
+Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-134`、`index.js:1-26`）。
 
 | 组件 | 作用 |
 | --- | --- |
 | DSH Web Host | 运行插件、Session 和面板 |
-| `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
-| 记忆 | 全局/项目记忆、全局/项目 skill、全局知识库，以及 change worker 的原始归档和 memory 读取的会话记录 |
+| `@lmq00/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
+| 记忆 | 全局/项目记忆、全局/项目 skill（项目 skill 最多 10 个）、全局知识库，以及 change worker 的原始归档和 memory 读取的会话记录 |
 | 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/<skill名>/SKILL.md`，让 Git Worktree 里或非 Git 项目目录里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断读取这些 skill 的 `author` frontmatter |
 | Worktree 服务 | 为每个 Git Task 创建并保留一个 Worktree；非 Git 项目不使用 |
 | GitHub CLI `gh` | 可选；只为面板的「提交 PR」动作服务；合并是本地 Git 操作，不需要账号 |
@@ -99,22 +99,22 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
-| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
-| 排队变化 | 排队中的 Worker 开始执行、排队中的 Task 被取消时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。取消会在 `tasks/cancelled/` 留下墓碑供 `worker_status` 查询，面板列表仍移除该行 |
-| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/` |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；运行中或排队中提供停止；每行提供删除任务（运行中或排队中会先停止再删除，合并或发布中禁用）。任务行可勾选后批量删除。「分支 / worktree」标签页只列本插件创建的 Worktree 和 `sl-*` 分支，分别提供删除 Worktree 与删除分支（运行中禁用）；删除成功后就地更新该标签页。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
+| 停止变化 | 任务被停止时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。停止把 Task 写成 `cancelled` 终态并保留记录，面板显示「已取消」标签；worker 被中断，并发名额立即释放，排队任务可以启动 |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；旧版本 `tasks/cancelled/` 的排队取消墓碑仍可被 `worker_status` 查询；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/`；Worktree 在 `<项目根>/.agents/worktrees/`，由面板「分支 / worktree」标签页单独管理 |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；skill 只放固定流程，知识、事实、经验、结论写知识库，项目 skill 同时最多 10 个，达到上限后 memory 拒绝新建并整次不写字段和 skill；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、记忆读取或删除、Git 动作、任务删除或排队取消成功 |
-| `400` | 任务 ID、JSON 请求体、项目根或记忆删除目标（kind/scope/field/name/id）不对 |
+| `200` | 列表、记忆读取或删除、分支 / Worktree 读取或删除、Git 动作、任务停止/删除成功 |
+| `400` | 任务 ID、JSON 请求体、项目根或分支删除目标（kind/projectRoot/branch/path）、记忆删除目标（kind/scope/field/name/id）不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
-| `404` | Git 详情、任务删除或排队取消找不到 Task |
+| `404` | Git 详情、任务停止/删除找不到 Task |
 | `405` | 方法不被该端点接受 |
-| `409` | Git 动作被拒绝或失败、任务删除或排队取消被拒绝，或记忆读取/删除失败 |
+| `409` | Git 动作被拒绝或失败、分支 / Worktree 删除被拒绝、任务停止/删除被拒绝，或记忆读取/删除失败 |
 | `413` | Git 动作请求体超过 4 KB |
 | `415` | 动作请求体不是 `application/json` |
 
@@ -138,7 +138,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发（`src/board.js:60-74`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:128-145`、`src/launch-queue.js:51-118`、`src/launch-queue.js:189-194`、`index.js:304-307`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -173,10 +173,15 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The worker branch is still checked out in the worktree at <path>; remove it before deleting the branch` | 分支被其他工作树检出；先移除那个工作树再删除分支 |
 | `The worker worktree at <path> still exists; remove it before deleting the branch` | `git worktree remove` 后工作树仍在；手动清理后再重试 |
 | `Could not remove the worker worktree at <path>: ...` | 工作树移除失败；按错误信息处理占用或权限问题后重试 |
-| `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
+| `The worker is still running` | 删除时停止后 Worker 仍在运行；稍后重试停止或删除，或打开 Worker 会话检查 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
-| `The task is no longer queued` | 取消前任务已获得并发名额并开始启动；刷新面板后按运行中任务处理，不能再取消 |
-| `Only settled, unpublished worktrees can be resumed` | Git 项目没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；非 Git 项目仍可用 `review-required`、`failed` 恢复；否则重新派发 |
+| `The task has already finished` | 停止或删除一个已经进入完成/失败等终态的 Task；刷新面板后不再显示停止按钮 |
+| `The worker did not stop in time; stop the task again before deleting it` | 删除前等待 worker 离开运行态超过 10 秒；记录保留，可重试停止或删除 |
+| `Task <id> is still queued; its worker has not started, so the follow-up was not delivered. Retry continue_worker after it starts.` | Task 还在排队或启动中，没有 Worker 回合可唤醒；这次 follow-up 未记录也未投递，Worker 启动后再追加 |
+| `Task <id> is already merged; dispatch new work instead of resuming it` | Task 已合并或已完成；已发布的工作不再续派，新需求重新派发 |
+| `The worker branch for task <id> was deleted; dispatch new work instead of resuming it` | worker 分支已被删除；重新派发任务，让新 worker 建自己的分支 |
+| `The worktree recorded for task <id> is gone; dispatch new work instead of resuming it` | Task 记录的 Worktree 目录已不存在；重新派发，不要再恢复旧路径 |
+| `Task <id> is <status> and can no longer be resumed; dispatch new work instead` | Task 处于 `awaiting-ci`、`publishing`、`merging`、`delivery-blocked` 等已进入交付或交付失败的状态，不再是可续派的未发布工作；等它结束或重新派发 |
 | `Merging is performed by a newly dispatched merge worker; this task may only push or open a pull request.` | change worker 的 `land` 只授权推送/PR；合并请求要由 router 派发 `mode=merge` 的 merge worker |
 | `merge tasks require land=true` | `mode=merge` 必须携带用户本轮对合并的明确授权；不能用缺省 `land` 启动 merge worker |
 | `The base branch cannot be a merge target` | `branches` 里包含 base branch；改成待合并的 worker 分支或任务 ID |
@@ -189,6 +194,12 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `Report-only tasks must leave the project checkout unchanged` | 还原 checkout 改动后再调用 `report_task` |
 | `Report-only task ended without report_task` | 回合结束前必须调用 `report_task`；重新派发报告任务 |
 | `Only the active worker for this task can message its router` | `message_router` 是 Worker 工具，Router 不能调用 |
+| `Image "<path>" was not found` / `Image "<path>" could not be read: ...` | `images` 里的路径按当前会话目录解析；修正路径，或改用绝对路径 |
+| `Image "<path>" is not a PNG, JPEG, WebP, or GIF file` | 只接受这四种格式；转换后再附带 |
+| `Image messages need the Host attachment store, which is not mounted` | 当前 Host 没有挂载附件服务；恢复 `dsh-attachment-local` 后重启 |
+| `Image "<path>" could not be attached: ...` | 附件解码、尺寸或写入失败；按错误信息压缩图片或检查 `~/.dsh/attachments/` 的权限 |
+| `Model "<model>" does not support image input.` | 接收方模型没有声明 image 输入；换用图片模型，或不发图片 |
+| `This Host accepts at most N images in one message` / `The attached images exceed this Host's N-byte message limit` | 附件服务的单条消息限制更小；减少图片或压缩后再发 |
 | `The reviewer did not submit a usable verdict` | 重新运行审查；Reviewer 必须调用 `submit_review` 写「通过」或具体意见 |
 | `The pull request was closed; reopen it or dispatch a new task` | 在 GitHub 重新打开 PR，或派发新任务 |
 | `This branch is already merged` | 分支已合并；不需要再执行合并或发送 |

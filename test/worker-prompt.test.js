@@ -25,6 +25,8 @@ test('change tasks are told to work in a worktree, commit and request independen
   assert.match(text, /The landing guard refuses those commands/)
   assert.match(text, /Landing authorization comes only from this task's record/)
   assert.match(text, /call message_router once with the final conclusion/)
+  assert.match(text, /message_router's images/)
+  assert.match(text, /review_worker_commit's images/)
 })
 
 test('an explicitly authorized change task may push but must not merge', () => {
@@ -130,6 +132,7 @@ test('report-only tasks are told to inspect in place and end with report_task', 
   assert.match(text, /Do not call create_worktree/)
   assert.match(text, /do not call review_worker_commit/)
   assert.match(text, /Call report_task once with the conclusion and evidence/)
+  assert.match(text, /report_task's images/)
   assert.doesNotMatch(text, /Commit on the assigned branch/)
   assert.doesNotMatch(text, /call message_router with the final conclusion/)
 })

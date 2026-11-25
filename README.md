@@ -7,22 +7,20 @@
 - 不属于任何 Git 仓库的文件夹同样可以走完 change 和 report 流程：worker 直接在该目录执行，不建分支、Worktree 或提交；`review_worker_commit` 改为审查当前项目文件和实际工作区内容，任务以审查通过为完成。Git 专有的合并、发送 PR 和删除分支在非 Git 目录不可用。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 可在项目 checkout 里只读检查，也可用网页搜索、网页读取和知识库查询做资料调研，最后用 `report_task` 把结论和证据交回 router；worker 仍按仓库 `AGENTS.md` 的约定执行，但该约定不能扩大只读任务的授权。
-- 想知道某个任务是排队中、运行中、已交付、已取消还是失败，直接问 router；它用 `worker_status` 查询本会话派发的任务，不重新派工。排队中的任务被取消、排队中的 worker 开始执行时，router 会收到后台状态通知。
+- 想知道某个任务是排队中、运行中、已交付、已取消还是失败，直接问 router；它用 `worker_status` 查询本会话派发的任务，不重新派工。任务被停止、排队中的 worker 开始执行时，router 会收到后台状态通知。
 
 ## 安装
 
 前置：DSH `0.2.2-rc.5`、Node.js 24.9 或更新、Git。发布到 GitHub 还需要已登录 `github.com` 的 `gh`。
 
+包发布在 npm registry，直接从 registry 安装，不需要 clone 仓库：
+
 ```bash
-git clone https://github.com/LMQ00/superagent-lite.git
-cd superagent-lite
-npm test
+npm i @lmq00/superagent-lite
 ```
 
-`npm test` 全部通过（`fail 0`）后再安装：
-
 1. 打开 DSH Web 的插件管理器，点「添加插件」。
-2. 输入本仓库的本地绝对路径，安装并启用这个 bundle。
+2. 输入 `@lmq00/superagent-lite`，从 npm registry 安装并启用这个 bundle。
 3. 新建会话，在预设里选「Superagent 轻量版」。
 
 安装成功后，新会话的预设列表出现「Superagent 轻量版」。
@@ -31,8 +29,9 @@ npm test
 
 在「Superagent 轻量版」会话里直接说清要改什么。router 用一句话回复是否已派工和下一步；实现细节留在 worker 的报告里，不刷在对话里。
 
-- 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。
+- 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。任务 BLOCKED 后会恢复同一个 worker（即使它还没创建 worktree）；任务还在排队时，`continue_worker` 会明确要求稍后再试。
 - 只读的诊断、分析、查找可以直接问；router 用 report 模式派工，worker 可以联网检索和读取网页做调研，任务结束后不留分支和提交。
+- 消息可以携带本地图片：router 在 `dispatch_worker` / `continue_worker` 的 `images` 里传本地 PNG/JPEG/WebP/GIF 路径，worker 在 `message_router`、`report_task`、`review_worker_commit` 的 `images` 里传路径。插件把图片存进 Host 附件库，再作为消息内容发给对方；接收方模型必须声明支持图片输入。
 - 在非 Git 目录里也可以直接说清要改什么：派发、执行、审查和记忆走与 Git 项目相同的状态机，只是不建分支、Worktree 和提交；审查通过后任务直接完成。合并、发送 PR 和 `land` 授权需要 Git 仓库。
 - 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
 - 合并与发送 PR 需要动作执行时 Session 具有完整文件访问权限；本地合并还需要 router 会话仍在运行。
@@ -41,35 +40,37 @@ npm test
 
 记忆分全局和项目两层，项目记忆按项目根隔离，不跨项目混用；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker（包括 report、merge 这类只读或受控 worker）和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
 
-- 全局记忆保存用户画像和多个所有项目共用的 skill；项目记忆保存职责、定位和多个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；每个 skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
+- 全局记忆保存用户画像和多个所有项目共用的 skill；项目记忆保存职责、定位和最多 10 个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；每个 skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
+- 记忆内容按用途分工：知识、事实、经验、结论和观察写进全局知识库；skill 只放可复用的固定流程或方法步骤。项目 skill 同时最多 10 个，达到上限后 memory 不能再新建：写入路径会拒绝并返回明确错误，提示词要求复用已有 memory 管理的项目 skill 名字返回完整新内容，或把内容写进知识库；超出上限的那次提取不会写入任何记忆字段或 skill。
 - 每个 skill 用自己的名字和目录：全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/<skill名>/SKILL.md`。memory 写入的 skill 在 frontmatter 里带 `author: memory`；同名冲突不会覆盖不由 memory 管理的 skill。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它们的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
 - 既有的 `superagent-project-memory` 和 `superagent-shared-memory` 继续可用：它们按旧名字读取，下一次 memory 写入时会补上 `author: memory`。其他按内容命名的新 skill 各自独立并存。
-- 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。归属按 skill 文件里的作者判断：新增、修改或删除的 skill 全部带 `author: memory` 时，这次 catalog 变化不注入已有会话；作者缺失的 skill 按普通 skill 处理，变化照常发布。
+- 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。归属按 skill 文件里的作者判断：新增、修改或删除的 skill 全部带 `author: memory` 时，这次 catalog 变化不注入已有会话；判定只看会话（agent）和 skill 作者，与任务状态无关，running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入。作者缺失的 skill 按普通 skill 处理，变化照常发布。
 - 知识库是全局的，只存可复用、广泛适用的知识，内容不注入角色上下文。Worker、Reviewer 和 memory 角色用 `knowledge_query` 按关键词查询，结果带编号和匹配关键词前后的上下文片段；再用 `knowledge_get` 按编号读取完整条目。只有 memory 角色能用 `knowledge_write` 新增、纠正或删除；安装 owner 也可以在面板里删除单条知识，删除后查询不再返回该条目。知识库保存在 `~/.dsh/superagent-lite/memory/knowledge.json`。
 - 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。memory 不再收到整段对话：触发消息只给会话记录的可读路径和任务、角色、分支等元信息，memory 自己用 `read` / `grep` 按需读取后返回需要更新的记忆字段；插件只写回发生变化的字段和 skill。没有可复用的结论就不写，也不把写入条数当指标；记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。没用的知识只会污染知识库，宁可不写。
 - memory 读取的会话记录写在 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，在触发时由 Host 写入完整会话和最终报告工具名；Worker 每一轮的原始事件仍按回合归档在 `~/.dsh/superagent-lite/task/archive/`，保留 Session 序号和轮内编号。归档只由 Host 写入，只有 memory 角色拿到记录路径并读取，其他模型工具没有专用读取入口。
 
 ## 面板
 
-侧栏打开「项目任务」。面板分「项目任务」「设置」「记忆系统」三个标签页，任务列表在固定面板的滚动区里滚动，页面本身不会被撑长。任务列表是唯一的状态分类来源：顶部有刷新按钮，有任务时出现「全部」加未合并、运行中、未审查、已完成、失败、仅回答六个状态筛选，以及单独筛出排队任务的「排队中」筛选、团队和项目筛选，下面按这六类分组；「排队中」不是第七个状态，只筛出等待并发名额的任务，它们仍归在「运行中」组并计入运行中计数。
+侧栏打开「项目任务」。面板分「项目任务」「设置」「记忆系统」「分支 / worktree」四个标签页，任务列表在固定面板的滚动区里滚动，页面本身不会被撑长。任务列表是唯一的状态分类来源：顶部有刷新按钮，有任务时出现「全部」加未合并、运行中、未审查、已完成、失败、仅回答六个状态筛选，以及单独筛出排队任务的「排队中」筛选、团队和项目筛选，下面按这六类分组；「排队中」不是第七个状态，只筛出等待并发名额的任务，它们仍归在「运行中」组并计入运行中计数。
 
 - 状态由任务记录加事实推导：当前提交已审查未合并是「未合并」；提交没有通过审查是「未审查」；已合入基础分支、非 Git 任务审查通过、worker 完成但没有提交是「已完成」，worker 工作树已不在时用记录的 reviewed HEAD 核对是否已进基础分支；report 任务一旦通过 `report_task` 交付结论就按「仅回答」收尾，不再进入审查或合并判断；审查记录属于同一项目的另一个任务、但提交相同，也只算已审查，并写回本任务。非 Git 任务没有分支、Worktree 和 Git 动作，审查通过即完成。
-- 任务行显示状态、标题、团队、项目、更新时间、任务 ID、router/worker 会话按钮和失败原因；有 PR 时给出链接。「未确认」标签表示记录仍在进行中，但对应的 worker 会话已经不在了；「排队中」表示 worker 正在等待并发名额。
+- 任务行显示状态、标题、团队、项目、更新时间、任务 ID、router/worker 会话按钮和失败原因；有 PR 时给出链接。「未确认」标签表示记录仍在进行中，但对应的 worker 会话已经不在了；「排队中」表示 worker 正在等待并发名额；「已取消」表示任务被用户停止，是 `cancelled` 终态，不是失败或交付阻塞。失联的 `starting`、`running` 或 `resuming` 记录超过 2 分钟没有活着的 worker 会话时，插件启动扫描和每次队列 pump 都会回收：先核对 Review 结论、worker 分支和 Worktree HEAD，Review 已通过且 HEAD 仍等于 reviewed HEAD 时落为「未合并」（`awaiting-merge`），否则落为失败并写明是缺 turn/end 还是会话在恢复前结束；不需要手动改任务文件。
 - 未合并行有「合并」和「提交 PR」。合并弹窗列出项目工作区的本地分支供你选择，确认后只做本地 `git merge --no-ff`，不需要 `gh` 账号。
 - 凡是还有 worker 分支的任务行都有「删除分支」，已合并、已交付 PR 和未合并的分支都可以删除。确认弹窗显示分支名；未合并分支会提示删除会丢弃分支及其工作树且无法恢复。Host 先移除该任务登记且干净的工作树，再删除分支；任务仍在运行、工作树有未提交改动、工作树移除失败或移除后仍存在、分支被其他工作树检出时拒绝并返回明确错误。删除成功后该行按 Host 返回的最新视图就地更新，不重新加载列表。
-- 「排队中」任务另有「取消」：点击后立即从队列移除，不再派发执行，不弹确认框；只移除任务记录和 worker 会话映射，留下一条不显示在面板里的 `cancelled` 记录供 router 的 `worker_status` 查询，worker 分支和工作树会保留。用「排队中」筛选后，这些行仍保留「排队中」标签和「取消」按钮；运行中或已交付的任务没有取消入口。
-- 每行有「删除任务」：运行中的任务不能删除，失联的「未确认」任务可以；确认后只移除任务记录和 worker 会话映射，worker 分支和工作树都会保留。
-- 任务行有复选框：勾选若干条后出现「删除所选」，确认一次即可批量删除；运行中的任务不能勾选。批量删除任务同样只移除任务记录和 worker 会话映射。
+- 运行中或排队中的任务有「停止」：面板发送 `POST /superagent-lite/tasks`（`action=stop`），Host 先把任务写成 `cancelled` 终态，中断 worker 会话，并立即释放它占用的并发名额，让排队任务按顺序启动；重复停止是幂等的。停止不删除记录，也不删除 worker 分支或工作树；已取消的任务仍显示在「失败」分组，并带「已取消」标签，以便和 worker 失败（`failed`）、交付阻塞（`delivery-blocked`/`merge-conflict`）区分。
+- 每行有「删除任务」：运行中或排队中的任务会先执行停止、确认 worker 已停，再移除任务记录和 worker 会话映射；合并或发布进行中的任务不能删除。worker 分支和工作树都会保留。
+- 任务行有复选框：勾选若干条后出现「删除所选」，确认一次即可批量删除；正在合并或发布的任务不能勾选，运行中或排队中的任务会先停止再删除。批量删除任务同样只移除任务记录和 worker 会话映射。
 - 「提交 PR」先检查 `gh` 账号，再从 remote 列表选择 GitHub 仓库。推送固定在审查过的 SHA 上；已有同一提交的 PR 就复用。PR 被关闭时任务显示「失败」，分支头变动会让审查记录过期、回到「未审查」，都不会自动重试。
 - 未审查行有「审查」：从对应 worker 会话直接启动一次独立审查。reviewer 用 `submit_review` 填内容，填「通过」就是通过审查，其他内容记为审查意见。
-- 没有单独的「Git 交付」区块。面板读取任务时会修正过期的审查/合并状态并回填同一提交的审查记录；合并和删除分支成功后按 Host 返回的最新视图就地更新该任务行，不重新加载列表。面板不做常规自动刷新，只在任务列表里还有「排队中」任务时静默轮询任务列表，并发名额释放后该行自动转为运行中；操作失败时错误文本显示在任务列表上方。
+- 「分支 / worktree」标签页只列出本插件创建的 Worktree（项目内 `.agents/worktrees/` 下）和 `sl-*` 工作分支：每行显示分支名、Worktree 路径、对应任务与状态；你自己的分支、其他 Worktree、master 等不会出现，也不能在这里删除。「删除 worktree」只移除工作树并保留分支；分支下的工作树移除后「删除分支」才可用。两个动作都有确认弹窗并写明不可恢复；删除成功后只就地更新当前行，不刷新页面、不重新加载列表。任务仍在运行时两个按钮都禁用并给出原因，服务端也会拒绝。
+- 没有单独的「Git 交付」区块。面板读取任务时会修正过期的审查/合并状态并回填同一提交的审查记录；合并和删除分支成功后按 Host 返回的最新视图就地更新该任务行，停止后按 Host 返回的状态就地更新该行，删除任务后就地移除该行，都不重新加载列表。面板不做常规自动刷新，只在任务列表里还有「排队中」任务时静默轮询任务列表，并发名额释放后该行自动转为运行中；操作失败时错误文本显示在任务列表上方。
 
 ## 设置
 
 「设置」标签页保存两项 worker 默认值，只允许安装 owner 读写。
 
 - worker 模型：填写服务商、模型和可选的推理强度；三项都留空时跟随 DSH 默认模型。保存后用于新启动的 worker，已有 worker 保持原选择。
-- 并发 worker 上限：1–16，默认 3。超出上限的新任务停在「排队中」，有空闲名额后按创建顺序启动；排队中的任务可以取消，取消后不会再被派发；review 是 worker 的子代理，不占额外名额。
+- 并发 worker 上限：1–16，默认 3。超出上限的新任务停在「排队中」，有空闲名额后按创建顺序启动；排队中或运行中的任务可以停止，停止后不会再被派发，并立即释放名额；review 是 worker 的子代理，不占额外名额。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 worker 会话时，插件启动和后续队列检查会回收记录；失联的 `starting`/`resuming` 也不再占用名额，交付事实齐全的回收为「未合并」，其余回收为失败。
 
 原始架构图按编号保存在 [docs/diagrams](docs/diagrams/)：001 术语与主流程、002 预设流程、003 记忆系统。
 
@@ -92,12 +93,14 @@ npm test
 - router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由 merge worker 执行：没有正在运行的 merge worker 时新派发一个，已有则追加给它；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
-- 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，排队中的任务可以取消，review 不占并发名额。Git 任务各自使用独立 Worktree 和检出；非 Git 目录没有 Worktree 隔离。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
-- `worker_status` 只查询本 Router Session 派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。排队取消后保留的 `cancelled` 记录只供状态查询，不进入面板任务列表。
+- 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，排队中的任务可以停止并立即释放名额，review 不占并发名额。Git 任务各自使用独立 Worktree 和检出；非 Git 目录没有 Worktree 隔离。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
+- `worker_status` 只查询本 Router Session 派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。停止后的任务保留 `cancelled` 记录并显示在面板的「失败」分组（带「已取消」标签）；旧版本排队取消留下的墓碑记录仍可被查询，但不进入面板任务列表。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
+- 「分支 / worktree」标签页只从仍留有任务记录的项目根推导对象：项目根下没有任务记录时，该项目的 worktree 和 `sl-*` 分支不会出现在面板里；删除分支前必须先在该标签页移除它的 worktree。
 - 审查不接收整份 patch：Git 项目由 reviewer 自己读 `base..head` 和改动文件；非 Git 项目由 reviewer 读当前项目文件。Reviewer 可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
 - 记忆是数据，不是指令；它不能添加需求或授予权限。记忆只由 memory 角色维护，「记忆系统」标签页只提供逐条删除（记忆字段、memory 管理的 skill 和知识条目），不提供写入入口；归档可能包含敏感对话，插件不把归档正文注入任何角色上下文，只把记录路径交给 memory 角色自行读取。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
+- 消息图片只接受本地文件路径，不接受 URL、base64 或 GUI 里直接上传的附件；路径按发送方的当前目录解析。接收方模型没有声明 image 输入时，Host 会拒绝发送，插件不会把图片改写成路径文本硬塞进消息。
 
 ## 文档
 

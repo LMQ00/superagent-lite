@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { readTask, taskForSession, updateTask } from './src/task-store.js'
-import { cancelQueuedWorker } from './src/worker-status.js'
+import { stopWorker } from './src/worker-stop.js'
+import { interruptWorker } from './src/worker-control.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
@@ -12,8 +13,9 @@ import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
 import { createMemoryPanelHandler } from './src/memory-panel.js'
+import { createBranchesPanelHandler } from './src/branches-panel.js'
 import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
-import { pumpWorkers } from './src/launch-queue.js'
+import { pumpWorkers, reclaimStaleTasks } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import { reconcileHostPatches } from './src/host-patch.js'
 import {
@@ -33,12 +35,13 @@ export async function apply(ctx) {
       return memoryAuthoredSkillNames(task?.projectRoot)
     },
   })
-  ctx.on('agent/pre-step', catalogGuard.preStep)
+  ctx.on('agent/pre-step', catalogGuard.preStep, { prepend: true })
   const gitManager = createGitManager(ctx)
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
-      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager, undefined, taskId => cancelQueuedWorker(ctx, taskId)),
+      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager, undefined,
+        (taskId, options) => stopWorker(ctx, taskId, options)),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
@@ -56,6 +59,14 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/memory',
       handler: createMemoryPanelHandler(web.connection),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/branches',
+      handler: createBranchesPanelHandler(web.connection, {
+        list: signal => gitManager.branches(signal),
+        removeWorktree: (target, signal) => gitManager.removeWorktree(target, signal),
+        removeBranch: (target, signal) => gitManager.removeBranch(target, signal),
+      }),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
@@ -98,9 +109,24 @@ export async function apply(ctx) {
     }
     const task = await taskForSession(undefined, agent.id)
     if (!task || task.parentSessionId !== agent.session.header.parentSession) return
+    let current = task
+    if (task.status === 'starting' || task.status === 'resuming') {
+      // A stop can win the race against this event; never resurrect it to running.
+      try {
+        current = await updateTask(task.id, latest =>
+          latest.status === 'starting' || latest.status === 'resuming' ? { status: 'running' } : {})
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+        interruptWorker(ctx, agent.id)
+        return
+      }
+    }
+    if (current.status === 'cancelled') {
+      interruptWorker(ctx, agent.id)
+      return
+    }
     if (!landingState(task.id)) initLanding(task)
-    const active = ['starting', 'resuming', 'running'].includes(task.status)
-    if (task.status === 'starting' || task.status === 'resuming') await updateTask(task.id, { status: 'running' })
+    const active = ['starting', 'resuming', 'running'].includes(current.status)
     const reportOnly = task.mode === 'report'
     const mergeMode = task.mode === 'merge'
     const state = { frozen: !active, path: task.git === false && !reportOnly ? task.projectRoot : task.worktree?.path }
@@ -274,4 +300,9 @@ export async function apply(ctx) {
     workers.clear()
     await Promise.allSettled(jobs)
   }, 'superagent-lite: worker lifecycle and delivery')
+
+  // A Host restart or a plugin reload can dispose worker Sessions without a
+  // `subagent/end`, so scan the persisted records once instead of leaving them
+  // unconfirmed until the next pump.
+  if (!lifetime.signal.aborted) track(reclaimStaleTasks(ctx))
 }

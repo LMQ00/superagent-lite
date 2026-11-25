@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/superagent-lite',
+  id: '@lmq00/superagent-lite',
   factory(require) {
     const { createElement: h, useEffect, useId, useRef, useState } = require('react')
     const id = 'superagent-lite'
@@ -22,18 +22,19 @@ window.__ModuleLoader__.load({
         noBranch: 'No merge target is available.', noRemote: 'No repository is available.',
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
         deleteUnmergedHint: 'This worker branch is not merged. Deleting it discards the branch and its worktree; this cannot be undone.',
-        deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
-        deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
+        deleteTaskTitle: 'Delete the task', deleteTaskHint: 'A running or queued worker is stopped first, then the task record is removed from this panel. Any worker branch and worktree are kept.',
+        deleteTaskUnavailable: 'A merge or publication is in progress; wait for it to finish before deleting the task.',
         selectTask: 'Select task', selectedCount: 'Selected',
         clearSelection: 'Clear selection', deleteSelected: 'Delete selected',
         batchTasksTitle: 'Delete selected tasks',
-        batchTasksHint: 'The selected task records will be removed from this panel. Any worker branch and worktree are kept.',
+        batchTasksHint: 'The selected task records will be removed from this panel. Running or queued workers are stopped first. Any worker branch and worktree are kept.',
         batchTasksDeleted: 'Selected tasks deleted.',
-        cancelQueued: 'Cancel', cancelQueuedTitle: 'Cancel the queued task', cancelQueuedDone: 'Queued task cancelled.',
+        stop: 'Stop', stopTitle: 'Stop the worker and release its concurrency slot', stopDone: 'Task stopped; the worker was interrupted and its concurrency slot is free.',
         confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
         failure: 'Failure',
+        cancelled: 'Cancelled',
         views: 'Panel views',
         workerSettingsTitle: 'Settings', workerSettingsIntro: 'Defaults for dispatched workers. Saved settings apply to new workers only.',
         workerSettingsLoadFailed: 'Could not load settings. Try refreshing.',
@@ -65,6 +66,18 @@ window.__ModuleLoader__.load({
         memoryGlobalHint: 'Shared by all projects.', memoryProjectHint: 'Scoped to the current project.',
         memoryKnowledgeHint: 'Shared by all projects and queried on demand.',
         memoryExpand: 'Show more', memoryCollapse: 'Show less',
+        branchesTab: 'Branches', branchesTitle: 'Branches / worktrees',
+        branchesIntro: 'Lists only the worktrees this plugin created under .agents/worktrees and its sl-* worker branches. Your own branches, other worktrees and master never appear here.',
+        branchesLoadFailed: 'Could not load branches. Try refreshing.',
+        branchesEmpty: 'No worktrees or branches created by this plugin.',
+        branchesOnlyPlugin: 'Only plugin-created worktrees and sl-* branches are shown or deletable here.',
+        branchesProject: 'Project', branchesWorktree: 'Worktree', branchesTask: 'Task',
+        branchesNoTask: 'No task record', branchesNoWorktree: 'No worktree',
+        deleteWorktree: 'Delete worktree', deleteWorktreeTitle: 'Delete the worktree',
+        deleteBranchTitle: 'Delete the branch',
+        deleteWorktreeHint: 'Removes this worktree and keeps its worker branch. This cannot be undone.',
+        deleteBranchHint: 'Deletes this worker branch. Its worktree is already removed; the branch cannot be restored.',
+        branchesDeleted: 'Done.', branchesDeleteFailed: 'Could not delete it.',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -84,18 +97,19 @@ window.__ModuleLoader__.load({
         noBranch: '没有可选的合并目标分支。', noRemote: '没有可选的仓库。',
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
         deleteUnmergedHint: '该修改分支尚未合并，删除会丢弃该分支及其工作树，且无法恢复。',
-        deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
-        deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
+        deleteTaskTitle: '删除任务', deleteTaskHint: '运行中或排队中的 worker 会先被停止，确认停止后再从面板移除任务记录；worker 分支和工作树（如有）会保留。',
+        deleteTaskUnavailable: '合并或发布正在进行，结束后才能删除任务。',
         selectTask: '选择任务', selectedCount: '已选择',
         clearSelection: '清除选择', deleteSelected: '删除所选',
         batchTasksTitle: '删除所选任务',
-        batchTasksHint: '所选任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
+        batchTasksHint: '所选任务记录将从面板移除；运行中或排队中的 worker 会先被停止；worker 分支和工作树（如有）会保留。',
         batchTasksDeleted: '所选任务已删除。',
-        cancelQueued: '取消', cancelQueuedTitle: '取消排队中的任务', cancelQueuedDone: '已取消排队任务。',
+        stop: '停止', stopTitle: '停止 worker 并释放并发名额', stopDone: '任务已停止；worker 已中断，并发名额已释放。',
         confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
         failure: '失败原因',
+        cancelled: '已取消',
         views: '面板分区',
         workerSettingsTitle: '设置', workerSettingsIntro: '派发 worker 的默认值。保存后只影响新启动的 worker。',
         workerSettingsLoadFailed: '无法加载设置，请重试。',
@@ -127,6 +141,18 @@ window.__ModuleLoader__.load({
         memoryGlobalHint: '所有项目共享。', memoryProjectHint: '仅在当前项目生效。',
         memoryKnowledgeHint: '所有项目共享，按需查询。',
         memoryExpand: '展开', memoryCollapse: '收起',
+        branchesTab: '分支 / worktree', branchesTitle: '分支 / worktree',
+        branchesIntro: '只列出本插件在 .agents/worktrees 下创建的 worktree 和 sl-* 工作分支；你自己的分支、其他 worktree 和 master 不会出现在这里。',
+        branchesLoadFailed: '无法加载分支和 worktree，请重试。',
+        branchesEmpty: '本插件没有创建 worktree 或分支。',
+        branchesOnlyPlugin: '这里只显示和删除本插件创建的 worktree 与 sl-* 分支。',
+        branchesProject: '项目', branchesWorktree: 'worktree', branchesTask: '任务',
+        branchesNoTask: '无任务记录', branchesNoWorktree: '无 worktree',
+        deleteWorktree: '删除 worktree', deleteWorktreeTitle: '删除 worktree',
+        deleteBranchTitle: '删除分支',
+        deleteWorktreeHint: '会移除这个 worktree，保留对应的 worker 分支；此操作无法恢复。',
+        deleteBranchHint: '会删除这个 worker 分支；对应 worktree 已移除，分支删除后无法恢复。',
+        branchesDeleted: '操作已完成。', branchesDeleteFailed: '无法删除，请重试。',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -379,6 +405,13 @@ window.__ModuleLoader__.load({
       const [memoryPending, setMemoryPending] = useState(false)
       const [memoryQuery, setMemoryQuery] = useState('')
       const [memoryExpanded, setMemoryExpanded] = useState({})
+      const [branches, setBranches] = useState([])
+      const [branchPhase, setBranchPhase] = useState('loading')
+      const [branchError, setBranchError] = useState('')
+      const [branchNotice, setBranchNotice] = useState('')
+      const [branchDialog, setBranchDialog] = useState(null)
+      const [branchDialogError, setBranchDialogError] = useState('')
+      const [branchPending, setBranchPending] = useState(false)
       const [selectedTasks, setSelectedTasks] = useState([])
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
@@ -481,6 +514,31 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [revision, phase, memoryProject, tab])
 
+      useEffect(() => {
+        if (tab !== 'branches') return () => {}
+        const controller = new AbortController()
+        setBranchPhase('loading')
+        setBranchError('')
+        setBranchNotice('')
+        async function load() {
+          try {
+            const response = await fetch('/superagent-lite/branches', {
+              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            })
+            if (!response.ok) throw new Error('Branch list unavailable')
+            const value = await response.json()
+            if (!Array.isArray(value?.branches)) throw new Error('Invalid branch list')
+            if (controller.signal.aborted) return
+            setBranches(value.branches.filter(row => row && typeof row.branch === 'string' && typeof row.projectRoot === 'string'))
+            setBranchPhase('ready')
+          } catch {
+            if (!controller.signal.aborted) setBranchPhase('error')
+          }
+        }
+        void load()
+        return () => controller.abort()
+      }, [revision, tab])
+
       // A queued Task is waiting for a concurrency slot that only the Host can
       // open. Poll silently while one is listed so the row leaves the queue in
       // place, without a page refresh or a loading state.
@@ -535,7 +593,7 @@ window.__ModuleLoader__.load({
         .map(key => ({ key, tasks: shown.filter(task => matchesCategory(task, key)) }))
         .filter(group => group.tasks.length > 0)
 
-      const deletableTask = task => task.queued === true || task.status !== 'running' || task.unconfirmed === true
+      const deletableTask = task => task.deletable !== false
       const selectedTaskRows = tasks.filter(task => selectedTasks.includes(task.id) && deletableTask(task))
 
       const refresh = () => {
@@ -552,6 +610,12 @@ window.__ModuleLoader__.load({
         setMemoryDialogError('')
         setMemoryPending(false)
         setMemoryExpanded({})
+        setBranchPhase('loading')
+        setBranchError('')
+        setBranchNotice('')
+        setBranchDialog(null)
+        setBranchDialogError('')
+        setBranchPending(false)
         setOpenFailed(false)
         setError('')
         setNotice('')
@@ -699,15 +763,83 @@ window.__ModuleLoader__.load({
           setMemoryPending(false)
         }
       }
-      const cancelQueued = async task => {
-        setPending(`${task.id}:cancel`)
+      const sameBranchRow = (left, right) => left.projectRoot === right.projectRoot && left.branch === right.branch
+      const branchDeleteUrl = (kind, row) => {
+        const url = new URL('/superagent-lite/branches', 'http://localhost')
+        url.searchParams.set('kind', kind)
+        url.searchParams.set('projectRoot', row.projectRoot)
+        url.searchParams.set('branch', row.branch)
+        if (kind === 'worktree' && row.path) url.searchParams.set('path', row.path)
+        return `${url.pathname}${url.search}`
+      }
+      const confirmBranchDelete = async () => {
+        if (!branchDialog) return
+        const { kind, row } = branchDialog
+        setBranchPending(true)
+        setBranchDialogError('')
+        try {
+          const response = await fetch(branchDeleteUrl(kind, row), {
+            method: 'DELETE', credentials: 'same-origin', cache: 'no-store',
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) {
+            throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('branchesDeleteFailed'))
+          }
+          // A deleted worktree keeps its branch row and only loses the path; a
+          // deleted branch removes the row. Neither action reloads the list.
+          if (kind === 'worktree') {
+            setBranches(current => current.map(item => sameBranchRow(item, row)
+              ? (value?.row ?? {
+                ...item, path: undefined, canDeleteWorktree: false, canDeleteBranch: true,
+                worktreeReason: 'This branch has no worktree to delete', branchReason: undefined,
+              })
+              : item))
+          } else {
+            setBranches(current => current.filter(item => !sameBranchRow(item, row)))
+          }
+          setBranchDialog(null)
+          setBranchNotice(typeof value?.message === 'string' && value.message ? value.message : t('branchesDeleted'))
+        } catch (actionError) {
+          const message = typeof actionError?.message === 'string' && actionError.message
+            ? actionError.message : t('branchesDeleteFailed')
+          setBranchError(message)
+          setBranchDialogError(message)
+        } finally {
+          setBranchPending(false)
+        }
+      }
+      const stopTask = async task => {
+        setPending(`${task.id}:stop`)
         setError('')
         setNotice('')
         try {
-          await removeTask(task.id)
-          setTasks(current => current.filter(item => item.id !== task.id))
-          setSelectedTasks(current => current.filter(id => id !== task.id))
-          setNotice(t('cancelQueuedDone'))
+          const response = await fetch('/superagent-lite/tasks', {
+            method: 'POST', credentials: 'same-origin', cache: 'no-store',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ taskId: task.id, action: 'stop' }),
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
+          setTasks(current => current.map(item => item.id === task.id ? {
+            ...item,
+            status: 'failed',
+            cancelled: true,
+            queued: false,
+            unconfirmed: false,
+            stoppable: false,
+            ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+          } : item))
+          setNotice(t('stopDone'))
         } catch (actionError) {
           setError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('actionFailed'))
         } finally {
@@ -883,6 +1015,9 @@ window.__ModuleLoader__.load({
             setTasks(current => current.map(item => item.id === task.id ? mergedTask(item, value) : item))
           } else if (action === 'delete-branch') {
             setTasks(current => current.map(item => item.id === task.id ? branchDeletedTask(item, value) : item))
+          } else if (action === 'delete-task') {
+            setTasks(current => current.filter(item => item.id !== task.id))
+            setSelectedTasks(current => current.filter(id => id !== task.id))
           } else {
             refresh()
           }
@@ -923,12 +1058,18 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'sl-lv__value' }, updated)),
               task.unconfirmed && h('span', { className: 'sl-tag', 'data-tone': 'warning' }, t('unconfirmed')),
               task.queued && h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t('queued')),
+              task.cancelled && h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t('cancelled')),
               task.land && h('span', { className: 'sl-tag', 'data-tone': 'success' }, t('landAuthorized')),
               h('code', { className: 'sl-code', title: task.id }, task.id)),
             task.failure && h('p', { className: 'sl-task__failure', title: task.failure }, `${t('failure')}: ${task.failure}`),
             h('div', { className: 'sl-task__actions' },
               session('router', task.parentSessionId),
               session('worker', task.workerSessionId, address),
+              task.stoppable && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
+                title: t('stopTitle'),
+                onClick: () => void stopTask(task),
+              }, icon('cancel'), t('stop')),
               task.status === 'unmerged' && h('button', {
                 type: 'button', className: git?.canMerge ? 'sl-btn sl-btn--primary' : 'sl-btn sl-btn--outline',
                 disabled: busy || !git?.canMerge, title: git?.mergeReason,
@@ -948,11 +1089,6 @@ window.__ModuleLoader__.load({
                 disabled: busy || !git.canDelete, title: git.deleteReason,
                 onClick: () => void openDialog('delete', task),
               }, icon('trash'), t('deleteBranch')),
-              task.queued && h('button', {
-                type: 'button', className: 'sl-btn sl-btn--outline', disabled: busy,
-                title: t('cancelQueuedTitle'),
-                onClick: () => void cancelQueued(task),
-              }, icon('cancel'), t('cancelQueued')),
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
                 disabled: busy || !deletable, title: deletable ? undefined : t('deleteTaskUnavailable'),
@@ -1121,6 +1257,8 @@ window.__ModuleLoader__.load({
             }, t('saveSettings')))))
       const memoryView = tab === 'memory'
       const memoryTabId = `${headingId}-memory-tab`
+      const branchView = tab === 'branches'
+      const branchesTabId = `${headingId}-branches-tab`
       const memoryProjects = optionsFor('projectRoot')
       const memoryDeleteButton = target => h('button', {
         type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
@@ -1296,20 +1434,88 @@ window.__ModuleLoader__.load({
                 onClick: () => void confirmMemoryDelete(),
               }, t('confirmDelete')))))
       }
+      const branchRow = row => {
+        const task = row.task && typeof row.task === 'object' ? row.task : undefined
+        const path = typeof row.path === 'string' && row.path ? row.path : undefined
+        const status = task && typeof task.status === 'string' ? task.status : undefined
+        return h('li', { key: `${row.projectRoot}\0${row.branch}`, className: 'sl-task' },
+          h('div', { className: 'sl-task__stage' },
+            status ? statusMark(status) : h('span', { className: 'sl-hint' }, t('branchesNoTask'))),
+          h('div', { className: 'sl-task__body' },
+            h('div', { className: 'sl-task__title' },
+              h('code', { className: 'sl-code', title: row.branch }, row.branch)),
+            h('div', { className: 'sl-task__meta' },
+              chip('branchesProject', row.projectRoot),
+              chip('branchesWorktree', path ?? t('branchesNoWorktree')),
+              task && chip('branchesTask', task.title || task.id),
+              task && h('code', { className: 'sl-code', title: task.id }, task.id)),
+            h('div', { className: 'sl-task__actions' },
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: branchPending || !row.canDeleteWorktree,
+                title: row.canDeleteWorktree ? undefined : row.worktreeReason,
+                onClick: () => setBranchDialog({ kind: 'worktree', row }),
+              }, icon('trash'), t('deleteWorktree')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: branchPending || !row.canDeleteBranch,
+                title: row.canDeleteBranch ? undefined : row.branchReason,
+                onClick: () => setBranchDialog({ kind: 'branch', row }),
+              }, icon('trash'), t('deleteBranch')),
+              branchPending && h('span', { className: 'sl-hint' }, t('working')))))
+      }
+      const branchesViewPanel = () => h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': branchesTabId },
+        h('p', { className: 'sl-hint' }, t('branchesOnlyPlugin')),
+        branchPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+        branchPhase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('branchesLoadFailed')),
+        branchError && h('p', { className: 'sl-error', role: 'alert' }, branchError),
+        branchNotice && h('p', { className: 'sl-notice', role: 'status' }, branchNotice),
+        branchPhase === 'ready' && branches.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('branchesEmpty')),
+        branchPhase === 'ready' && branches.length > 0 && h('div', { className: 'sl-scroll' },
+          h('div', { className: 'sl-groups' },
+            h('section', { className: 'sl-group' },
+              h('h2', { className: 'sl-group__title' }, t('branchesTab'),
+                h('span', { className: 'sl-group__count' }, String(branches.length))),
+              h('ul', { className: 'sl-list' }, ...branches.map(branchRow))))))
+      const branchDialogView = () => {
+        if (!branchDialog) return null
+        const { kind, row } = branchDialog
+        const title = kind === 'worktree' ? t('deleteWorktreeTitle') : t('deleteBranchTitle')
+        return h('div', { className: 'sl-modal-backdrop' },
+          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+            h('h2', null, title),
+            h('p', null, t(kind === 'worktree' ? 'deleteWorktreeHint' : 'deleteBranchHint')),
+            h('p', null, h('code', null, kind === 'worktree' ? `${row.branch} · ${row.path ?? ''}` : row.branch)),
+            branchDialogError && h('p', { role: 'alert', className: 'sl-error' }, branchDialogError),
+            h('div', { className: 'sl-modal__actions' },
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline', disabled: branchPending,
+                onClick: () => {
+                  setBranchDialog(null)
+                  setBranchDialogError('')
+                },
+              }, t('cancel')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--primary', disabled: branchPending,
+                onClick: () => void confirmBranchDelete(),
+              }, t('confirmDelete')))))
+      }
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
               h('h1', { id: headingId },
-                t(taskView ? 'title' : settingsView ? 'workerSettingsTitle' : 'memoryTitle')),
+                t(taskView ? 'title' : settingsView ? 'workerSettingsTitle' : memoryView ? 'memoryTitle' : 'branchesTitle')),
               h('p', { className: 'sl-intro' },
-                t(taskView ? 'intro' : settingsView ? 'workerSettingsIntro' : 'memoryIntro'))),
+                t(taskView ? 'intro' : settingsView ? 'workerSettingsIntro' : memoryView ? 'memoryIntro' : 'branchesIntro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
                 onClick: refresh,
-                disabled: taskView ? phase === 'loading' : settingsView ? settingsPhase === 'loading' : memoryPhase === 'loading',
+                disabled: taskView ? phase === 'loading'
+                  : settingsView ? settingsPhase === 'loading'
+                    : memoryView ? memoryPhase === 'loading' : branchPhase === 'loading',
               }, icon('refresh'), t('refresh')))),
           h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
             h('button', {
@@ -1326,7 +1532,12 @@ window.__ModuleLoader__.load({
               id: memoryTabId, type: 'button', role: 'tab', className: 'sl-tab',
               'aria-selected': memoryView,
               onClick: () => setTab('memory'),
-            }, t('memoryTab'))),
+            }, t('memoryTab')),
+            h('button', {
+              id: branchesTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': branchView,
+              onClick: () => setTab('branches'),
+            }, t('branchesTab'))),
           taskView
             ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
               filters,
@@ -1340,10 +1551,11 @@ window.__ModuleLoader__.load({
               phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
                 h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
               list)
-            : settingsView ? settingsViewPanel() : memoryViewPanel()),
+            : settingsView ? settingsViewPanel() : memoryView ? memoryViewPanel() : branchesViewPanel()),
         dialogView(),
         batchDialog(),
-        memoryDialogView())
+        memoryDialogView(),
+        branchDialogView())
     }
 
     function PanelIcon({ size }) {

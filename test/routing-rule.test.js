@@ -83,5 +83,5 @@ test('the router persona routes status questions to worker_status and treats not
   const persona = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(persona, /or worker_status when the input only asks about worker or task state/)
   assert.match(persona, /Call worker_status when the input asks whether a task is queued, running, delivered, or cancelled/)
-  assert.match(persona, /A queued task cancelled from the panel or a queued worker that starts arrives as a background worker-status notice, not a new request/)
+  assert.match(persona, /A task stopped from the panel or a queued worker that starts arrives as a background worker-status notice, not a new request/)
 })

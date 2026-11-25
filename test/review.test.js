@@ -19,6 +19,8 @@ after(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01])
+
 const { createTask, readTask } = await import('../src/task-store.js')
 const { createReviewResultTool, createReviewTool } = await import('../src/review.js')
 const { claimHelper, registerReviewGuard } = await import('../src/helper-guard.js')
@@ -42,9 +44,11 @@ async function setupRepo() {
   return { repo, baseCommit, head }
 }
 
-function harness({ baseCommit, head, evidence = 'diff', verdict = '通过' }) {
+function harness({ baseCommit, head, repo, attachments, evidence = 'diff', verdict = '通过' }) {
   const activations = []
   const ctx = {
+    workingDirectory: { get: () => repo },
+    get: name => name === 'attachments' ? attachments : undefined,
     subprocess: {
       async resolveExecutable(name) { return name },
       spawn({ argv: [command, ...args], cwd, env }) {
@@ -113,7 +117,7 @@ async function fixture(options) {
     createdAt: new Date().toISOString(),
     worktree: { path: repo, branch: 'main' },
   })
-  const { ctx, activations } = harness({ baseCommit, head, ...options })
+  const { ctx, activations } = harness({ baseCommit, head, repo, ...options })
   return { id, repo, baseCommit, head, worker, activations, review: createReviewTool(ctx, worker, id) }
 }
 
@@ -143,6 +147,29 @@ test('the reviewer prompt carries scope and the worktree instead of the diff', a
   assert.equal((await readTask(id)).review.head, head)
   assert.equal((await readTask(id)).review.reviewerSessionId, 'reviewer')
   assert.equal((await readTask(id)).review.approved, true)
+})
+
+test('the review request carries local images after the prompt text', async () => {
+  const saved = []
+  const attachments = {
+    imageLimits: { maxImagesPerMessage: 20, maxMessageImageBytes: 1_000_000 },
+    async saveImage(input) {
+      saved.push(input)
+      return { attachmentId: `sha256:${'a'.repeat(64)}`, mediaType: input.mediaType, bytes: input.data.byteLength, width: 1, height: 1, name: input.name }
+    },
+  }
+  const { id, head, worker, activations, review } = await fixture({ attachments })
+  await writeFile(join(root, 'screenshot.png'), PNG)
+  assert.match(
+    await review.execute({ images: [join(root, 'screenshot.png')] }, { agent: worker, signal: new AbortController().signal }),
+    /^Approved for /,
+  )
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].mediaType, 'image/png')
+  assert.equal(activations[0].prompt.length, 2)
+  assert.equal(activations[0].prompt[1].type, 'image')
+  assert.equal(activations[0].prompt[1].attachment.name, 'screenshot.png')
+  assert.equal((await readTask(id)).review.head, head)
 })
 
 test('a verdict without reading the change is rejected', async () => {
