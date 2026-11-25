@@ -16,7 +16,7 @@ const {
 const { createSettingsPanelHandler } = await import('../src/settings-panel.js')
 const { createDispatchTool } = await import('../src/dispatch.js')
 const { occupiedSlots, pumpWorkers } = await import('../src/launch-queue.js')
-const { cancelQueuedTask, readTask, updateTask } = await import('../src/task-store.js')
+const { readTask, stopTask, updateTask } = await import('../src/task-store.js')
 
 after(() => rm(home, { recursive: true, force: true }))
 beforeEach(async () => saveWorkerSettings(defaultWorkerSettings()))
@@ -202,8 +202,7 @@ test('dispatch gives new workers the configured model and queues tasks beyond th
     mode: 'change', title: 'Third', teamId: 'team-queue', task: 'Third change', worktreeName: 'third-worker',
   }, exec('third'))
   assert.equal(third.status, 'queued')
-  assert.equal(await cancelQueuedTask(third.taskId), true)
-  assert.equal(await readTask(third.taskId), undefined)
+  assert.equal((await stopTask(third.taskId)).task.status, 'cancelled')
   await updateTask(second.taskId, { status: 'awaiting-merge' })
   await pumpWorkers(ctx)
   assert.equal(activations.length, 2)

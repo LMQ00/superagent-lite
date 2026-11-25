@@ -48,30 +48,40 @@ test('task store removes a task and its worker session link', async () => {
   }
 })
 
-test('task store cancels only a queued task and keeps a cancelled record for status queries', async () => {
+test('task store stops a queued or running task into the cancelled terminal state', async () => {
   const root = await mkdtemp(join(tmpdir(), 'superagent-lite-'))
   const store = createTaskStore(root)
   try {
     const queued = { id: '0123456789abcdef', workerSessionId: 'worker-1', status: 'queued', parentSessionId: 'router' }
     const running = { id: 'fedcba9876543210', workerSessionId: 'worker-2', status: 'running' }
+    const finished = { id: 'aabbccddeeff0011', status: 'completed' }
     assert.equal(await store.createTask(queued), true)
     assert.equal(await store.createTask(running), true)
+    assert.equal(await store.createTask(finished), true)
     await store.linkWorkerSession(queued.id, queued.workerSessionId)
     await store.linkWorkerSession(running.id, running.workerSessionId)
 
-    assert.equal(await store.cancelQueuedTask(queued.id), true)
-    assert.equal(await store.readTask(queued.id), undefined)
-    assert.equal(await store.taskForSession(undefined, queued.workerSessionId), undefined)
-    const cancelled = (await store.listCancelledTasks()).find(task => task.id === queued.id)
-    assert.equal(cancelled.status, 'cancelled')
-    assert.equal(cancelled.parentSessionId, 'router')
-    assert.equal(typeof cancelled.cancelledAt, 'string')
-    assert.equal((await store.readTask(running.id)).status, 'running')
-    assert.equal((await store.taskForSession(undefined, running.workerSessionId)).id, running.id)
-    await assert.rejects(store.cancelQueuedTask(running.id), /no longer queued/)
-    assert.equal((await store.readTask(running.id)).status, 'running')
-    assert.deepEqual((await store.listCancelledTasks()).map(task => task.id), [queued.id])
-    assert.equal(await store.cancelQueuedTask(queued.id), false)
+    const stoppedQueued = await store.stopTask(queued.id)
+    assert.equal(stoppedQueued.stopped, true)
+    assert.equal(stoppedQueued.task.status, 'cancelled')
+    const queuedRecord = await store.readTask(queued.id)
+    assert.equal(queuedRecord.status, 'cancelled')
+    assert.equal(typeof queuedRecord.cancelledAt, 'string')
+    // The Session mapping stays: the panel can still open the stopped worker.
+    assert.equal((await store.taskForSession(undefined, queued.workerSessionId)).id, queued.id)
+    assert.deepEqual(await store.listCancelledTasks(), [])
+
+    const stoppedRunning = await store.stopTask(running.id)
+    assert.equal(stoppedRunning.stopped, true)
+    assert.equal((await store.readTask(running.id)).status, 'cancelled')
+    assert.equal((await store.readTask(finished.id)).status, 'completed')
+    await assert.rejects(store.stopTask(finished.id), /already finished/)
+
+    // Stopping is idempotent and keeps the original cancellation timestamp.
+    const repeated = await store.stopTask(queued.id)
+    assert.equal(repeated.stopped, false)
+    assert.equal(repeated.task.cancelledAt, queuedRecord.cancelledAt)
+    assert.equal(await store.stopTask('ffffffffffffffff'), undefined)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

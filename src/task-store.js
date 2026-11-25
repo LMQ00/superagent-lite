@@ -5,6 +5,8 @@ import { createHash, randomUUID } from 'node:crypto'
 
 const writesByRoot = new Map()
 
+export const STOPPABLE_STATUSES = new Set(['queued', 'starting', 'running', 'resuming'])
+
 function safeId(value) {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,96}$/.test(value)) {
     throw new TypeError('Invalid superagent-lite task identity')
@@ -121,7 +123,7 @@ export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-li
     })
   }
 
-  async function cancelQueuedTask(id) {
+  async function stopTask(id) {
     const safe = safeId(id)
     await ensureDirectories()
     return serializeForRoot(baseDir, `task:${safe}`, async () => {
@@ -130,17 +132,16 @@ export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-li
       try {
         task = JSON.parse(await readFile(path, 'utf8'))
       } catch (error) {
-        if (error.code === 'ENOENT') return false
+        if (error.code === 'ENOENT') return undefined
         throw error
       }
-      if (task.status !== 'queued') throw new Error('The task is no longer queued')
+      // Stopping is idempotent: a repeated request reads the same cancelled
+      // record and reports that nothing changed instead of failing.
+      if (task.status === 'cancelled') return { task, stopped: false }
+      if (!STOPPABLE_STATUSES.has(task.status)) throw new Error('The task has already finished')
       const cancelled = { ...task, status: 'cancelled', cancelledAt: new Date().toISOString() }
-      await writeAtomic(join(cancelledDir, `${safe}.json`), cancelled)
-      await rm(path, { force: true })
-      if (task.workerSessionId) {
-        await rm(join(sessionsDir, `${sessionKey(task.workerSessionId)}.json`), { force: true })
-      }
-      return true
+      await writeAtomic(path, cancelled)
+      return { task: cancelled, stopped: true }
     })
   }
 
@@ -198,9 +199,9 @@ export function createTaskStore(baseDir = join(homedir(), '.dsh', 'superagent-li
     return tasks.filter(Boolean).sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
   }
 
-  return { createTask, readTask, updateTask, removeTask, cancelQueuedTask, listCancelledTasks, listTasks, linkWorkerSession, taskForSession, root: baseDir }
+  return { createTask, readTask, updateTask, removeTask, stopTask, listCancelledTasks, listTasks, linkWorkerSession, taskForSession, root: baseDir }
 }
 
 const store = createTaskStore()
-export const { createTask, readTask, updateTask, removeTask, cancelQueuedTask, listCancelledTasks, listTasks, linkWorkerSession, taskForSession } = store
+export const { createTask, readTask, updateTask, removeTask, stopTask, listCancelledTasks, listTasks, linkWorkerSession, taskForSession } = store
 export const dataRoot = store.root
