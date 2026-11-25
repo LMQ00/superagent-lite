@@ -145,7 +145,7 @@ test('renders the six status categories, navigation and session links without a 
     openSession: target => opened.push(target),
     language: 'zh',
   })
-  assert.equal(board.definition.id, '@local/superagent-lite')
+  assert.equal(board.definition.id, '@lmq00/superagent-lite')
   const sidebar = board.slots.get('sidebar.panellist')
   assert.equal(sidebar.options.label(), '项目任务')
 

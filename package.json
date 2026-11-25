@@ -1,9 +1,13 @@
 {
-  "name": "@local/superagent-lite",
+  "name": "@lmq00/superagent-lite",
   "version": "1.0.0",
-  "private": true,
-  "type": "module",
+  "license": "MIT",
   "description": "Project-scoped router and worker delegation for DeepSeek Harness",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LMQ00/superagent-lite.git"
+  },
+  "type": "module",
   "exports": {
     ".": "./index.js",
     "./router": "./router.js",
@@ -40,7 +44,13 @@
       ]
     }
   },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0"
+  },
   "engines": {
     "dsh": "0.2.2-rc.5"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/superagent-lite',
+  id: '@lmq00/superagent-lite',
   factory(require) {
     const { createElement: h, useEffect, useId, useRef, useState } = require('react')
     const id = 'superagent-lite'
