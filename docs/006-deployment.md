@@ -176,7 +176,11 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The worker is still running` | 等 Worker 结束后再删除任务；失联的「未确认」任务可以删除 |
 | `A merge or publication is in progress` | 等合并或发送 PR 结束后再删除任务 |
 | `The task is no longer queued` | 取消前任务已获得并发名额并开始启动；刷新面板后按运行中任务处理，不能再取消 |
-| `Only settled, unpublished worktrees can be resumed` | Git 项目没有可恢复的 Worktree，或状态不是 `awaiting-merge`、`review-required`、`failed`；非 Git 项目仍可用 `review-required`、`failed` 恢复；否则重新派发 |
+| `Task <id> is still queued; its worker has not started, so the follow-up was not delivered. Retry continue_worker after it starts.` | Task 还在排队或启动中，没有 Worker 回合可唤醒；这次 follow-up 未记录也未投递，Worker 启动后再追加 |
+| `Task <id> is already merged; dispatch new work instead of resuming it` | Task 已合并或已完成；已发布的工作不再续派，新需求重新派发 |
+| `The worker branch for task <id> was deleted; dispatch new work instead of resuming it` | worker 分支已被删除；重新派发任务，让新 worker 建自己的分支 |
+| `The worktree recorded for task <id> is gone; dispatch new work instead of resuming it` | Task 记录的 Worktree 目录已不存在；重新派发，不要再恢复旧路径 |
+| `Task <id> is <status> and can no longer be resumed; dispatch new work instead` | Task 处于 `awaiting-ci`、`publishing`、`merging`、`delivery-blocked` 等已进入交付或交付失败的状态，不再是可续派的未发布工作；等它结束或重新派发 |
 | `Merging is performed by a newly dispatched merge worker; this task may only push or open a pull request.` | change worker 的 `land` 只授权推送/PR；合并请求要由 router 派发 `mode=merge` 的 merge worker |
 | `merge tasks require land=true` | `mode=merge` 必须携带用户本轮对合并的明确授权；不能用缺省 `land` 启动 merge worker |
 | `The base branch cannot be a merge target` | `branches` 里包含 base branch；改成待合并的 worker 分支或任务 ID |

@@ -9,9 +9,9 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」 | `cordis.patch.yml:21-45`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权，以及按排队、运行、已交付、已取消和失败查询任务 | `src/dispatch.js:40-51`、`src/continue.js:120-131`、`src/worker-status.js` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:40-51`、`src/continue.js:216-226`、`src/continue.js:257-259`、`src/worker-status.js` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-147` |
-| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
+| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；仅检测到上下文压缩时回放需求 | `src/continue.js:64-166` |
 | 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-112`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-537` |
