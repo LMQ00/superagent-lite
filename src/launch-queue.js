@@ -3,6 +3,7 @@ import { buildWorkerPrompt } from './worker-prompt.js'
 import { forgetLanding } from './landing.js'
 import { notifyWorkerStatus } from './worker-status.js'
 import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
+import { startActivation } from './subagent-start.js'
 
 // Worker launches beyond the configured limit wait as `queued` Task records.
 // The queue is serialized per data root so two dispatches cannot claim the same slot.
@@ -49,7 +50,7 @@ async function launch(ctx, task) {
   const settings = await readWorkerSettings()
   const agentOptions = workerAgentOptions(settings)
   try {
-    await ctx.subagents.startActivation({
+    await startActivation(ctx.subagents, {
       provider: 'spawn',
       parent,
       cwd: task.projectRoot,

@@ -57,14 +57,19 @@ test('installed tool, scope and sandbox services enforce the helper boundary', {
   t.after(() => fiber.dispose())
 
   assert.equal(ctx.sandboxPolicy.resolve({ session }).mode, 'read-only')
+  // 0.2.2-rc.1 returns the denial text; rc.2 and later wrap it as `{ reason }`.
+  const denial = exec => {
+    const result = ctx.tools.checkGuards(exec)
+    return typeof result === 'string' ? result : result?.reason
+  }
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'read' }), undefined)
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'glob' }), undefined)
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'grep' }), undefined)
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'bash' }), undefined)
-  assert.match(ctx.tools.checkGuards({ agent: helperKey, name: 'bash', arguments: { command: 'pwd', sandbox_permissions: 'danger-full-access' } }).reason, /widen the sandbox/)
-  assert.match(ctx.tools.checkGuards({ agent: helperKey, name: 'write' }).reason, /Read-only helpers cannot use/)
-  assert.match(ctx.tools.checkGuards({ agent: helperKey, name: 'edit' }).reason, /Read-only helpers cannot use/)
-  assert.match(ctx.tools.checkGuards({ agent: helperKey, name: 'subagent' }).reason, /Read-only helpers cannot use/)
+  assert.match(denial({ agent: helperKey, name: 'bash', arguments: { command: 'pwd', sandbox_permissions: 'danger-full-access' } }), /widen the sandbox/)
+  assert.match(denial({ agent: helperKey, name: 'write' }), /Read-only helpers cannot use/)
+  assert.match(denial({ agent: helperKey, name: 'edit' }), /Read-only helpers cannot use/)
+  assert.match(denial({ agent: helperKey, name: 'subagent' }), /Read-only helpers cannot use/)
 })
 
 test('the read-only sandbox permits git inspection and denies writes', {

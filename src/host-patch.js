@@ -12,9 +12,18 @@ function runPatchCommand(command, args) {
 
 const DSH = '@deepseek-ai/dsh'
 const SUBAGENT = '@deepseek-ai/dsh-subagent'
-const SUBAGENT_VERSIONS = new Set(['0.2.2-rc.5', '0.2.2-rc.3'])
+// 0.2.3-alpha.1 records the initial child prompt through `createAgentMessage`,
+// so it needs neither the `promptSource` option nor this patch.
+const SUBAGENT_NATIVE_VERSIONS = new Set(['0.2.3-alpha.1'])
 const PROMPT_SOURCE = 'spec.promptSource ?? { kind: "user" }'
+const RC1_PROMPT_SOURCE = 'request.promptSource ?? { kind: "user" }'
 const SUBAGENT_PATCH = fileURLToPath(new URL('../scripts/dsh-subagent-0.2.2-prompt-source.patch', import.meta.url))
+const SUBAGENT_RC1_PATCH = fileURLToPath(new URL('../scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch', import.meta.url))
+// 0.2.2-rc.1 ships the subagent bundle only and nests the start request.
+const SUBAGENT_TARGETS = new Map([
+  ['0.2.2-rc.1', { patch: SUBAGENT_RC1_PATCH, marker: RC1_PROMPT_SOURCE }],
+  ...['0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5'].map(version => [version, { patch: SUBAGENT_PATCH, marker: PROMPT_SOURCE }]),
+])
 
 function manifest(dir) {
   try {
@@ -68,6 +77,8 @@ function failure(error) {
  * Apply the `promptSource` patch to the installed subagent package. The running
  * Host has already imported the old manager, so the patch takes effect on the
  * next DSH start; a failed or unsupported patch only disables the dispatch card.
+ * A version listed as native already records the initial prompt as an agent
+ * message, so it is reported and left untouched.
  */
 export async function reconcileSubagentPromptSource({ dshDir, runPatch = runPatchCommand } = {}) {
   if (dshDir === undefined) return { state: 'unresolved' }
@@ -75,22 +86,24 @@ export async function reconcileSubagentPromptSource({ dshDir, runPatch = runPatc
   const packageDir = subagentPackage(dshDir)
   if (packageDir === undefined) return { state: 'missing' }
   const version = manifest(packageDir)?.version
-  if (!SUBAGENT_VERSIONS.has(version)) return { state: 'unsupported', version }
+  if (SUBAGENT_NATIVE_VERSIONS.has(version)) return { state: 'native', version }
+  const target = SUBAGENT_TARGETS.get(version)
+  if (target === undefined) return { state: 'unsupported', version }
   const bundlePath = join(packageDir, 'lib/index.js')
   if (!existsSync(bundlePath)) return { state: 'missing', version }
-  if (readFileSync(bundlePath, 'utf8').includes(PROMPT_SOURCE)) return { state: 'already', version }
-  if (!existsSync(SUBAGENT_PATCH)) return { state: 'failed', version, reason: `${SUBAGENT_PATCH} is missing` }
+  if (readFileSync(bundlePath, 'utf8').includes(target.marker)) return { state: 'already', version }
+  if (!existsSync(target.patch)) return { state: 'failed', version, reason: `${target.patch} is missing` }
   try {
-    await runPatch('patch', ['-p1', '--dry-run', '-d', packageDir, '-i', SUBAGENT_PATCH])
+    await runPatch('patch', ['-p1', '--dry-run', '-d', packageDir, '-i', target.patch])
   } catch (error) {
     return { state: 'failed', version, reason: failure(error) }
   }
   try {
-    await runPatch('patch', ['-p1', '-d', packageDir, '-i', SUBAGENT_PATCH])
+    await runPatch('patch', ['-p1', '-d', packageDir, '-i', target.patch])
   } catch (error) {
     return { state: 'failed', version, reason: failure(error) }
   }
-  if (!readFileSync(bundlePath, 'utf8').includes(PROMPT_SOURCE)) return { state: 'failed', version, reason: 'patched files do not carry promptSource' }
+  if (!readFileSync(bundlePath, 'utf8').includes(target.marker)) return { state: 'failed', version, reason: 'patched files do not carry promptSource' }
   return { state: 'applied', version }
 }
 

@@ -4,6 +4,7 @@ import { setLandingReview } from './landing.js'
 import { memoryPromptForProject } from './memory.js'
 import { createReviewScope } from './review-scope.js'
 import { runCommand } from './process.js'
+import { startActivation } from './subagent-start.js'
 
 export const reviewToolName = 'review_worker_commit'
 export const reviewResultToolName = 'submit_review'
@@ -116,7 +117,7 @@ export async function runReview(ctx, agent, task, signal) {
   const memory = await memoryPromptForProject(task.projectRoot).catch(() => '')
   let activation
   try {
-    activation = await ctx.subagents.startActivation({
+    activation = await startActivation(ctx.subagents, {
       provider: 'spawn', parent: agent, cwd: root,
       label: 'Independent code review', delivery: 'caller', signal, maxDepth: 2,
       // The review request is a message from the worker, not user input.

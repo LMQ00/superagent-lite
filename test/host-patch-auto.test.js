@@ -44,12 +44,12 @@ async function writeSubagentPackage(packageDir, version) {
   }
 }
 
-async function makeHost(t, { chatVersion = '0.2.2-rc.5', subagentVersion = '0.2.2-rc.5' } = {}) {
+async function makeHost(t, { dshVersion = '0.2.2-rc.5', chatVersion = '0.2.2-rc.5', subagentVersion = '0.2.2-rc.5' } = {}) {
   await mkdir(tmp, { recursive: true })
   const root = await mkdtemp(join(tmp, 'host-patch-auto-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const dshDir = join(root, 'node_modules', '@deepseek-ai', 'dsh')
-  await writeManifest(dshDir, DSH, '0.2.2-rc.5')
+  await writeManifest(dshDir, DSH, dshVersion)
   await mkdir(join(dshDir, 'lib'), { recursive: true })
   await writeFile(join(dshDir, 'lib', 'bin.js'), '// fake entry\n')
   await writeChatPackage(join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat'), chatVersion)
@@ -106,11 +106,11 @@ test('startup reconciliation applies the subagent and Chat patches once', async 
 })
 
 test('unsupported subagent versions and failed patches leave the package untouched', async (t) => {
-  const unsupported = await makeHost(t, { subagentVersion: '0.2.2-rc.1' })
+  const unsupported = await makeHost(t, { dshVersion: '0.2.3-alpha.2', subagentVersion: '0.2.3-alpha.2' })
   const calls = []
   assert.deepEqual(
     await reconcileSubagentPromptSource({ dshDir: unsupported.dshDir, runPatch: patchStub(calls) }),
-    { state: 'unsupported', version: '0.2.2-rc.1' },
+    { state: 'unsupported', version: '0.2.3-alpha.2' },
   )
   assert.equal(calls.length, 0)
 
@@ -159,28 +159,88 @@ test('a DSH-go rootfs is never patched automatically', async (t) => {
   assert.deepEqual(warnings, [])
 })
 
-test('the real subagent package is patched in a disposable copy', { skip: !anchor }, async (t) => {
-  const installed = join(anchor, 'node_modules', SUBAGENT)
-  if (!existsSync(join(installed, 'package.json'))) {
-    t.skip('the installed dsh has no nested dsh-subagent package')
+test('0.2.3-alpha.1 reconciles the Chat card patch and leaves its native subagent alone', async (t) => {
+  const { dshDir, subagentDir } = await makeHost(t, {
+    dshVersion: '0.2.3-alpha.1',
+    chatVersion: '0.2.3-alpha.1',
+    subagentVersion: '0.2.3-alpha.1',
+  })
+  const calls = []
+  const warnings = []
+  const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, {
+    dshDir, runPatch: patchStub(calls),
+  })
+  assert.deepEqual(result.subagent, { state: 'native', version: '0.2.3-alpha.1' })
+  assert.equal(result.chat.state, 'applied')
+  assert.equal(calls.length, 0)
+  assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), /source: \{ kind: "user" \}/)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /restart DSH/)
+  assert.doesNotMatch(warnings[0], /subagent/)
+})
+
+test('0.2.2-rc.1 applies the bundle-only promptSource diff', async (t) => {
+  const { dshDir, subagentDir } = await makeHost(t, {
+    dshVersion: '0.2.2-rc.1',
+    chatVersion: '0.2.2-rc.1',
+    subagentVersion: '0.2.2-rc.1',
+  })
+  const calls = []
+  const runPatch = async (command, args) => {
+    calls.push([command, ...args])
+    if (!args.includes('--dry-run')) {
+      await writeFile(join(subagentDir, 'lib/index.js'), 'source: request.promptSource ?? { kind: "user" },\n')
+    }
+    return {}
+  }
+  assert.deepEqual(
+    await reconcileSubagentPromptSource({ dshDir, runPatch }),
+    { state: 'applied', version: '0.2.2-rc.1' },
+  )
+  assert.equal(calls.length, 2)
+  assert.match(calls[0].join(' '), /dsh-subagent-0\.2\.2-rc\.1-prompt-source\.patch/)
+  assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), /request\.promptSource/)
+  assert.deepEqual(
+    await reconcileSubagentPromptSource({ dshDir, runPatch }),
+    { state: 'already', version: '0.2.2-rc.1' },
+  )
+})
+
+test('the real subagent package is patched or reported native from nested or hoisted installs', { skip: !anchor }, async (t) => {
+  const installed = [join(anchor, 'node_modules', SUBAGENT), join(dirname(anchor), 'dsh-subagent')]
+    .find(candidate => existsSync(join(candidate, 'package.json')))
+  if (installed === undefined) {
+    t.skip('the installed dsh has no nested or hoisted dsh-subagent package')
     return
   }
   const version = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8')).version
-  if (!['0.2.2-rc.5', '0.2.2-rc.3'].includes(version)) {
-    t.skip(`installed ${SUBAGENT} is ${version}; the source patch targets 0.2.2-rc.5/rc.3`)
+  if (version === '0.2.3-alpha.1') {
+    const native = await reconcileSubagentPromptSource({
+      dshDir: anchor,
+      runPatch: async () => assert.fail('a native subagent version must not run patch'),
+    })
+    assert.deepEqual(native, { state: 'native', version })
+    return
+  }
+  if (!['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5'].includes(version)) {
+    t.skip(`installed ${SUBAGENT} is ${version}; the source patches target 0.2.2-rc.1 through rc.5`)
     return
   }
   if ((await readFile(join(installed, 'lib/index.js'), 'utf8')).includes('promptSource')) {
     t.skip(`installed ${SUBAGENT} already carries promptSource; re-run against a pristine install`)
     return
   }
-  const { dshDir, subagentDir } = await makeHost(t, { subagentVersion: version })
+  const { dshDir, subagentDir } = await makeHost(t, { dshVersion: version, subagentVersion: version })
+  if (version === '0.2.2-rc.1') await rm(join(subagentDir, 'src'), { recursive: true, force: true })
   for (const file of ['package.json', 'src/types.ts', 'src/manager.ts', 'lib/index.js', 'lib/types/manager.js', 'lib/types/types.d.ts']) {
-    await copyFile(join(installed, file), join(subagentDir, file))
+    if (existsSync(join(installed, file))) await copyFile(join(installed, file), join(subagentDir, file))
   }
   const first = await reconcileSubagentPromptSource({ dshDir })
   assert.deepEqual(first, { state: 'applied', version })
-  assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), /source: spec\.promptSource \?\? \{ kind: "user" \}/)
+  const marker = version === '0.2.2-rc.1'
+    ? /request\.promptSource \?\? \{ kind: "user" \}/
+    : /spec\.promptSource \?\? \{ kind: "user" \}/
+  assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), marker)
   const second = await reconcileSubagentPromptSource({ dshDir })
   assert.deepEqual(second, { state: 'already', version })
 })

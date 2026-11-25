@@ -12,9 +12,9 @@
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权，以及按排队、运行、已交付、已取消和失败查询任务 | `src/dispatch.js:40-51`、`src/continue.js:120-131`、`src/worker-status.js` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-147` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
-| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-112`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
+| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:13-35`、`src/review.js:57-113`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
-| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-537` |
+| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:11-538` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
 | 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-131` |
 
@@ -88,7 +88,7 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:42-89`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:43-90`）。
 
 ## 装配顺序
 
@@ -131,4 +131,4 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | `knowledge_query` / `knowledge_get` 每次查询时读取；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` 和 `task/archive/sessions/<sha256(Session ID)>.md` | 每个 Worker 回合 `turn/end` 时写回合事件；memory 触发时写会话记录并只把路径交给 memory；其他模型工具没有专用读取入口，Git 与非 Git 项目位置相同 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:56-71`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:67-80`、`src/review.js:57-72`）。

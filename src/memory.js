@@ -4,6 +4,7 @@ import {
   PROJECT_FIELDS, SKILL_FIELDS, createMemoryStore, isSkillName,
 } from './memory-store.js'
 import { clearHelperExpectation, expectHelper } from './helper-guard.js'
+import { startActivation } from './subagent-start.js'
 
 const store = createMemoryStore()
 
@@ -298,7 +299,7 @@ export async function runMemoryExtraction(ctx, agent, caller, signal) {
   expectHelper(agent.session.id, undefined, 'memory', { projectRoot: caller.projectRoot })
   let activation
   try {
-    activation = await ctx.subagents.startActivation({
+    activation = await startActivation(ctx.subagents, {
       provider: 'spawn', parent: agent,
       delivery: 'caller', label: memoryRole.label, signal, maxDepth: 2,
       // The distillation request is a message from the worker, not user input.

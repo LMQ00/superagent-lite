@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -10,14 +11,34 @@ import { PACKAGE, TARGETS } from '../scripts/dsh-client-ui-chat-agent-message-ca
 const anchor = process.env.DSH_INSTALL_DIR
 const script = fileURLToPath(new URL('../scripts/dsh-client-ui-chat-agent-message-card.mjs', import.meta.url))
 const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
-const sourceVersions = ['0.2.2-rc.5', '0.2.2-rc.3']
+const sourceVersions = ['0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5', '0.2.3-alpha.1']
 
-test('the version matrix keeps rc.5 and rc.3 on one target and DSH-go on the bundle-only rc.1 target', () => {
-  assert.equal(TARGETS['0.2.2-rc.5'], TARGETS['0.2.2-rc.3'])
+test('the version matrix maps rc.2 through alpha.1 to one source-and-bundle target and rc.1 to the bundle-only target', () => {
+  for (const version of sourceVersions) assert.equal(TARGETS[version], TARGETS['0.2.2-rc.3'])
   assert.equal(TARGETS['0.2.2-rc.3'].layout, 'source-and-bundle')
   assert.equal(TARGETS['0.2.2-rc.1'].layout, 'bundle-only')
   assert.deepEqual(TARGETS['0.2.2-rc.1'].files, ['lib/client.js'])
-  assert.deepEqual(Object.keys(TARGETS), ['0.2.2-rc.5', '0.2.2-rc.3', '0.2.2-rc.1'])
+  assert.deepEqual(Object.keys(TARGETS), ['0.2.3-alpha.1', '0.2.2-rc.5', '0.2.2-rc.4', '0.2.2-rc.3', '0.2.2-rc.2', '0.2.2-rc.1'])
+})
+
+test('the bundle engines range covers the supported versions and rejects the neighbours', { skip: !anchor }, async (t) => {
+  const require = createRequire(join(anchor, 'package.json'))
+  let semver
+  try {
+    semver = require('semver')
+  } catch {
+    t.skip('the installed dsh has no resolvable semver package')
+    return
+  }
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  // DSH app-boot evaluates engines.dsh with includePrerelease: true.
+  const satisfies = version => semver.satisfies(version, manifest.engines.dsh, { includePrerelease: true })
+  for (const version of ['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5', '0.2.3-alpha.1']) {
+    assert.equal(satisfies(version), true, `${version} must be supported`)
+  }
+  for (const version of ['0.2.2-alpha.3', '0.2.3-alpha.2', '0.2.3']) {
+    assert.equal(satisfies(version), false, `${version} must be rejected`)
+  }
 })
 
 function sourceFiles(version) {
@@ -161,6 +182,40 @@ for (const version of sourceVersions) {
   })
 }
 
+test('0.2.2-rc.1 real bundle-only install checks, patches, repeats and reverts', { skip: !anchor }, async (t) => {
+  const installed = installedPackage(anchor)
+  const actual = installed === undefined
+    ? undefined
+    : JSON.parse(await readFile(join(installed, 'package.json'), 'utf8')).version
+  if (actual !== '0.2.2-rc.1') {
+    t.skip(`installed ${PACKAGE} is ${actual ?? 'missing'}; this check targets 0.2.2-rc.1`)
+    return
+  }
+  const root = await makeRoot(t, 'host-patch-rc1-real-')
+  const copy = join(root, 'node_modules', PACKAGE)
+  for (const file of sourceFiles('0.2.2-rc.1')) {
+    const target = join(copy, file)
+    await mkdir(dirname(target), { recursive: true })
+    await copyFile(join(installed, file), target)
+  }
+  const apply = (...args) => run('--package', copy, ...args)
+  const read = () => readFile(join(copy, 'lib/client.js'), 'utf8')
+  const pristine = await read()
+
+  let result = apply('--check')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /0\.2\.2-rc\.1 \(bundle-only\): patch is applicable/)
+  result = apply()
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(await read(), /const cardedNotice = context\.state\.kind === "context"/)
+  result = apply()
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /already patched/)
+  result = apply('--revert')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(await read(), pristine)
+})
+
 test('0.2.2-rc.1 bundle-only install checks, patches, repeats and reverts', async (t) => {
   const root = await makeRoot(t, 'host-patch-rc1-')
   const packageDir = join(root, 'node_modules', PACKAGE)
@@ -202,33 +257,35 @@ test('0.2.2-rc.1 bundle-only install checks, patches, repeats and reverts', asyn
   assert.match(result.stdout, /already reverted/)
 })
 
-test('0.2.2-rc.5 source-and-bundle fixture checks, patches, repeats and reverts', async (t) => {
-  const root = await makeRoot(t, 'host-patch-rc5-')
-  const packageDir = join(root, 'node_modules', PACKAGE)
-  await writePackage(packageDir, '0.2.2-rc.5')
-  const files = TARGETS['0.2.2-rc.5'].files
-  const pristine = new Map()
-  for (const file of files) pristine.set(file, await readFile(join(packageDir, file), 'utf8'))
-  const apply = (...args) => run('--package', packageDir, ...args)
+for (const version of sourceVersions) {
+  test(`${version} source-and-bundle fixture checks, patches, repeats and reverts`, async (t) => {
+    const root = await makeRoot(t, `host-patch-${version}-`)
+    const packageDir = join(root, 'node_modules', PACKAGE)
+    await writePackage(packageDir, version)
+    const files = TARGETS[version].files
+    const pristine = new Map()
+    for (const file of files) pristine.set(file, await readFile(join(packageDir, file), 'utf8'))
+    const apply = (...args) => run('--package', packageDir, ...args)
 
-  let result = apply('--check')
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /0\.2\.2-rc\.5 \(source-and-bundle\): patch is applicable/)
+    let result = apply('--check')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, new RegExp(`${version.replaceAll('.', '\\.')} \\(source-and-bundle\\): patch is applicable`))
 
-  result = apply()
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /patched/)
-  assert.match(await readFile(join(packageDir, 'lib/client.js'), 'utf8'), /const cardedNotice=context\.state\.kind===`context`/)
+    result = apply()
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /patched/)
+    assert.match(await readFile(join(packageDir, 'lib/client.js'), 'utf8'), /const cardedNotice=context\.state\.kind===`context`/)
 
-  result = apply()
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /already patched/)
+    result = apply()
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /already patched/)
 
-  result = apply('--revert')
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /reverted/)
-  for (const file of files) assert.equal(await readFile(join(packageDir, file), 'utf8'), pristine.get(file))
-})
+    result = apply('--revert')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /reverted/)
+    for (const file of files) assert.equal(await readFile(join(packageDir, file), 'utf8'), pristine.get(file))
+  })
+}
 
 test('DSH-go rootfs install resolves through --dsh-go and preserves DSH-go engine patches', async (t) => {
   const root = await makeRoot(t, 'host-patch-dshgo-')
@@ -288,20 +345,22 @@ test('DSH-go checkout build prefix resolves runtime/.work/<abi>/dsh-prefix', asy
   assert.match(result.stdout, /patch is applicable/)
 })
 
-test('unsupported dsh-client-ui-chat versions are rejected without writing', async (t) => {
+test('versions outside the supported range are rejected without writing', async (t) => {
   const root = await makeRoot(t, 'host-patch-unsupported-')
   const packageDir = join(root, 'node_modules', PACKAGE)
   await writePackage(packageDir, '0.2.2-rc.1')
   const manifestPath = join(packageDir, 'package.json')
-  await writeFile(manifestPath, `${JSON.stringify({ name: PACKAGE, version: '0.2.2-rc.4' }, null, 2)}\n`)
   const pristine = await readFile(join(packageDir, 'lib/client.js'), 'utf8')
 
-  const result = run('--package', packageDir, '--check')
-  assert.equal(result.status, 1)
-  assert.match(result.stderr, /0\.2\.2-rc\.4/)
-  assert.match(result.stderr, /supported versions are 0\.2\.2-rc\.5, 0\.2\.2-rc\.3, 0\.2\.2-rc\.1/)
-  assert.match(result.stderr, /Do not patch an unverified bundle/)
-  assert.equal(await readFile(join(packageDir, 'lib/client.js'), 'utf8'), pristine)
+  for (const unsupported of ['0.2.2-alpha.3', '0.2.3-alpha.2']) {
+    await writeFile(manifestPath, `${JSON.stringify({ name: PACKAGE, version: unsupported }, null, 2)}\n`)
+    const result = run('--package', packageDir, '--check')
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, new RegExp(unsupported.replaceAll('.', '\\.')))
+    assert.match(result.stderr, /supported versions are 0\.2\.3-alpha\.1, 0\.2\.2-rc\.5, 0\.2\.2-rc\.4, 0\.2\.2-rc\.3, 0\.2\.2-rc\.2, 0\.2\.2-rc\.1/)
+    assert.match(result.stderr, /Do not patch an unverified bundle/)
+    assert.equal(await readFile(join(packageDir, 'lib/client.js'), 'utf8'), pristine)
+  }
 })
 
 test('0.2.2-rc.1 source trees are rejected instead of patched with bundle-only rules', async (t) => {

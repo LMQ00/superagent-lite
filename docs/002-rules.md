@@ -98,12 +98,12 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 ## Review 规则
 
-- Git 项目的 `review_worker_commit` 要求 Task 处于 `running`、已有 Worktree、工作区干净、HEAD 不是基础 commit、基础 commit 是 HEAD 的祖先，且 base..head 有净改动；非 Git 项目只要求 Task 处于 `running` 和项目根存在（`src/review.js:71-78`、`src/review.js`）。
-- Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree（非 Git 项目为项目根），delivery 为 `caller`，深度 2（`src/review.js:61-76`）。
-- Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:56-71`）。非 Git 项目收到需求、follow-up、项目 + 全局记忆和项目根，提示词说明没有 commit/diff，Reviewer 读取当前项目文件和工作区内容。
-- 审查针对已提交的 diff，或非 Git 项目的当前工作区内容；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:24-29`、`src/review.js`）。
-- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:6-34`、`src/review.js:125-140`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局知识，但不能写入。
-- 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:109-122`）。
+- Git 项目的 `review_worker_commit` 要求 Task 处于 `running`、已有 Worktree、工作区干净、HEAD 不是基础 commit、基础 commit 是 HEAD 的祖先，且 base..head 有净改动；非 Git 项目只要求 Task 处于 `running` 和项目根存在（`src/review.js:72-79`、`src/review.js`）。
+- Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree（非 Git 项目为项目根），delivery 为 `caller`，深度 2（`src/review.js:62-77`）。
+- Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:57-72`）。非 Git 项目收到需求、follow-up、项目 + 全局记忆和项目根，提示词说明没有 commit/diff，Reviewer 读取当前项目文件和工作区内容。
+- 审查针对已提交的 diff，或非 Git 项目的当前工作区内容；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:25-30`、`src/review.js`）。
+- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:7-35`、`src/review.js:126-141`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局知识，但不能写入。
+- 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:110-123`）。
 - 面板的 `review` 动作对 `unreviewed` 的 Git Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`。非 Git Task 没有分支，面板不提供该动作（`src/git-actions.js:401-423`）。
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:257-274`、`src/git-actions.js:291-303`）。
 - 审查没有通过不直接改 Task 状态；Worker 修完再提交（非 Git 项目则继续改文件）、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`；非 Git 项目审查通过后结束时落到 `completed`（`index.js:138-141`）。
@@ -143,10 +143,10 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 | Git 子命令 | 读取与检查类命令，如 `diff`、`show`、`log`、`status`、`blame` | `init`、`commit`、`merge`、`rebase`、`cherry-pick`、`revert`、`reset`、`checkout`、`switch`、`branch`、`tag`、`stash`、`push`、`fetch`、`pull`、`am`、`update-ref`、`symbolic-ref`、`worktree`、`filter-branch`、`replace`、`commit-tree`（`src/review-scope.js:15-19`、`src/review-scope.js:123-130`） |
 | 命令形态 | 任意 shell 命令，包括管道、重定向、引号、后台运行、任意 workdir 和沙箱参数；`sh -c`、`bash -lc`、`pwsh -Command`、`env`、`sudo`、`xargs` 等包装中的命令同样检查 | 包装或分段后出现的被禁 git 子命令 |
 | 路径 | Worktree（非 Git 项目为项目根）内外均可，绝对路径、符号链接和 `.git` 不再额外拦截 | 由写改工具完成的文件写入 |
-| 证据 | 必须实际读过改动：Git 项目为一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用；非 Git 项目为对项目根内任意文件的 `read`、`read_image`、`grep`（`src/review-scope.js:260-281`） | 没有证据的裁决被拒绝：Git 项目为 `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`，非 Git 项目为 `The reviewer did not inspect the project files; read a file in the project folder before deciding`（`src/review.js:118`） |
+| 证据 | 必须实际读过改动：Git 项目为一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用；非 Git 项目为对项目根内任意文件的 `read`、`read_image`、`grep`（`src/review-scope.js:260-281`） | 没有证据的裁决被拒绝：Git 项目为 `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`，非 Git 项目为 `The reviewer did not inspect the project files; read a file in the project folder before deciding`（`src/review.js:119`） |
 
 - 命令检查会跳过 git 的全局选项（如 `-c`、`-C`、`--git-dir`、`--work-tree`）再取子命令，所以 `git -C <path> commit` 同样被拒。
-- 审查结束后仍会复核 Worktree 的分支、干净工作区和 HEAD；HEAD 变动时审查失败并需重跑（`src/review.js:120`、`src/review.js:44-54`）。
+- 审查结束后仍会复核 Worktree 的分支、干净工作区和 HEAD；HEAD 变动时审查失败并需重跑（`src/review.js:121`、`src/review.js:45-55`）。
 
 ## Git 操作规则
 
@@ -207,7 +207,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 ## 版本
 
-Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-87`、`src/review.js:56-71`、`src/continue.js:136`）。
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:69-87`、`src/review.js:57-72`、`src/continue.js:136`）。
 
 Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:562-577`、`src/merge.js:24-44`）。
 
