@@ -15,6 +15,7 @@
     "index.js",
     "router.js",
     "cordis.patch.yml",
+    "scripts",
     "src",
     "locale/*.json",
     "docs",

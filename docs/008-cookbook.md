@@ -79,9 +79,9 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 })
 ```
 
-把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:98`）。
+把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:100`）。
 
-- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:93`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
+- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:95`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
 - **注册位置在 `agent/created` 内。** 该回调已经完成 Task 归属核对；不要把工具注册到 `router.js`。
 - **不要另建全局工具。** 工具只能看到闭包绑定的那个 Task，避免 `read_task` 变成跨 Task 读取入口。
 

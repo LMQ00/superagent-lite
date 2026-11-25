@@ -12,6 +12,14 @@ const script = fileURLToPath(new URL('../scripts/dsh-client-ui-chat-agent-messag
 const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
 const sourceVersions = ['0.2.2-rc.5', '0.2.2-rc.3']
 
+test('the version matrix keeps rc.5 and rc.3 on one target and DSH-go on the bundle-only rc.1 target', () => {
+  assert.equal(TARGETS['0.2.2-rc.5'], TARGETS['0.2.2-rc.3'])
+  assert.equal(TARGETS['0.2.2-rc.3'].layout, 'source-and-bundle')
+  assert.equal(TARGETS['0.2.2-rc.1'].layout, 'bundle-only')
+  assert.deepEqual(TARGETS['0.2.2-rc.1'].files, ['lib/client.js'])
+  assert.deepEqual(Object.keys(TARGETS), ['0.2.2-rc.5', '0.2.2-rc.3', '0.2.2-rc.1'])
+})
+
 function sourceFiles(version) {
   return ['package.json', ...TARGETS[version].files]
 }
