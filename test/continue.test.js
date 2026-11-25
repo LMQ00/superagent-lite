@@ -8,6 +8,7 @@ const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
 await mkdir(tmp, { recursive: true })
 const home = await mkdtemp(join(tmp, 'continue-'))
 process.env.HOME = home
+await mkdir(join(home, 'worktree'), { recursive: true })
 after(() => rm(home, { recursive: true, force: true }))
 
 const originalTask = 'Implement it.\n\nAcceptance: tests pass.'
@@ -305,6 +306,152 @@ test('other settled states also resume with the compact follow-up message', asyn
     assert.match(sends[0].text, /Rules:/)
     assert.match(sends[0].text, /Follow-up \(the only authoritative instruction for this turn\):\nMore work/)
     assert.equal((await readTask(id)).status, 'resuming')
+  }
+})
+
+test('a BLOCKED task that settled before creating its worktree can be continued', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000001'
+  await taskFixture(id)
+  await updateTask(id, { status: 'failed', stopReason: 'completed', finishedAt: new Date().toISOString() })
+  const sends = []
+  const tool = createContinueTool(context(sends))
+  const text = await tool.execute({ taskId: id, task: 'Use the decision below' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(text, /Follow-up delivered/)
+  assert.match(sends[0].text, new RegExp(`Task ID: ${id}`))
+  assert.match(sends[0].text, /Branch: not created yet/)
+  assert.match(sends[0].text, /Worktree: not created yet/)
+  assert.match(sends[0].text, /if you have not created it yet, call create_worktree once/)
+  assert.match(sends[0].text, /Follow-up \(the only authoritative instruction for this turn\):\nUse the decision below/)
+  assert.equal((await readTask(id)).status, 'resuming')
+  assert.deepEqual(await followUpTexts(id), ['Use the decision below'])
+})
+
+test('a BLOCKED report task resumes with read-only report instructions', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000002'
+  await taskFixture(id)
+  await updateTask(id, { mode: 'report', status: 'failed', stopReason: 'completed' })
+  const sends = []
+  const tool = createContinueTool(context(sends))
+  await tool.execute({ taskId: id, task: 'Try the public registry' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(sends[0].text, new RegExp(`Task ID: ${id}`))
+  assert.match(sends[0].text, /report-only/)
+  assert.match(sends[0].text, /do not create a worktree, edit files, commit, or move HEAD/)
+  assert.match(sends[0].text, /call report_task once with the conclusion and evidence/)
+  assert.doesNotMatch(sends[0].text, /call create_worktree once/)
+  assert.doesNotMatch(sends[0].text, /commit and call review_worker_commit/)
+  assert.equal((await readTask(id)).status, 'resuming')
+})
+
+test('continue_worker tells the router to retry a queued or starting task', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask } = await import('../src/task-store.js')
+  for (const [index, status] of ['queued', 'starting'].entries()) {
+    const id = `${'7'.repeat(15)}${index}`
+    await taskFixture(id, status)
+    const sends = []
+    const tool = createContinueTool(context(sends))
+    const text = await tool.execute({ taskId: id, task: 'New requirement', land: true }, { agent: { id: 'router' }, signal: new AbortController().signal })
+    assert.match(text, new RegExp(`is still ${status}`))
+    assert.match(text, /its worker has not started, so the follow-up was not delivered/)
+    assert.match(text, /Retry continue_worker after it starts/)
+    assert.equal(sends.length, 0)
+    const task = await readTask(id)
+    assert.equal(task.status, status)
+    assert.equal(task.land, undefined)
+    assert.deepEqual(task.followUps ?? [], [])
+  }
+})
+
+test('continue_worker retries a task stuck in resuming instead of refusing it', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000003'
+  await taskFixture(id)
+  await updateTask(id, { status: 'resuming', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const sends = []
+  const tool = createContinueTool(context(sends))
+  await tool.execute({ taskId: id, task: 'Continue the resume' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(sends[0].text, /Follow-up \(the only authoritative instruction for this turn\):\nContinue the resume/)
+  assert.equal((await readTask(id)).status, 'resuming')
+  assert.deepEqual(await followUpTexts(id), ['Continue the resume'])
+})
+
+test('a failed delivery to a resuming task keeps it resuming', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000007'
+  await taskFixture(id)
+  await updateTask(id, { status: 'resuming', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const tool = createContinueTool({ subagents: { async sendMessage() { throw new Error('worker is gone') } } })
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'Continue the resume' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /worker is gone/,
+  )
+  const task = await readTask(id)
+  assert.equal(task.status, 'resuming')
+  assert.deepEqual(task.followUps ?? [], [])
+})
+
+test('continue_worker refuses a task whose branch was already merged', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000004'
+  await taskFixture(id)
+  await updateTask(id, { status: 'merged', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const tool = createContinueTool(context([]))
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'More work' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /is already merged; dispatch new work instead of resuming it/,
+  )
+  assert.equal((await readTask(id)).status, 'merged')
+})
+
+test('continue_worker refuses a task whose worker branch was deleted', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000005'
+  await taskFixture(id)
+  await updateTask(id, { status: 'failed', branchDeletedAt: new Date().toISOString() })
+  const tool = createContinueTool(context([]))
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'More work' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /The worker branch for task .* was deleted; dispatch new work instead of resuming it/,
+  )
+  assert.equal((await readTask(id)).status, 'failed')
+})
+
+test('continue_worker refuses a task whose recorded worktree is gone', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '7000000000000006'
+  const path = join(home, 'missing-worktree')
+  await taskFixture(id)
+  await updateTask(id, { status: 'failed', worktree: { path, branch: 'sl-test' } })
+  const tool = createContinueTool(context([]))
+  await assert.rejects(
+    tool.execute({ taskId: id, task: 'More work' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+    /The worktree recorded for task .* is gone; dispatch new work instead of resuming it/,
+  )
+  assert.equal((await readTask(id)).status, 'failed')
+})
+
+test('continue_worker refuses delivery states that are no longer unpublished work', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  for (const [index, status] of ['awaiting-ci', 'publishing', 'merging', 'delivery-blocked'].entries()) {
+    const id = `800000000000000${index}`
+    await taskFixture(id)
+    await updateTask(id, { status, worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+    const tool = createContinueTool(context([]))
+    await assert.rejects(
+      tool.execute({ taskId: id, task: 'More work' }, { agent: { id: 'router' }, signal: new AbortController().signal }),
+      new RegExp(`is ${status} and can no longer be resumed; dispatch new work instead`),
+    )
+    assert.equal((await readTask(id)).status, status)
   }
 })
 

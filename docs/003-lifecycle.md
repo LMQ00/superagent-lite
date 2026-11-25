@@ -64,7 +64,7 @@ Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task�
 
 Worker 调用 `create_worktree` 后，worktree 服务从记录的 base commit 创建隔离检出，目录和分支名为 `sl-<worktreeName>-<Task ID 前 12 位>`；Task 保存 `path`、`branch`、`baseCommit`、`repositoryRoot`、`sourceBranch`，状态改为 `running`，工作目录切到 Worktree（`src/worktree-tool.js:42-57`）。已有 Worktree 时只重新进入（`src/worktree-tool.js:28-37`）。非 Git 项目的 Task 记录 `git: false`，没有 Worktree，工具守卫从一开始就允许在项目根工作，`create_worktree` 不可用（`src/dispatch.js`、`index.js`）。merge 任务的 `task.mergeBranches` 由派发时解析，运行中收到的新 merge 请求会追加到同一列表；worker 用 `merge_branch` 把记录的目标分支合入自己的 worktree 分支，不直接改 base branch（`src/dispatch.js:13-48`、`src/merge-tool.js:13-64`）。
 
-Worker 的 subagent 结束时冻结；冻结后所有工具被拒，包括消息工具（`index.js:100`、`index.js:121-124`）。
+Worker 的 subagent 结束时冻结工具调用能力：冻结后所有工具被拒，包括消息工具（`index.js:100`、`index.js:121-124`）。冻结只限制这个 Worker agent 的工具调用，不把 Task 或它的 Worktree/会话标成不可恢复；`continue_worker` 会重新挂载会话并恢复执行（`src/continue.js:38-62`、`src/continue.js:260-273`）。
 
 ### Reviewer
 
@@ -157,11 +157,11 @@ report 任务在 `report_task` 执行时到 `completed`；回合结束仍未调�
 
 回合没有以 `completed` 结束，或 change/merge 任务没有 Worktree，Task 落为 `failed`，记录 `stopReason` 和 `finishedAt`；Worker 冻结（`index.js:121-153`）。
 
-已有 Worktree 的 Git 项目 `failed` Task 可以用 `continue_worker` 恢复；非 Git 项目的 `failed` 或 `review-required` Task 没有 Worktree，但项目根仍在，也可以用 `continue_worker` 恢复。从未拿到 Worktree 的 Git 项目 Task，包括 report 任务，不能恢复，只能重新派发（`src/continue.js:127-134`）。
+已有 Worktree 的 Git 项目 `failed` Task 可以用 `continue_worker` 恢复；BLOCKED 在创建 Worktree 前就结束的 Git change/merge Task（`failed`、没有 Worktree）也可以恢复，续派发消息会要求 Worker 先创建 Worktree。非 Git 项目的 `failed` 或 `review-required` Task 没有 Worktree，但项目根仍在，同样可以恢复；report 任务用只读检查、联网检索和 `report_task` 的恢复消息。Task 处于 `resuming` 时再次追加指令会继续恢复中的会话，不会被当作不可恢复。`queued` 或 `starting` 的 Task 还没有 Worker 回合，`continue_worker` 不投递并要求稍后再试。已经合并、已删除 worker 分支、记录的 Worktree 已不存在，或处于 `awaiting-ci`、`publishing`、`merging`、`delivery-blocked` 等交付状态的 Task 仍拒绝恢复，只能重新派发（`src/continue.js:38-62`、`src/continue.js:257-273`）。
 
 ### 审查未通过
 
-Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker 修完问题、再次提交并再次调用审查工具。`continue_worker` 会把 Task 改为 `resuming`，保留旧 Review 记录，再发送精简续派发消息：任务标识、不可变规则和唯一权威的 follow-up；只有检测到上下文被压缩时才回放原需求。之后 HEAD 是否仍等于 `review.head` 决定旧批准是否有效，HEAD 变化时旧批准自动失效（`src/continue.js:126-148`、`src/continue.js:12-68`）。
+Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker 修完问题、再次提交并再次调用审查工具。`continue_worker` 会把 Task 改为 `resuming`，保留旧 Review 记录，再发送精简续派发消息：任务标识、不可变规则和唯一权威的 follow-up；只有检测到上下文被压缩时才回放原需求。之后 HEAD 是否仍等于 `review.head` 决定旧批准是否有效，HEAD 变化时旧批准自动失效（`src/continue.js:64-166`、`src/continue.js:260-273`）。
 
 ### Host 重启或插件重载
 
@@ -181,8 +181,8 @@ GitHub 写入不自动重试。PR 尚未创建时的发送失败可以从 `deliv
 
 ### follow-up 发送失败
 
-发送失败会删除刚记录的要求。目标是已结束的 Task 时标为 `failed`；目标是运行中的 Task 时保持 `running`（`src/continue.js:74-90`、`src/continue.js:142-147`）。
+发送失败会删除刚记录的要求。只有本次把已结束的 Task 重新打开时标为 `failed`；目标是运行中的 Task 时保持 `running`，恢复中的 Task 保持 `resuming`；排队或启动中的 Task 不发送也不记录（`src/continue.js:194-211`、`src/continue.js:257-288`）。
 
 ### 未完成的工作
 
-无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE`，并说明剩下什么。`message_router` 的文本不设置 Task 状态，状态由生命周期事件写（`src/worker-prompt.js:61-68`、`index.js:96-100`、`index.js:121-153`）。
+无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE`，并说明剩下什么。`message_router` 的文本不设置 Task 状态，状态由生命周期事件写；BLOCKED 结束的回合通常落到 `failed` 或 `review-required`，这两种 Task 以及没有 Worktree 的 BLOCKED Task 都能被 `continue_worker` 恢复，冻结的只是原 Worker agent 的工具能力（`src/worker-prompt.js:61-68`、`index.js:96-100`、`index.js:121-153`、`src/continue.js:38-62`）。

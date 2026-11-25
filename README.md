@@ -31,7 +31,7 @@ npm test
 
 在「Superagent 轻量版」会话里直接说清要改什么。router 用一句话回复是否已派工和下一步；实现细节留在 worker 的报告里，不刷在对话里。
 
-- 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。
+- 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。任务 BLOCKED 后会恢复同一个 worker（即使它还没创建 worktree）；任务还在排队时，`continue_worker` 会明确要求稍后再试。
 - 只读的诊断、分析、查找可以直接问；router 用 report 模式派工，worker 可以联网检索和读取网页做调研，任务结束后不留分支和提交。
 - 在非 Git 目录里也可以直接说清要改什么：派发、执行、审查和记忆走与 Git 项目相同的状态机，只是不建分支、Worktree 和提交；审查通过后任务直接完成。合并、发送 PR 和 `land` 授权需要 Git 仓库。
 - 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
