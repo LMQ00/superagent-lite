@@ -9,7 +9,7 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 | 组件 | 作用 |
 | --- | --- |
 | DSH Web Host | 运行插件、Session 和面板 |
-| `@local/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
+| `@lmq00/superagent-lite` bundle | 提供预设、工具、HTTP 路由、Task 存储和记忆存储 |
 | 记忆 | 全局/项目记忆、全局/项目 skill（项目 skill 最多 10 个）、全局知识库，以及 change worker 的原始归档和 memory 读取的会话记录 |
 | 项目 skill provider | Worker 作用域的 `superagent-memory` provider 从项目 checkout 读取 `<项目根>/.dsh/skills/<skill名>/SKILL.md`，让 Git Worktree 里或非 Git 项目目录里的 Worker 和 Reviewer 看到项目 skill description；catalog 归属判断读取这些 skill 的 `author` frontmatter |
 | Worktree 服务 | 为每个 Git Task 创建并保留一个 Worktree；非 Git 项目不使用 |

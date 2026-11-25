@@ -6,7 +6,7 @@
         namePrefix: sl-
         retainOnArchive: true
     - id: superagent-lite
-      name: '@local/superagent-lite'
+      name: '@lmq00/superagent-lite'
     - id: preset-superagent-lite
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -76,7 +76,7 @@
               - id: tool-result-pruner
                 name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
           - id: superagent-lite-router
-            name: '@local/superagent-lite/router'
+            name: '@lmq00/superagent-lite/router'
     - id: preset-superagent-lite-worker
       name: '@deepseek-ai/dsh-agent-preset'
       config:

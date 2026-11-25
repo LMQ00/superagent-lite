@@ -13,16 +13,14 @@
 
 前置：DSH `0.2.2-rc.5`、Node.js 24.9 或更新、Git。发布到 GitHub 还需要已登录 `github.com` 的 `gh`。
 
+包发布在 npm registry，直接从 registry 安装，不需要 clone 仓库：
+
 ```bash
-git clone https://github.com/LMQ00/superagent-lite.git
-cd superagent-lite
-npm test
+npm i @lmq00/superagent-lite
 ```
 
-`npm test` 全部通过（`fail 0`）后再安装：
-
 1. 打开 DSH Web 的插件管理器，点「添加插件」。
-2. 输入本仓库的本地绝对路径，安装并启用这个 bundle。
+2. 输入 `@lmq00/superagent-lite`，从 npm registry 安装并启用这个 bundle。
 3. 新建会话，在预设里选「Superagent 轻量版」。
 
 安装成功后，新会话的预设列表出现「Superagent 轻量版」。
