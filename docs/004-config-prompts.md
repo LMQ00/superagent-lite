@@ -10,7 +10,7 @@
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:80`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-123` |
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标与显式 `land` 授权，以及按排队、运行、已交付、已取消和失败查询任务 | `src/dispatch.js:40-51`、`src/continue.js:120-131`、`src/worker-status.js` |
-| Worker 任务消息 | 头部、需求、change/report/merge 模式、`land` 条件规则、非 Git 项目的直接修改规则，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-145` |
+| Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-147` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
 | 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-112`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
@@ -99,7 +99,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 4. 记忆运行时上下文：Worker（包括 report 只读 worker）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取，Router 只读取全局记忆；以 order `170` 注册并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
 5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、排队开始/取消的 `worker-status` 后台通知。
 
-两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并（`cordis.patch.yml:25-26`、`cordis.patch.yml:44-53`、`cordis.patch.yml:81-86`）。
+两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:44-53`、`cordis.patch.yml:81-86`、`src/worker-prompt.js:16-19`、`src/worker-prompt.js:36-61`）。
 
 ## 优先级
 
