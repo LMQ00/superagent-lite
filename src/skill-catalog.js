@@ -8,6 +8,12 @@ export const WORKER_PRESET = 'superagent-lite-worker'
 // frontmatter. The callback reads those authors from the skill files, so this
 // guard never relies on a separate name list. A skill without an author keeps
 // normal catalog behavior.
+//
+// Preset listeners mount before this plugin and append the catalog on their way
+// out, so the guard is registered with `prepend`; a default listener would run
+// inside them, before the catalog exists, and could never filter it. The guard
+// keys on the live agent and the skill authors, not on Task status: running,
+// BLOCKED, resuming and awaiting-merge sessions are all covered.
 function changedSkillNames(before, after) {
   const previous = new Map(before.map(entry => [entry.name, entry.description]))
   const next = new Map(after.map(entry => [entry.name, entry.description]))

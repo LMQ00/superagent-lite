@@ -33,7 +33,7 @@ export async function apply(ctx) {
       return memoryAuthoredSkillNames(task?.projectRoot)
     },
   })
-  ctx.on('agent/pre-step', catalogGuard.preStep)
+  ctx.on('agent/pre-step', catalogGuard.preStep, { prepend: true })
   const gitManager = createGitManager(ctx)
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({

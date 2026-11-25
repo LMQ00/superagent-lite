@@ -92,7 +92,7 @@ memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js`、`index.js`）。
 
-写入的 skill 只对之后新派发的 Worker/Reviewer 可见。已运行或已结束的 Worker/Reviewer 会话保留启动时的 skill catalog：只由 `author: memory` 的 skill 新增、修改或删除构成的 catalog 更新会被拦截，不会因为 memory 写入而收到变更提醒并继续行动。归属直接来自 skill 文件的 frontmatter 作者，不再维护单独的名单；多个 memory skill 一起变化时全部按作者判断，作者缺失的 skill 变化照常发布（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。安装 owner 可以在「记忆系统」标签页逐条删除记忆字段、memory skill 或知识条目；删除 skill 与写入一样只影响之后派发的会话，删除全局记忆字段后 Router 的全局记忆缓存立即刷新（`src/memory-panel.js`、`src/memory.js`）。
+写入的 skill 只对之后新派发的 Worker/Reviewer 可见。已运行或已结束的 Worker/Reviewer 会话保留启动时的 skill catalog：只由 `author: memory` 的 skill 新增、修改或删除构成的 catalog 更新会被拦截，不会因为 memory 写入而收到变更提醒并继续行动。拦截按会话（agent）与 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入。归属直接来自 skill 文件的 frontmatter 作者，不再维护单独的名单；多个 memory skill 一起变化时全部按作者判断，作者缺失的 skill 变化照常发布（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。安装 owner 可以在「记忆系统」标签页逐条删除记忆字段、memory skill 或知识条目；删除 skill 与写入一样只影响之后派发的会话，删除全局记忆字段后 Router 的全局记忆缓存立即刷新（`src/memory-panel.js`、`src/memory.js`）。
 
 ### 原始归档
 
