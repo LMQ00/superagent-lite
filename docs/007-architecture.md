@@ -53,11 +53,11 @@ Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `
 
 ### `src/memory.js`
 
-定义记忆字段、注入文本、memory 角色提示词、多个命名 skill 的提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 触发时先把 Worker 的完整会话写成 `task/archive/sessions/<sha256(Session ID)>.md`，触发消息只带记录路径和任务、角色、分支等元信息，memory 自己按路径读取；最终报告工具的参数不进入记录。知识库通过 `knowledge_query` / `knowledge_get` 读取、通过 `knowledge_write` 写入，只有 memory 角色能写；面板的删除视图从这里清空记忆字段、删除 memory 管理的 skill 和知识条目（`src/memory.js`）。
+定义记忆字段、注入文本、memory 角色提示词、多个命名 skill 的提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 触发时先把 Worker 的完整会话写成 `task/archive/sessions/<sha256(Session ID)>.md`，触发消息只带记录路径和任务、角色、分支等元信息，memory 自己按路径读取；最终报告工具的参数不进入记录。提示词要求项目 skill 最多 10 个、达到上限只复用已有名字更新，并写明知识、事实、经验、结论进全局知识库而 skill 只放可复用固定流程。提取结果先按项目、再按全局批量写 skill，项目 skill 超限会在写任何字段前失败，不产生半写入。知识库通过 `knowledge_query` / `knowledge_get` 读取、通过 `knowledge_write` 写入，只有 memory 角色能写；面板的删除视图从这里清空记忆字段、删除 memory 管理的 skill 和知识条目（`src/memory.js`）。
 
 ### `src/memory-store.js`
 
-保存全局记忆、项目记忆、全局知识库、全局/项目 skill 文件、原始归档和 memory 读取的会话记录；项目 skill 目录同时写入 `.git/info/exclude`，避免弄脏项目 checkout。Worker 和 Reviewer 创建时会在各自 scope 注册一个 project-skill provider，从项目 checkout 读取所有由 memory 管理的项目 skill，供 catalog 使用。`writeSkill` 以 `name` 决定目录，在 frontmatter 写入 `author: memory`；既有固定名字没有 author 时仍可读取和更新，写入时补上 author。同名文件已有其他作者时拒绝写入，不静默覆盖。`deleteSkill` 按名字删除该 skill 的目录和 `SKILL.md`；`deleteMemoryField` 清空记忆字段；`memoryAuthoredSkillNames` 直接扫描 skill 文件并只收集 `author: memory` 的名字，供 catalog 归属判断使用。全局记忆和知识库各是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符，skill description 最多 500 字符，知识条目最多 200 条；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；skill 写成 DSH 兼容的 `SKILL.md`；归档位于 `task/archive/`（`src/memory-store.js`）。
+保存全局记忆、项目记忆、全局知识库、全局/项目 skill 文件、原始归档和 memory 读取的会话记录；项目 skill 目录同时写入 `.git/info/exclude`，避免弄脏项目 checkout。Worker 和 Reviewer 创建时会在各自 scope 注册一个 project-skill provider，从项目 checkout 读取所有由 memory 管理的项目 skill，供 catalog 使用。`writeSkill` 以 `name` 决定目录，在 frontmatter 写入 `author: memory`；既有固定名字没有 author 时仍可读取和更新，写入时补上 author。同名文件已有其他作者时拒绝写入，不静默覆盖。`writeSkills` 在一次 skill 根锁内先校验整批名字、作者冲突和 `MAX_PROJECT_SKILLS = 10` 的项目 skill 上限，再写文件，因此超限批次不会留下部分 skill；达到上限后只允许更新已有项目 skill 名字，新建被明确拒绝。`projectSkillCount` 统计项目下所有可解析的 skill 目录（包括非 memory 管理的目录），供提示词报告当前用量。`deleteSkill` 按名字删除该 skill 的目录和 `SKILL.md`；`deleteMemoryField` 清空记忆字段；`memoryAuthoredSkillNames` 直接扫描 skill 文件并只收集 `author: memory` 的名字，供 catalog 归属判断使用。全局记忆和知识库各是一个 JSON 文档；项目记忆按规范化项目根哈希分文件；字段校验上限 4,000 字符，skill description 最多 500 字符，知识条目最多 200 条；写入使用临时文件 + rename，目录 `0700`、文件 `0600`；skill 写成 DSH 兼容的 `SKILL.md`；归档位于 `task/archive/`（`src/memory-store.js`）。
 
 ### `src/task-store.js`
 
@@ -204,8 +204,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型，并向 Router 通知排队任务已开始。 |
 | `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）和分支删除。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
-| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、多 skill 提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档；触发 memory 时写会话记录并只把路径与元信息交给 memory；提供 `memoryAuthoredSkillNames` 按 frontmatter 作者汇总 memory skill，并提供字段、skill 和知识删除视图。 |
-| `src/memory-store.js` | 保存全局/项目记忆、全局知识库、全局/项目 skill 文件、原始归档和 memory 读取的会话记录，并执行字段校验与原子写入；每个 skill 以名字独立成目录并写 `author: memory`，冲突不覆盖，按作者扫描 memory skill，支持清空记忆字段和按名字删除 skill。 |
+| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、多 skill 提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档；提示词写明项目 skill 10 个上限和「知识进知识库、skill 只放固定流程」的分工；触发 memory 时写会话记录并只把路径与元信息交给 memory；提取时先批量写项目 skill，超限在写任何字段前失败，再写全局 skill 和记忆字段；提供 `memoryAuthoredSkillNames` 按 frontmatter 作者汇总 memory skill，并提供字段、skill 和知识删除视图。 |
+| `src/memory-store.js` | 保存全局/项目记忆、全局知识库、全局/项目 skill 文件、原始归档和 memory 读取的会话记录，并执行字段校验与原子写入；每个 skill 以名字独立成目录并写 `author: memory`，冲突不覆盖，按作者扫描 memory skill；`writeSkills` 在锁内整批校验并写入，项目 skill 超过 `MAX_PROJECT_SKILLS = 10` 时拒绝且不产生部分文件，`projectSkillCount` 供提示词报告当前用量；支持清空记忆字段和按名字删除 skill。 |
 | `src/memory-panel.js` | 提供 owner-only 记忆端点：GET 返回全局记忆、所请求项目的记忆、全局/项目 skill 和全局知识库条目；DELETE 校验删除目标并删除单个记忆字段、memory 管理的 skill 或知识条目。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
@@ -234,8 +234,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
 | `test/helper-guard.test.js` | helper 认领、记忆只读工具（含联网检索/网页读取）与 shell 限制、Reviewer 只禁写改工具且放行只读检索。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
-| `test/memory.test.js` | memory 角色提示词、只传记录路径与元信息、Git/非 Git 会话记录可读、全局 + 项目提取、多个命名 skill 写入、纠正覆盖与旧 skill 迁移、同名/重复名校验、空结果、transcript 上限、知识工具、注入文本、provider、归档和 schema。 |
-| `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、字段清空、全局知识库去重/片段/纠正/删除、多 skill 目录与作者、同名冲突不覆盖、旧 skill 迁移、删除、归档和损坏文件拒绝。 |
+| `test/memory.test.js` | memory 角色提示词（含项目 skill 10 个上限和知识/skill 分工）、只传记录路径与元信息、Git/非 Git 会话记录可读、全局 + 项目提取、多个命名 skill 写入、项目 skill 超限拒绝且不写字段、批量超限不产生部分 skill、达到上限仍可更新、纠正覆盖与旧 skill 迁移、同名/重复名校验、空结果、transcript 上限、知识工具、注入文本、provider、归档和 schema。 |
+| `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、字段清空、全局知识库去重/片段/纠正/删除、多 skill 目录与作者、项目 skill 10 个上限与超限拒绝、批量超限不写任何新 skill、达到上限仍可更新和写全局 skill、同名冲突不覆盖、旧 skill 迁移、删除、归档和损坏文件拒绝。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写多个 skill 或删除某个 memory skill 后已结束 Worker 不再收到 catalog 更新、非 memory 管理的 skill 变化仍正常送达。 |
 | `test/memory-panel.test.js` | 记忆端点的 owner 准入、项目根校验、全局/项目记忆、全局/项目 skill 与全局知识库返回、字段/skill/知识删除、skill 删除参数校验和存储失败，以及删除后查询不再返回。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话按作者拦截多个 memory skill 的新增、修改和删除，其他 skill 变化和 Router 会话不受影响。 |
@@ -279,7 +279,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | 项目记忆 | `memory/projects/<sha256(projectRoot)>.json` | `src/memory.js` 经 `src/memory-store.js` |
 | 全局知识库 | `memory/knowledge.json` | `knowledge_write` 经 `src/memory-store.js` |
 | 全局 skill | `~/.agents/skills/<skill名>/SKILL.md`，frontmatter `author: memory`；旧 `superagent-shared-memory` 继续可用 | `src/memory.js` 经 `src/memory-store.js` |
-| 项目 skill | `<project>/.dsh/skills/<skill名>/SKILL.md`，frontmatter `author: memory`；旧 `superagent-project-memory` 继续可用，多个 skill 各自独立 | `src/memory.js` 经 `src/memory-store.js` |
+| 项目 skill | `<project>/.dsh/skills/<skill名>/SKILL.md`，frontmatter `author: memory`；旧 `superagent-project-memory` 继续可用，多个 skill 各自独立，项目最多 10 个 | `src/memory.js` 经 `src/memory-store.js` |
 | 原始归档 | `task/archive/<sha256(sessionId+seq)>.json` | `index.js` 的 `session/event` 经 `src/memory.js` |
 | memory 会话记录 | `task/archive/sessions/<sha256(sessionId)>.md` | memory 触发时 `runMemoryExtraction` 经 `src/memory-store.js` |
 

@@ -14,7 +14,7 @@
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则；仅检测到上下文压缩时回放需求 | `src/continue.js:35-71` |
 | 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:12-34`、`src/review.js:56-112`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
-| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-537` |
+| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-539` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
 | 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-131` |
 
@@ -56,7 +56,9 @@
 - 全局 `sharedSkills`：所有项目可复用的零个或多个 skill；每项含 `name`、`description`、`content`，只有 description 进入 catalog。
 - 项目 `responsibilities`：项目与角色负责什么，保持很小并固定注入。
 - 项目 `positioning`：项目是什么，保持很小并固定注入。
-- 项目 `projectSkills`：适用于当前项目和职责的零个或多个 skill；每项含 `name`、`description`、`content`，只有 description 进入 catalog。每个 skill 用自己的名字写进独立目录，重名用于纠正同一个 skill，不能用于不同内容。
+- 项目 `projectSkills`：适用于当前项目和职责的最多 10 个 skill；每项含 `name`、`description`、`content`，只有 description 进入 catalog。每个 skill 用自己的名字写进独立目录，重名用于纠正同一个 skill，不能用于不同内容。
+- skill 与知识分工：skill 只放可复用的固定流程或方法步骤；知识、事实、经验、结论和观察写全局知识库，不写成 skill。
+- 项目 skill 上限：提示词报告当前项目 skill 总数（包含不由 memory 管理的目录）和 10 个上限，要求达到上限时复用已有 memory 管理的项目 skill 名字返回完整新内容，不得新增第 11 个；写入路径同时强制执行该上限，超限时报错并整次不写字段和 skill，不产生半写入。
 - 全局知识库：只存可复用、广泛适用的知识；先用 `knowledge_query` 按关键词查编号和上下文片段，需要时用 `knowledge_get` 按编号读完整条目，再用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写。
 - memory 保存的 skill 在 frontmatter 带 `author: memory`：之后派发的 Worker/Reviewer 会看到新 description，已经发布过 catalog 的会话不接收这些 skill 新增、修改或删除引起的 catalog 更新。
 - 可以不加记忆，不把写入条数当指标；没有可复用的结论就不写，没用的知识只会污染知识库。
