@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { readTask, taskForSession, updateTask } from './src/task-store.js'
-import { cancelQueuedWorker } from './src/worker-status.js'
+import { stopWorker } from './src/worker-stop.js'
+import { interruptWorker } from './src/worker-control.js'
 import { checkLandingCommand, forgetLanding, initLanding, landingState } from './src/landing.js'
 import { createWorktreeTool } from './src/worktree-tool.js'
 import { createBoardHandler, createGitActionHandler } from './src/board.js'
@@ -38,7 +39,8 @@ export async function apply(ctx) {
   ctx.inject(['webServer', 'connection'], web => {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
-      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager, undefined, taskId => cancelQueuedWorker(ctx, taskId)),
+      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager, undefined,
+        (taskId, options) => stopWorker(ctx, taskId, options)),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
@@ -98,9 +100,24 @@ export async function apply(ctx) {
     }
     const task = await taskForSession(undefined, agent.id)
     if (!task || task.parentSessionId !== agent.session.header.parentSession) return
+    let current = task
+    if (task.status === 'starting' || task.status === 'resuming') {
+      // A stop can win the race against this event; never resurrect it to running.
+      try {
+        current = await updateTask(task.id, latest =>
+          latest.status === 'starting' || latest.status === 'resuming' ? { status: 'running' } : {})
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+        interruptWorker(ctx, agent.id)
+        return
+      }
+    }
+    if (current.status === 'cancelled') {
+      interruptWorker(ctx, agent.id)
+      return
+    }
     if (!landingState(task.id)) initLanding(task)
-    const active = ['starting', 'resuming', 'running'].includes(task.status)
-    if (task.status === 'starting' || task.status === 'resuming') await updateTask(task.id, { status: 'running' })
+    const active = ['starting', 'resuming', 'running'].includes(current.status)
     const reportOnly = task.mode === 'report'
     const mergeMode = task.mode === 'merge'
     const state = { frozen: !active, path: task.git === false && !reportOnly ? task.projectRoot : task.worktree?.path }

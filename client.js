@@ -22,18 +22,19 @@ window.__ModuleLoader__.load({
         noBranch: 'No merge target is available.', noRemote: 'No repository is available.',
         deleteTitle: 'Delete the worker branch', deleteHint: 'The reviewed commit is merged. Delete the worker branch and its worktree.',
         deleteUnmergedHint: 'This worker branch is not merged. Deleting it discards the branch and its worktree; this cannot be undone.',
-        deleteTaskTitle: 'Delete the task', deleteTaskHint: 'The task record will be removed from this panel. Any worker branch and worktree are kept.',
-        deleteTaskUnavailable: 'The worker is still running; wait for it to finish before deleting the task.',
+        deleteTaskTitle: 'Delete the task', deleteTaskHint: 'A running or queued worker is stopped first, then the task record is removed from this panel. Any worker branch and worktree are kept.',
+        deleteTaskUnavailable: 'A merge or publication is in progress; wait for it to finish before deleting the task.',
         selectTask: 'Select task', selectedCount: 'Selected',
         clearSelection: 'Clear selection', deleteSelected: 'Delete selected',
         batchTasksTitle: 'Delete selected tasks',
-        batchTasksHint: 'The selected task records will be removed from this panel. Any worker branch and worktree are kept.',
+        batchTasksHint: 'The selected task records will be removed from this panel. Running or queued workers are stopped first. Any worker branch and worktree are kept.',
         batchTasksDeleted: 'Selected tasks deleted.',
-        cancelQueued: 'Cancel', cancelQueuedTitle: 'Cancel the queued task', cancelQueuedDone: 'Queued task cancelled.',
+        stop: 'Stop', stopTitle: 'Stop the worker and release its concurrency slot', stopDone: 'Task stopped; the worker was interrupted and its concurrency slot is free.',
         confirmMerge: 'Merge', confirmPublish: 'Send', confirmDelete: 'Delete', cancel: 'Cancel',
         working: 'Working…', dialogLoading: 'Loading…', actionFailed: 'The action failed.',
         actionDone: 'Action completed.', reviewApproved: 'Review approved.', reviewRejected: 'Review requested changes:',
         failure: 'Failure',
+        cancelled: 'Cancelled',
         views: 'Panel views',
         workerSettingsTitle: 'Settings', workerSettingsIntro: 'Defaults for dispatched workers. Saved settings apply to new workers only.',
         workerSettingsLoadFailed: 'Could not load settings. Try refreshing.',
@@ -84,18 +85,19 @@ window.__ModuleLoader__.load({
         noBranch: '没有可选的合并目标分支。', noRemote: '没有可选的仓库。',
         deleteTitle: '删除修改分支', deleteHint: '已审查的提交已合并，可删除该修改分支及其工作树。',
         deleteUnmergedHint: '该修改分支尚未合并，删除会丢弃该分支及其工作树，且无法恢复。',
-        deleteTaskTitle: '删除任务', deleteTaskHint: '任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
-        deleteTaskUnavailable: 'worker 仍在运行，结束后才能删除任务。',
+        deleteTaskTitle: '删除任务', deleteTaskHint: '运行中或排队中的 worker 会先被停止，确认停止后再从面板移除任务记录；worker 分支和工作树（如有）会保留。',
+        deleteTaskUnavailable: '合并或发布正在进行，结束后才能删除任务。',
         selectTask: '选择任务', selectedCount: '已选择',
         clearSelection: '清除选择', deleteSelected: '删除所选',
         batchTasksTitle: '删除所选任务',
-        batchTasksHint: '所选任务记录将从面板移除；worker 分支和工作树（如有）会保留。',
+        batchTasksHint: '所选任务记录将从面板移除；运行中或排队中的 worker 会先被停止；worker 分支和工作树（如有）会保留。',
         batchTasksDeleted: '所选任务已删除。',
-        cancelQueued: '取消', cancelQueuedTitle: '取消排队中的任务', cancelQueuedDone: '已取消排队任务。',
+        stop: '停止', stopTitle: '停止 worker 并释放并发名额', stopDone: '任务已停止；worker 已中断，并发名额已释放。',
         confirmMerge: '合并', confirmPublish: '提交', confirmDelete: '删除', cancel: '取消',
         working: '处理中…', dialogLoading: '正在加载…', actionFailed: '操作失败。',
         actionDone: '操作已完成。', reviewApproved: '审查已通过。', reviewRejected: '审查未通过：',
         failure: '失败原因',
+        cancelled: '已取消',
         views: '面板分区',
         workerSettingsTitle: '设置', workerSettingsIntro: '派发 worker 的默认值。保存后只影响新启动的 worker。',
         workerSettingsLoadFailed: '无法加载设置，请重试。',
@@ -535,7 +537,7 @@ window.__ModuleLoader__.load({
         .map(key => ({ key, tasks: shown.filter(task => matchesCategory(task, key)) }))
         .filter(group => group.tasks.length > 0)
 
-      const deletableTask = task => task.queued === true || task.status !== 'running' || task.unconfirmed === true
+      const deletableTask = task => task.deletable !== false
       const selectedTaskRows = tasks.filter(task => selectedTasks.includes(task.id) && deletableTask(task))
 
       const refresh = () => {
@@ -699,15 +701,33 @@ window.__ModuleLoader__.load({
           setMemoryPending(false)
         }
       }
-      const cancelQueued = async task => {
-        setPending(`${task.id}:cancel`)
+      const stopTask = async task => {
+        setPending(`${task.id}:stop`)
         setError('')
         setNotice('')
         try {
-          await removeTask(task.id)
-          setTasks(current => current.filter(item => item.id !== task.id))
-          setSelectedTasks(current => current.filter(id => id !== task.id))
-          setNotice(t('cancelQueuedDone'))
+          const response = await fetch('/superagent-lite/tasks', {
+            method: 'POST', credentials: 'same-origin', cache: 'no-store',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ taskId: task.id, action: 'stop' }),
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('actionFailed'))
+          setTasks(current => current.map(item => item.id === task.id ? {
+            ...item,
+            status: 'failed',
+            cancelled: true,
+            queued: false,
+            unconfirmed: false,
+            stoppable: false,
+            ...(typeof value?.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+          } : item))
+          setNotice(t('stopDone'))
         } catch (actionError) {
           setError(typeof actionError?.message === 'string' && actionError.message ? actionError.message : t('actionFailed'))
         } finally {
@@ -883,6 +903,9 @@ window.__ModuleLoader__.load({
             setTasks(current => current.map(item => item.id === task.id ? mergedTask(item, value) : item))
           } else if (action === 'delete-branch') {
             setTasks(current => current.map(item => item.id === task.id ? branchDeletedTask(item, value) : item))
+          } else if (action === 'delete-task') {
+            setTasks(current => current.filter(item => item.id !== task.id))
+            setSelectedTasks(current => current.filter(id => id !== task.id))
           } else {
             refresh()
           }
@@ -923,12 +946,18 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'sl-lv__value' }, updated)),
               task.unconfirmed && h('span', { className: 'sl-tag', 'data-tone': 'warning' }, t('unconfirmed')),
               task.queued && h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t('queued')),
+              task.cancelled && h('span', { className: 'sl-tag', 'data-tone': 'neutral' }, t('cancelled')),
               task.land && h('span', { className: 'sl-tag', 'data-tone': 'success' }, t('landAuthorized')),
               h('code', { className: 'sl-code', title: task.id }, task.id)),
             task.failure && h('p', { className: 'sl-task__failure', title: task.failure }, `${t('failure')}: ${task.failure}`),
             h('div', { className: 'sl-task__actions' },
               session('router', task.parentSessionId),
               session('worker', task.workerSessionId, address),
+              task.stoppable && h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger', disabled: busy,
+                title: t('stopTitle'),
+                onClick: () => void stopTask(task),
+              }, icon('cancel'), t('stop')),
               task.status === 'unmerged' && h('button', {
                 type: 'button', className: git?.canMerge ? 'sl-btn sl-btn--primary' : 'sl-btn sl-btn--outline',
                 disabled: busy || !git?.canMerge, title: git?.mergeReason,
@@ -948,11 +977,6 @@ window.__ModuleLoader__.load({
                 disabled: busy || !git.canDelete, title: git.deleteReason,
                 onClick: () => void openDialog('delete', task),
               }, icon('trash'), t('deleteBranch')),
-              task.queued && h('button', {
-                type: 'button', className: 'sl-btn sl-btn--outline', disabled: busy,
-                title: t('cancelQueuedTitle'),
-                onClick: () => void cancelQueued(task),
-              }, icon('cancel'), t('cancelQueued')),
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
                 disabled: busy || !deletable, title: deletable ? undefined : t('deleteTaskUnavailable'),

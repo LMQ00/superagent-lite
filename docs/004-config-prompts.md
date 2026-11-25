@@ -16,7 +16,7 @@
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-537` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
-| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-131` |
+| 面板文字 | 任务状态、动作（停止、删除、合并、提交 PR、审查、删除分支）和弹窗的中英文字典 | `client.js:6-133` |
 
 提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。面板「设置」标签页保存 worker 模型和并发上限，不编辑提示词；记忆由 memory 角色维护，「记忆系统」标签页展示并可删除单条记忆、memory 管理的 skill 和知识，没有新增或编辑入口。
 
@@ -46,7 +46,7 @@
 
 ## Worker 状态查询
 
-`worker_status` 是 Router 的路由工具之一，不派发工作。它只查询本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，返回 Task ID、标题、Team、模式、Worker Session 和存储状态；传 `taskId` 只查一个任务。排队中的任务被取消、排队中的 Worker 开始执行时，插件向 Router 注入 `source.kind = superagent-lite-worker-status` 的后台状态通知；通知不打开新回合、不算新输入，`worker_status` 提供当前全量状态。
+`worker_status` 是 Router 的路由工具之一，不派发工作。它只查询本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，返回 Task ID、标题、Team、模式、Worker Session 和存储状态；传 `taskId` 只查一个任务。任务被停止、排队中的 Worker 开始执行时，插件向 Router 注入 `source.kind = superagent-lite-worker-status` 的后台状态通知；通知不打开新回合、不算新输入，`worker_status` 提供当前全量状态。
 
 ## 记忆提示词与注入
 
@@ -88,7 +88,7 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:42-89`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:138-174`、`src/review.js:42-89`）。
 
 ## 装配顺序
 
@@ -98,7 +98,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 2. 预设 persona：Router 或 Worker 的 `persona.prefix`。
 3. 已挂载工具各自注册的工具指导。
 4. 记忆运行时上下文：Worker（包括 report 只读 worker）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取，Router 只读取全局记忆；以 order `170` 注册并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、排队开始/取消的 `worker-status` 后台通知。
+5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、任务停止/排队开始的 `worker-status` 后台通知。
 
 两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:44-53`、`cordis.patch.yml:81-86`、`src/worker-prompt.js:16-19`、`src/worker-prompt.js:36-61`）。
 
@@ -106,7 +106,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:67-85`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:138-174`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。

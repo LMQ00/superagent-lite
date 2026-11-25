@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { cancelQueuedTask, listCancelledTasks, listTasks, readTask } from './task-store.js'
+import { listCancelledTasks, listTasks } from './task-store.js'
 
 const TASK_ID = /^[a-f0-9]{16}$/
 const STATUS_SOURCE = 'superagent-lite-worker-status'
@@ -57,7 +57,7 @@ export function workerStatusReport(tasks, cancelled = []) {
 export function createWorkerStatusTool() {
   return {
     name: 'worker_status',
-    description: 'Report the current workers and tasks dispatched by this Router Session. It lists queued, running, delivered, cancelled, and failed tasks with their task ID, title, team, mode, worker Session, and lifecycle status; pass taskId to inspect one task. Use it for a status question instead of dispatching. A queued task cancelled from the panel and a queued worker that starts also arrive as background worker-status notices.',
+    description: 'Report the current workers and tasks dispatched by this Router Session. It lists queued, running, delivered, cancelled, and failed tasks with their task ID, title, team, mode, worker Session, and lifecycle status; pass taskId to inspect one task. Use it for a status question instead of dispatching. A task stopped from the panel and a queued worker that starts also arrive as background worker-status notices.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -93,7 +93,7 @@ export function notifyWorkerStatus(ctx, task, status) {
   if (!parent || typeof parent.inject !== 'function') return false
   const title = oneLine(task.title) || 'untitled'
   const outcome = status === 'cancelled'
-    ? `queued task ${task.id} ("${title}") was cancelled before starting and will not run`
+    ? `task ${task.id} ("${title}") was cancelled; its worker was stopped and its concurrency slot is free`
     : `queued task ${task.id} ("${title}") started and is no longer waiting for a slot`
   const text = [
     `[superagent-lite] Worker status notice: ${outcome}.`,
@@ -111,11 +111,4 @@ export function notifyWorkerStatus(ctx, task, status) {
     ctx.logger?.warn(`superagent-lite worker status notice: ${error instanceof Error ? error.message : String(error)}`)
     return false
   }
-}
-
-export async function cancelQueuedWorker(ctx, taskId) {
-  const task = await readTask(taskId)
-  if (!await cancelQueuedTask(taskId)) return false
-  if (task) notifyWorkerStatus(ctx, task, 'cancelled')
-  return true
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import test, { after, beforeEach } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -10,11 +10,12 @@ const home = await mkdtemp(join(tmp, 'worker-status-'))
 process.env.HOME = home
 
 const {
-  cancelQueuedWorker, createWorkerStatusTool, notifyWorkerStatus, workerCategory, workerStatusReport,
+  createWorkerStatusTool, notifyWorkerStatus, workerCategory, workerStatusReport,
 } = await import('../src/worker-status.js')
 const {
-  createTask, dataRoot, listCancelledTasks, listTasks, readTask, removeTask,
+  createTask, dataRoot, listTasks, readTask, removeTask, stopTask,
 } = await import('../src/task-store.js')
+const { stopWorker } = await import('../src/worker-stop.js')
 const { pumpWorkers } = await import('../src/launch-queue.js')
 
 after(() => rm(home, { recursive: true, force: true }))
@@ -65,7 +66,7 @@ test('worker_status reports this router task categories and ignores another rout
   const merged = task({ status: 'merged', title: 'Merged task' })
   const foreign = task({ parentSessionId: 'other-router', title: 'Foreign task' })
   for (const record of [queued, stillQueued, running, delivered, merged, foreign]) assert.equal(await createTask(record), true)
-  assert.equal(await cancelQueuedWorker({ logger: { warn() {} } }, queued.id), true)
+  await stopTask(queued.id)
 
   const report = await createWorkerStatusTool().execute({}, exec())
   assert.match(report, /1 queued, 1 running, 2 delivered, 1 cancelled, 0 failed/)
@@ -99,30 +100,36 @@ test('workerStatusReport handles an empty router and a supplied task list withou
   assert.match(text, /Broken/)
 })
 
-test('cancelling a queued task leaves a cancelled record and notifies its router', async () => {
+test('stopping a task interrupts its worker, keeps a cancelled record and notifies its router', async () => {
   const notices = []
+  const interrupted = []
   const parent = { inject(message) { notices.push(message) } }
-  const ctx = { logger: { warn() {} }, agents: { get: id => id === 'router' ? parent : undefined } }
-  const queued = task({ status: 'queued', title: 'Cancel me' })
-  const running = task({ status: 'running' })
-  assert.equal(await createTask(queued), true)
+  const running = task({ status: 'running', title: 'Stop me' })
   assert.equal(await createTask(running), true)
+  const worker = { status: 'running', whenIdle: async () => { worker.status = 'idle' } }
+  const ctx = {
+    logger: { warn() {} },
+    agents: { get: id => id === 'router' ? parent : id === running.workerSessionId ? worker : undefined },
+    subagents: { interrupt(id, authority) { interrupted.push([id, authority]) } },
+  }
 
-  assert.equal(await cancelQueuedWorker(ctx, queued.id), true)
-  assert.equal(await readTask(queued.id), undefined)
-  const cancelled = (await listCancelledTasks()).find(record => record.id === queued.id)
+  const stopped = await stopWorker(ctx, running.id)
+  assert.equal(stopped.stopped, true)
+  assert.equal(stopped.task.status, 'cancelled')
+  assert.deepEqual(interrupted, [[running.workerSessionId, { kind: 'user' }]])
+  const cancelled = await readTask(running.id)
   assert.equal(cancelled.status, 'cancelled')
   assert.equal(typeof cancelled.cancelledAt, 'string')
   assert.equal(notices.length, 1)
-  assert.match(notices[0].content[0].text, /was cancelled before starting and will not run/)
-  assert.match(notices[0].content[0].text, new RegExp(queued.id))
+  assert.match(notices[0].content[0].text, /was cancelled; its worker was stopped and its concurrency slot is free/)
+  assert.match(notices[0].content[0].text, new RegExp(running.id))
   assert.notEqual(notices[0].source.kind, 'user')
   assert.equal(notices[0].role, 'user')
 
-  assert.equal(await cancelQueuedWorker(ctx, queued.id), false)
+  const again = await stopWorker(ctx, running.id)
+  assert.equal(again.stopped, false)
   assert.equal(notices.length, 1)
-  await assert.rejects(cancelQueuedWorker(ctx, running.id), /no longer queued/)
-  assert.equal((await readTask(running.id)).status, 'running')
+  assert.equal(await stopWorker(ctx, 'ffffffffffffffff'), undefined)
 })
 
 test('a queued worker that starts notifies its router through the launch queue', async () => {
@@ -158,10 +165,10 @@ test('a status notice without a live injector is skipped', () => {
   assert.equal(notifyWorkerStatus(failing, task(), 'cancelled'), false)
 })
 
-test('a cancelled tombstone is hidden when the same task ID is active again', async () => {
+test('a legacy cancelled tombstone is hidden when the same task ID is active again', async () => {
   const retried = task({ status: 'queued', title: 'Retried task' })
-  assert.equal(await createTask(retried), true)
-  assert.equal(await cancelQueuedWorker({ logger: { warn() {} } }, retried.id), true)
+  await mkdir(join(dataRoot, 'tasks', 'cancelled'), { recursive: true })
+  await writeFile(join(dataRoot, 'tasks', 'cancelled', `${retried.id}.json`), JSON.stringify({ ...retried, status: 'cancelled' }))
   assert.equal(await createTask({ ...retried, status: 'running' }), true)
   const report = await createWorkerStatusTool().execute({}, exec())
   assert.match(report, /0 queued, 1 running, 0 delivered, 0 cancelled, 0 failed/)

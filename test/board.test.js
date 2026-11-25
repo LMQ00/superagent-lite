@@ -36,6 +36,8 @@ test('board refuses unauthenticated and non-owner readers without reading disk',
     assert.equal(result.headers['cache-control'], 'no-store')
     assert.equal((await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${'a'.repeat(16)}`)).status,
       admission.rejection ?? 403)
+    assert.equal((await post(handler, { taskId: 'a'.repeat(16), action: 'stop' })).status,
+      admission.rejection ?? 403)
   }
 })
 
@@ -45,14 +47,17 @@ test('board lists only its public view fields to the owner and flags unrecovered
     { id: 'b', status: 'running', workerSessionId: 'w2' },
   ]
   const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, { get: id => id === 'w1' }, () => rows)
-  assert.equal((await request(handler, 'POST')).status, 405)
-  assert.equal((await request(handler, 'POST')).headers.allow, 'GET, DELETE')
+  assert.equal((await request(handler, 'PUT')).status, 405)
+  assert.equal((await request(handler, 'PUT')).headers.allow, 'GET, POST, DELETE')
   const result = await request(handler)
   assert.equal(result.status, 200)
   const tasks = JSON.parse(result.body).tasks
   assert.deepEqual(tasks.map(row => [row.id, row.mode, row.status, row.task]),
     [['a', 'report', 'running', undefined], ['b', undefined, 'running', undefined]])
   assert.deepEqual(tasks.map(row => row.unconfirmed), [undefined, true])
+  assert.deepEqual(tasks.map(row => row.stoppable), [true, true])
+  assert.deepEqual(tasks.map(row => row.deletable), [true, true])
+  assert.deepEqual(tasks.map(row => row.cancelled), [undefined, undefined])
   assert.deepEqual(tasks.map(row => row.land), [true, false])
   assert.equal(tasks[0].landAuthorizedAt, '2026-01-01T00:00:00.000Z')
   assert.equal(tasks[1].landAuthorizedAt, undefined)
@@ -71,6 +76,18 @@ test('board marks a task waiting for a concurrency slot as queued instead of unc
   const tasks = JSON.parse((await request(handler)).body).tasks
   assert.deepEqual(tasks.map(row => [row.status, row.queued, row.unconfirmed]),
     [['running', true, undefined], ['running', undefined, true]])
+})
+
+test('board keeps a stopped task visible in the failed group with a cancelled marker', async () => {
+  const rows = [{ id: 'a'.repeat(16), status: 'cancelled', workerSessionId: 'worker', cancelledAt: '2026-01-01T00:00:00.000Z' }]
+  const git = { async list() { return new Map([[rows[0].id, { status: 'failed', git: { branch: 'sl-a', unmerged: true } }]]) } }
+  const handler = createBoardHandler({ admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, { get: () => undefined }, () => rows, git)
+  const tasks = JSON.parse((await request(handler)).body).tasks
+  assert.equal(tasks[0].status, 'failed')
+  assert.equal(tasks[0].cancelled, true)
+  assert.equal(tasks[0].stoppable, undefined)
+  assert.equal(tasks[0].deletable, true)
+  assert.equal(tasks[0].git.branch, 'sl-a')
 })
 
 test('board overlays the panel status from the Git branch view', async () => {
@@ -142,30 +159,37 @@ test('board deletes a settled task for the owner and removes its session link', 
   assert.deepEqual(removed, [taskId])
 })
 
-test('board refuses task deletion while the worker or delivery is running', async () => {
+test('board deletes a running task by stopping it first and confirming the worker stopped', async () => {
   const taskId = 'a'.repeat(16)
   const rows = [
     { id: taskId, status: 'running', workerSessionId: 'worker' },
     { id: 'b'.repeat(16), status: 'merging', workerSessionId: 'other' },
   ]
-  const removed = []
+  const calls = []
   const handler = createBoardHandler(
     { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
-    { get: id => id === 'worker' ? { id } : undefined },
+    { get: id => id === 'worker' ? { status: 'idle' } : undefined },
     () => rows,
     undefined,
-    async id => { removed.push(id); return true },
+    async id => { calls.push(['remove', id]); return true },
+    async (id, options) => {
+      calls.push(['stop', id, options])
+      return { task: { id, status: 'cancelled' }, stopped: true, ready: true }
+    },
   )
   const running = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
-  assert.equal(running.status, 409)
-  assert.match(JSON.parse(running.body).error, /still running/)
+  assert.equal(running.status, 200)
+  assert.deepEqual(JSON.parse(running.body), { deleted: taskId })
+  assert.deepEqual(calls, [
+    ['stop', taskId, { waitForStop: true, notify: false }],
+    ['remove', taskId],
+  ])
   const merging = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${'b'.repeat(16)}`)
   assert.equal(merging.status, 409)
   assert.match(JSON.parse(merging.body).error, /merge or publication/)
-  assert.deepEqual(removed, [])
 })
 
-test('board cancels a queued task through the cancel path instead of deleting it', async () => {
+test('board deletes a queued task by stopping it first instead of cancelling the record', async () => {
   const taskId = 'a'.repeat(16)
   const calls = []
   const handler = createBoardHandler(
@@ -174,27 +198,89 @@ test('board cancels a queued task through the cancel path instead of deleting it
     () => [{ id: taskId, status: 'queued', workerSessionId: 'worker' }],
     undefined,
     async id => { calls.push(['remove', id]); return true },
-    async id => { calls.push(['cancel', id]); return true },
+    async (id, options) => {
+      calls.push(['stop', id, options])
+      return { task: { id, status: 'cancelled' }, stopped: true, ready: true }
+    },
   )
   const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
   assert.equal(result.status, 200)
   assert.deepEqual(JSON.parse(result.body), { deleted: taskId })
-  assert.deepEqual(calls, [['cancel', taskId]])
+  assert.deepEqual(calls, [
+    ['stop', taskId, { waitForStop: true, notify: false }],
+    ['remove', taskId],
+  ])
 })
 
-test('board refuses to cancel a task that already left the queue', async () => {
+test('board refuses deletion when the stopped worker is still running', async () => {
+  const taskId = 'a'.repeat(16)
+  const removed = []
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => [{ id: taskId, status: 'running', workerSessionId: 'worker' }],
+    undefined,
+    async id => { removed.push(id); return true },
+    async id => ({ task: { id, status: 'cancelled' }, stopped: true, ready: false }),
+  )
+  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
+  assert.equal(result.status, 409)
+  assert.match(JSON.parse(result.body).error, /did not stop in time/)
+  assert.deepEqual(removed, [])
+})
+
+test('board stops a task through the owner stop action and is idempotent', async () => {
+  const taskId = 'a'.repeat(16)
+  const rows = [
+    { id: taskId, status: 'running', workerSessionId: 'worker' },
+    { id: 'b'.repeat(16), status: 'completed' },
+  ]
+  const stopped = []
+  let task = rows[0]
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
+    { get: () => undefined },
+    () => rows,
+    undefined,
+    async () => assert.fail('stop must not delete the record'),
+    async id => {
+      stopped.push(id)
+      task = { ...task, status: 'cancelled', cancelledAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' }
+      return { task, stopped: task.status === 'cancelled' }
+    },
+  )
+  const first = await post(handler, { taskId, action: 'stop' })
+  assert.equal(first.status, 200)
+  assert.deepEqual(JSON.parse(first.body), {
+    stopped: taskId,
+    status: 'cancelled',
+    cancelled: true,
+    cancelledAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  })
+  const again = await post(handler, { taskId, action: 'stop' })
+  assert.equal(again.status, 200)
+  assert.deepEqual(stopped, [taskId, taskId])
+  assert.match(JSON.parse((await post(handler, { taskId: 'b'.repeat(16), action: 'stop' })).body).error,
+    /already finished/)
+})
+
+test('board validates stop requests and reports missing records', async () => {
   const taskId = 'a'.repeat(16)
   const handler = createBoardHandler(
     { admit: () => ({ peer: { principal: { kind: 'owner' } } }) },
     { get: () => undefined },
-    () => [{ id: taskId, status: 'queued', workerSessionId: 'worker' }],
+    () => [],
     undefined,
-    async () => assert.fail('must not remove a task that started'),
-    async () => { throw new Error('The task is no longer queued') },
+    async () => true,
+    async () => assert.fail('must not stop a missing task'),
   )
-  const result = await request(handler, 'DELETE', `/superagent-lite/tasks?taskId=${taskId}`)
-  assert.equal(result.status, 409)
-  assert.deepEqual(JSON.parse(result.body), { error: 'The task is no longer queued' })
+  assert.equal((await post(handler, { taskId, action: 'stop' }, { headers: { 'content-type': 'text/plain' } })).status, 415)
+  assert.equal((await post(handler, { taskId, action: 'delete' })).status, 400)
+  assert.equal((await post(handler, { taskId: 'not-a-task', action: 'stop' })).status, 400)
+  const missing = await post(handler, { taskId, action: 'stop' })
+  assert.equal(missing.status, 404)
+  assert.deepEqual(JSON.parse(missing.body), { error: 'Task not found' })
 })
 
 test('board validates task deletion requests and reports missing records', async () => {
@@ -206,6 +292,7 @@ test('board validates task deletion requests and reports missing records', async
     () => [],
     undefined,
     async () => { called = true; return true },
+    async () => assert.fail('must not stop a missing task'),
   )
   assert.equal((await request(handler, 'DELETE', '/superagent-lite/tasks')).status, 400)
   assert.equal((await request(handler, 'DELETE', '/superagent-lite/tasks?taskId=not-a-task')).status, 400)

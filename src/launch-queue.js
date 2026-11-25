@@ -1,8 +1,9 @@
-import { dataRoot, listTasks, updateTask } from './task-store.js'
+import { dataRoot, listTasks, readTask, updateTask } from './task-store.js'
 import { buildWorkerPrompt } from './worker-prompt.js'
 import { forgetLanding } from './landing.js'
 import { notifyWorkerStatus } from './worker-status.js'
 import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
+import { interruptWorker } from './worker-control.js'
 
 // Worker launches beyond the configured limit wait as `queued` Task records.
 // The queue is serialized per data root so two dispatches cannot claim the same slot.
@@ -48,6 +49,11 @@ async function launch(ctx, task) {
   }
   const settings = await readWorkerSettings()
   const agentOptions = workerAgentOptions(settings)
+  // A stop can land between the queue claiming this slot and the activation.
+  // Re-read the record so a cancelled Task never starts a worker.
+  const latest = await readTask(task.id)
+  if (!latest || (latest.status !== 'starting' && latest.status !== 'resuming')) return true
+  task = latest
   try {
     await ctx.subagents.startActivation({
       provider: 'spawn',
@@ -77,6 +83,12 @@ async function launch(ctx, task) {
       maxDepth: ctx.subagents.resolveMaxDepth(),
     })
     parents.delete(task.id)
+    // A stop or delete during activation must not leave a live worker behind.
+    const settled = await readTask(task.id)
+    if (!settled || settled.status === 'cancelled') {
+      interruptWorker(ctx, task.workerSessionId)
+      return true
+    }
     notifyWorkerStatus(ctx, task, 'starting')
     return true
   } catch (error) {

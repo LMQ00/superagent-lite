@@ -38,18 +38,18 @@ flowchart LR
 | 用户输入（Input） | 一条开启或继续回合的用户消息。 | 只有 `source.kind === 'user'` 的消息算输入；提醒使用 `superagent-lite-reminder` 来源，Worker 状态通知使用 `superagent-lite-worker-status` 来源，都不算新输入；AGENTS.md 是仓库约定，不是任务；Worker 报告和环境事件是背景（`src/turn-guard.js:54-78`、`src/worker-status.js`、`cordis.patch.yml:25-26`）。 |
 | Router Session | 运行 `superagent-lite` 预设的 DSH Session。 | 每个输入先做一次决定：派发、续派，或只询问状态时用 `worker_status` 查询；不编辑项目文件；用户明确授权合并时派发 merge worker（已有运行中的就追加给它），而不是自己合并或续派原任务（`router.js`、`cordis.patch.yml:21-47`、`src/worker-status.js`）。 |
 | 路由决定（Routing decision） | 当前回合内一次成功的 `dispatch_worker`、`continue_worker` 或 `worker_status` 结果。 | 一个输入一个决定；失败的工具结果不算；最多 2 次提醒重开完成回合（`src/turn-guard.js:73-108`）。 |
-| Task | 一次被委派的工作及其 JSON 记录。 | 只有 `dispatch_worker` 能创建；安装 owner 可从面板删除记录，删除不回收 worker 分支或 Worktree；ID 是 16 位小写十六进制；固定一个 Router Session、一个 Team、一个 Project 和一个 Worker Session（`src/dispatch.js:50`、`src/task-store.js:59-79`、`src/task-store.js:103-121`）。 |
-| Team | Task 归属的团队名。 | 一个 Team 只拥有一个 Project，首次写入后不得改配（`src/task-store.js:70-75`）。 |
+| Task | 一次被委派的工作及其 JSON 记录。 | 只有 `dispatch_worker` 能创建；安装 owner 可从面板停止或删除记录，删除不回收 worker 分支或 Worktree；运行中或排队中的 Task 删除前先停止并等待 worker 离开运行态；ID 是 16 位小写十六进制；固定一个 Router Session、一个 Team、一个 Project 和一个 Worker Session（`src/dispatch.js:50`、`src/task-store.js:63-83`、`src/task-store.js:107-146`）。 |
+| Team | Task 归属的团队名。 | 一个 Team 只拥有一个 Project，首次写入后不得改配（`src/task-store.js:74-79`）。 |
 | Project | Task 工作的项目根：Git 仓库或普通目录。 | Git 仓库派发时必须有分支被检出、工作区干净，Task 保存项目根、基础分支和基础 commit；非 Git 目录保存项目根并标记 `git: false`，不要求分支或 commit（`src/dispatch.js:60-85`）。 |
 | Project checkout | Project 的主工作区，位于任何 Worktree 之外。 | report 任务在这里检查（另可使用 checkout 之外的只读检索工具）；本地合并只在这里写入；非 Git 项目没有 Worktree，change worker 也直接在这里修改（`src/report-tool.js:26-31`、`src/merge.js:28-55`、`index.js`）。 |
-| Worker Session | 执行一个 Task 的 DSH Session，运行 `superagent-lite-worker` 预设。 | 从项目根启动；Git 项目除 `create_worktree` 外的工具要求工作目录在分配的 Worktree；非 Git 项目工作目录直接是项目根，不注册可用的 `create_worktree`；subagent 结束时冻结（`index.js:53-68`、`index.js:116-118`）。 |
+| Worker Session | 执行一个 Task 的 DSH Session，运行 `superagent-lite-worker` 预设。 | 从项目根启动；Git 项目除 `create_worktree` 外的工具要求工作目录在分配的 Worktree；非 Git 项目工作目录直接是项目根，不注册可用的 `create_worktree`；subagent 结束时冻结；面板停止会中断当前执行但不删除 Session（`index.js:73-119`、`src/worker-control.js:5-20`）。 |
 | Worktree | worktree 服务为一个 Git Task 创建的隔离检出。 | 一个 Git Task 一个 Worktree，位于 `<project>/.agents/worktrees`，名字为 `sl-<worktreeName>-<Task ID 前 12 位>`；`worktreeName` 是 1–4 个英文小写短词；文件与其他 Task 分开；它不是操作系统安全边界；非 Git 项目没有 Worktree（`cordis.patch.yml:1-7`、`src/worktree-tool.js:42-46`）。 |
 | Worker branch | Worktree 所在的分支。 | 仅 Git 项目有；分支名取自 worktree 服务的返回值并写入 `task.worktree.branch`；只有审查过的 HEAD 会被合并或发布（`src/worktree-tool.js:40-49`、`src/git-actions.js:168-179`）。 |
 | Review | 独立子代理对已提交 diff 或非 Git 工作区内容的裁决。 | Reviewer 用 `submit_review` 记录裁决：内容「通过」即通过，其他内容记为审查意见；工具记录 reviewed HEAD 或工作区标识与 reviewer Session；裁决针对 Task 保存的需求，follow-up 只作上下文；审查本身不改 Task 状态（`src/review.js:12-34`、`src/review.js:81-119`）。 |
-| Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-22`、`index.js:121-153`）。 |
+| Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-22`、`index.js:240-286`）。 |
 | Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；发送失败时回滚记录（`src/continue.js:70-89`、`src/continue.js:92-151`）。 |
-| Worker status | Router 查询本会话 Worker 和 Task 状态的工具与后台通知。 | `worker_status` 只返回本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，并给出 Task ID、标题、Team、模式和 Worker Session；排队取消留下 `cancelled` 记录，排队 Worker 开始和取消会向 Router 注入背景通知，不打开新回合、不算新输入（`src/worker-status.js`、`src/task-store.js`、`src/launch-queue.js`）。 |
-| 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查，可联网检索和读取网页。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；Git 项目的 checkout 必须保持原样，非 Git 项目没有 git 事实可校验。worker 按仓库 `AGENTS.md` 的约定执行，但该约定不扩大只读授权（`index.js:56-65`、`src/report-tool.js:19-41`、`src/worker-prompt.js:36-61`）。 |
+| Worker status | Router 查询本会话 Worker 和 Task 状态的工具与后台通知。 | `worker_status` 只返回本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，并给出 Task ID、标题、Team、模式和 Worker Session；停止后的 Task 保留 `cancelled` 记录，任务停止和排队 Worker 开始会向 Router 注入背景通知，不打开新回合、不算新输入（`src/worker-status.js`、`src/task-store.js`、`src/launch-queue.js`）。 |
+| 只报告任务（Report-only task） | `mode=report` 的 Task，只做诊断、分析、查找或只读检查，可联网检索和读取网页。 | 不建 Worktree、不提交、不审查；结束时调用 `report_task`；Git 项目的 checkout 必须保持原样，非 Git 项目没有 git 事实可校验。worker 按仓库 `AGENTS.md` 的约定执行，但该约定不扩大只读授权（`index.js:138-174`、`src/report-tool.js:19-41`、`src/worker-prompt.js:36-61`）。 |
 | Git action | 面板发起的 `merge`、`publish`、`review` 或 `delete-branch`；用户直接指示的 `merge` 由 router 派发 `mode=merge` 的 merge worker 执行。 | 合并只在用户明确授权后执行，始终是把 reviewed HEAD 合入所选本地分支的本地合并，不需要 `gh`；merge worker 合入的是它自己的 reviewed merge commit，这些目标分支的提交因此进入 base branch。`publish` 需要用户点击、`gh` 账号和所选 GitHub remote，推送 reviewed HEAD 并创建或复用 Pull request；`review` 从 Worker Session 启动独立审查；`delete-branch` 删除仍是 worker 分支的分支及其干净 Worktree，已合并、已发布和未合并的分支都可删除，运行中、工作树脏或被其他 Worktree 检出时拒绝。合并与发送 PR 共用状态、审查和 HEAD 校验（`src/delivery.js:7-19`），发送 PR 只额外要求 GitHub 账号与 remote；合并、发送 PR 和删除分支要求 full access，合并与发送 PR 还要求未移动的 reviewed HEAD（`src/git-actions.js:502-521`、`src/merge.js:121-170`）。 |
 | Pull request | GitHub 上承载已发布 Task 的检查与合并界面。 | PR 的 HEAD、head 分支、base 分支和跨仓库标记必须与 Task 完全一致；必需检查和分支保护在合并 PR 时由 GitHub 执行（`src/github.js:39-44`、`src/github.js:115-137`）。 |
 | Memory | 分全局记忆、项目记忆、全局/项目 skill 和全局知识库。 | 全局记忆所有项目共享，保存用户画像和多个共享 skill；项目记忆按项目根分开，保存职责、定位和多个项目 skill；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker 和 Reviewer 注入项目 + 全局。记忆是数据，不是指令；面板的「记忆系统」标签页展示全局记忆、项目记忆、全局/项目 skill 和全局知识库，安装 owner 可删除单条记忆字段、skill 或知识（`src/memory.js`、`src/memory-store.js`、`src/memory-panel.js`、`router.js`、`src/review.js`）。 |
@@ -58,8 +58,8 @@ flowchart LR
 | 知识库（Knowledge base） | 全局的、只通过工具访问的长期结论集合。 | 只存可复用、广泛适用的知识，保存在 `~/.dsh/superagent-lite/memory/knowledge.json`；内容不注入角色上下文；Worker、Reviewer 和 memory 角色用 `knowledge_query` 按关键词查询，得到编号和匹配关键词前后的上下文片段，再用 `knowledge_get` 按编号读取完整条目；只有 memory 角色能用 `knowledge_write` 新增、纠正或删除（`src/memory-store.js`、`src/memory.js`）。 |
 | 原始归档（Raw archive） | Worker 完整回合的原始记录和 memory 读取的会话记录。 | 每个 `turn/end` 把一轮事件存到 `~/.dsh/superagent-lite/task/archive/<hash>.json`，带 Session 序号和轮内 `reference` 编号；memory 触发时再把完整会话写成 `task/archive/sessions/<sha256(Session ID)>.md`，路径随触发消息交给 memory；都由 Host 写入，其他模型工具没有专用读取入口，Git 与非 Git 项目走同一位置（`src/memory.js`、`src/memory-store.js`）。 |
 | Role message | 角色消息、子代理状态通知和插件系统提醒在聊天里的卡片。 | 角色间消息（`agent-message`，含派发任务、worker 报告、follow-up、reviewer 审查请求和 memory 蒸馏请求）、子代理结束通知（`subagent-settled`）和插件自有通知（`superagent-lite-*`，当前是派发守卫提醒）在应用 Host 补丁后统一渲染为任务消息卡片，包括被 steer 进运行中回合的消息；没有补丁时按普通用户消息或上下文行显示。npm Host 升级覆盖包后，插件启动时会自动补打两个补丁并在 Host 日志要求再重启一次；DSH-go 仍手动应用。审查和记忆 helper 的结果通过工具结果返回，不是会话消息（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`、`src/host-patch.js`）。 |
-| Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可取消，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取和删除记忆；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、取消排队和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限；「记忆系统」标签页可本地搜索并展示记忆、全局/项目 skill 和知识库，并允许 owner 删除单条记忆字段、memory 管理的 skill 或知识条目（`src/board.js:7-66`、`src/status.js:14-53`、`src/memory-panel.js`、`client.js:346-1347`）。 |
+| Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可停止，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取和删除记忆；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、停止任务和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限；「记忆系统」标签页可本地搜索并展示记忆、全局/项目 skill 和知识库，并允许 owner 删除单条记忆字段、memory 管理的 skill 或知识条目（`src/board.js:16-150`、`src/status.js:14-53`、`src/memory-panel.js`、`client.js:348-1369`）。 |
 
 ## 聚合
 
@@ -118,23 +118,24 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 
 | 组 | 取值 | 含义 |
 | --- | --- | --- |
-| 派发 | `queued` | 记录已创建，等待并发名额外再启动 Worker；尚未开始执行时可以取消，取消后活动记录和会话映射被移除，并留下 `cancelled` 墓碑供 `worker_status` 查询（`src/dispatch.js:67-85`、`src/launch-queue.js`、`src/task-store.js`） |
+| 派发 | `queued` | 记录已创建，等待并发名额外再启动 Worker；尚未开始执行时可以停止，停止后记录保留为 `cancelled`，不会再启动（`src/dispatch.js:67-85`、`src/launch-queue.js`、`src/task-store.js:126-146`） |
 | 派发 | `starting` | 记录已创建，Worker 正在启动（`src/dispatch.js:67-85`、`src/launch-queue.js`） |
-| 工作 | `running` | Worker 已创建，或 Git 项目的 Worktree 已保存，任务进行中；非 Git 项目在 Worker 创建后即为工作目录（`index.js:53-54`、`src/worktree-tool.js:49`） |
+| 工作 | `running` | Worker 已创建，或 Git 项目的 Worktree 已保存，任务进行中；非 Git 项目在 Worker 创建后即为工作目录（`index.js:101-102`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束的 Task 被 follow-up 重新打开（`src/continue.js:127-134`） |
-| 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:133-142`） |
-| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作（`index.js:151`、`src/git-actions.js:291-302`） |
+| 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:240-286`） |
+| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作（`index.js:278`、`src/git-actions.js:291-302`） |
 | 交付 | `merging` | 面板或命令触发的本地合并已开始（`src/merge.js:64-68`） |
 | 交付 | `publishing` | 发送 PR 的路径已开始（`src/git-actions.js:440-444`、`src/git-actions.js:476-478`） |
 | 交付 | `awaiting-ci` | reviewed HEAD 的 PR 已打开；面板读取时用 `gh` 同步 PR 状态（`src/github.js:92-109`、`src/git-actions.js:278-283`） |
 | 交付 | `merged` | 提交已进入基础分支：本地合并、外部合并 PR，或面板读取时确认已包含在基础分支（`src/merge.js:85-87`、`src/git-actions.js:309-317`） |
-| 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:144-146`、`src/git-actions.js:273-277`、`src/merge.js:81-82`） |
+| 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:279-281`、`src/git-actions.js:273-277`、`src/merge.js:81-82`） |
 | 结束 | `completed` | 只报告任务通过 `report_task` 交付了结论，或非 Git 的 change 任务在审查通过后结束（`src/report-tool.js:34-39`、`index.js`） |
-| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:104-112`、`index.js:130-135`、`src/continue.js:182-188`） |
+| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败（`src/dispatch.js:104-112`、`index.js:250-266`、`src/continue.js:182-188`） |
+| 结束 | `cancelled` | 安装 owner 在面板停止运行中或排队中的 Task；worker 被中断，并发名额立即释放，记录保留在面板并归入「失败」分组（`src/worker-stop.js:6-29`、`src/task-store.js:126-146`） |
 
 删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
 
-面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案，但活动 Task 没有写入这些状态；`cancelled` 只出现在排队取消后保留的墓碑记录里，供 `worker_status` 查询，面板列表不显示（`client.js:14-15`、`client.js:76-77`、`src/status.js:8-10`、`src/task-store.js`）。
+面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案；新的停止路径写入 `cancelled` 终态并保留活动记录，面板把它归入「失败」分组并加「已取消」标签。它不同于 `failed`（worker/回合失败）和 `delivery-blocked`/`merge-conflict`（自动交付阻塞），表示用户主动停止，不会自动恢复。旧版本排队取消留下的 `cancelled` 墓碑仍可被 `worker_status` 查询，但面板不显示（`client.js:14-15`、`client.js:77-78`、`src/status.js:8-10`、`src/task-store.js`）。
 
 ## 面板状态
 
@@ -146,7 +147,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | `running` / 运行中 | Worker、排队中的 Worker 或交付动作正在进行 |
 | `unreviewed` / 未审查 | worker 分支有提交，但当前 HEAD 没有通过的审查 |
 | `completed` / 已完成 | reviewed HEAD 已合并，或 Worker 结束时没有可交付的提交 |
-| `failed` / 失败 | Worker 回合、交付动作或 Task 失败 |
+| `failed` / 失败 | Worker 回合、交付动作或 Task 失败；带「已取消」标签的行表示用户停止，不是失败 |
 | `answer` / 仅回答 | report 任务交回了报告 |
 
 派发模式有三个值；`answer` 不产生 Task。
@@ -165,8 +166,8 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | --- | --- |
 | Router 每轮处理一个「调用 worker」工具，可以不调用，但要写明为什么 | 派发守卫要求每个用户输入有一次成功的 `dispatch_worker` 或 `continue_worker`；`mode=answer` 的成功结果就是不派 worker 的决定，没有决定的完成回合会被提醒（`src/turn-guard.js:73-127`）。 |
 | 同一业务的补充在业务面板添新业务，再派 worker | 实现用 `continue_worker` 继续同一个未发布 Task，不新增第二行；不同业务目标或已发布的 Task 新建 Task 和 Worker（`src/continue.js:121`）。 |
-| Worker 处理完毕，结果返回 Router，能力冻结，业务算已完成 | change worker 结束后进入审查和交付，落为 `review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；只有 report 任务在 `report_task` 后到 `completed`（`index.js:121-153`、`src/report-tool.js:34-39`）。 |
-| 若干 worker 组成团队，一个项目通常由一个团队管理，不同项目由 Router 分开 | 相同；第一个 Task 固定 Team 与 Project 的一对一关系，之后不能改配（`src/task-store.js:70-75`）。 |
+| Worker 处理完毕，结果返回 Router，能力冻结，业务算已完成 | change worker 结束后进入审查和交付，落为 `review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；只有 report 任务在 `report_task` 后到 `completed`（`index.js:240-286`、`src/report-tool.js:34-39`）。 |
+| 若干 worker 组成团队，一个项目通常由一个团队管理，不同项目由 Router 分开 | 相同；第一个 Task 固定 Team 与 Project 的一对一关系，之后不能改配（`src/task-store.js:74-79`）。 |
 | Router 只被注入全局记忆 | Router 的运行时上下文只读取全局记忆；router 预设的 skill 根也只保留全局 skill 根，项目 skill 只进入 Worker 和 Reviewer 的 catalog（`src/memory.js`、`router.js`、`cordis.patch.yml`）。 |
 | Worker 和 Reviewer 注入项目记忆 + 全局记忆 | Worker 创建时和 Reviewer 每次审查时读取项目 + 全局记忆；职责和定位直接注入，skill 只注入 description，知识库内容不注入，通过 `knowledge_query` / `knowledge_get` 按需查询（`src/memory.js`、`src/review.js`）。 |
 | memory 角色可读可写，宁可不写并及时纠错 | 只写回非空且变化的字段和 skill，没有可复用内容就不写，不把写入条数当指标；知识库写入按规范化文本去重，纠正用 `update`，删除用 `delete`（`src/memory.js`、`src/memory-store.js`）。 |

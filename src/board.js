@@ -1,60 +1,126 @@
-import { listTasks, removeTask } from './task-store.js'
+import { listTasks, removeTask, STOPPABLE_STATUSES } from './task-store.js'
 import { panelStatus } from './status.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }
 const ACTIVE_DELIVERY = new Set(['merging', 'publishing'])
+const TASK_ID = /^[a-f0-9]{16}$/
 
-export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask, cancel) {
+function taskIdFromQuery(req) {
+  return new URL(req.url ?? '/', 'http://localhost').searchParams.get('taskId')
+}
+
+function jsonError(res, status, message) {
+  res.writeHead(status, JSON_HEADERS).end(JSON.stringify({ error: message }))
+}
+
+export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask, stop) {
   return async (req, res) => {
     const admission = connection.admit(req)
     if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
       res.writeHead(admission.rejection ?? 403, { 'cache-control': 'no-store' }).end()
       return
     }
+    if (req.method === 'POST') {
+      if (String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+        res.writeHead(415, { 'cache-control': 'no-store' }).end()
+        return
+      }
+      let body
+      try {
+        body = await readJsonBody(req, 4096)
+      } catch (error) {
+        jsonError(res, error.status ?? 400, error.message)
+        return
+      }
+      if (body?.action !== 'stop' || typeof body.taskId !== 'string' || !TASK_ID.test(body.taskId)) {
+        jsonError(res, 400, 'A task ID and the stop action are required')
+        return
+      }
+      const task = (await tasks()).find(record => record.id === body.taskId)
+      if (!task) {
+        jsonError(res, 404, 'Task not found')
+        return
+      }
+      if (!STOPPABLE_STATUSES.has(task.status) && task.status !== 'cancelled') {
+        jsonError(res, 409, 'The task has already finished')
+        return
+      }
+      if (typeof stop !== 'function') {
+        jsonError(res, 500, 'Stopping tasks is unavailable')
+        return
+      }
+      try {
+        const result = await stop(body.taskId)
+        if (!result) {
+          jsonError(res, 404, 'Task not found')
+          return
+        }
+        res.writeHead(200, JSON_HEADERS).end(JSON.stringify({
+          stopped: result.task.id,
+          status: 'cancelled',
+          cancelled: true,
+          ...(typeof result.task.cancelledAt === 'string' ? { cancelledAt: result.task.cancelledAt } : {}),
+          ...(typeof result.task.updatedAt === 'string' ? { updatedAt: result.task.updatedAt } : {}),
+        }))
+      } catch (error) {
+        jsonError(res, 409, error instanceof Error ? error.message : String(error))
+      }
+      return
+    }
     if (req.method === 'DELETE') {
-      const taskId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('taskId')
-      if (!/^[a-f0-9]{16}$/.test(taskId ?? '')) {
-        res.writeHead(400, JSON_HEADERS).end(JSON.stringify({ error: 'A task ID is required' }))
+      const taskId = taskIdFromQuery(req)
+      if (!TASK_ID.test(taskId ?? '')) {
+        jsonError(res, 400, 'A task ID is required')
         return
       }
       const task = (await tasks()).find(record => record.id === taskId)
       if (!task) {
-        res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
-        return
-      }
-      if (task.status === 'queued') {
-        try {
-          if (!await (cancel ?? remove)(taskId)) {
-            res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
-            return
-          }
-          res.writeHead(200, JSON_HEADERS).end(JSON.stringify({ deleted: taskId }))
-        } catch (error) {
-          res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
-        }
-        return
-      }
-      if (agents.get?.(task.workerSessionId) && ['starting', 'running', 'resuming'].includes(task.status)) {
-        res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: 'The worker is still running' }))
+        jsonError(res, 404, 'Task not found')
         return
       }
       if (ACTIVE_DELIVERY.has(task.status)) {
-        res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: 'A merge or publication is in progress' }))
+        jsonError(res, 409, 'A merge or publication is in progress')
+        return
+      }
+      if (STOPPABLE_STATUSES.has(task.status) || task.status === 'cancelled') {
+        if (typeof stop !== 'function') {
+          jsonError(res, 500, 'Stopping tasks is unavailable')
+          return
+        }
+        try {
+          // Deleting an active Task stops its worker first and waits for the
+          // worker to become idle, so no record is removed under a live worker.
+          const result = await stop(taskId, { waitForStop: true, notify: false })
+          if (!result) {
+            jsonError(res, 404, 'Task not found')
+            return
+          }
+          if (result.ready === false) {
+            jsonError(res, 409, 'The worker did not stop in time; stop the task again before deleting it')
+            return
+          }
+        } catch (error) {
+          jsonError(res, 409, error instanceof Error ? error.message : String(error))
+          return
+        }
+      }
+      if (agents.get?.(task.workerSessionId)?.status === 'running') {
+        jsonError(res, 409, 'The worker is still running')
         return
       }
       try {
         if (!await remove(taskId)) {
-          res.writeHead(404, JSON_HEADERS).end(JSON.stringify({ error: 'Task not found' }))
+          jsonError(res, 404, 'Task not found')
           return
         }
         res.writeHead(200, JSON_HEADERS).end(JSON.stringify({ deleted: taskId }))
       } catch (error) {
-        res.writeHead(409, JSON_HEADERS).end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }))
+        jsonError(res, 409, error instanceof Error ? error.message : String(error))
       }
       return
     }
     if (req.method !== 'GET') {
-      res.writeHead(405, { allow: 'GET, DELETE' }).end()
+      res.writeHead(405, { allow: 'GET, POST, DELETE' }).end()
       return
     }
     const records = await tasks()
@@ -70,6 +136,9 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git, r
         status: view?.status ?? panelStatus({ status, mode, report: record.report }, { reviewed: record.review?.approved === true }),
         ...(status === 'queued' ? { queued: true } : {}),
         ...(unconfirmed ? { unconfirmed: true } : {}),
+        ...(STOPPABLE_STATUSES.has(status) ? { stoppable: true } : {}),
+        ...(status === 'cancelled' ? { cancelled: true } : {}),
+        deletable: !ACTIVE_DELIVERY.has(status),
         ...(land === true && typeof landAuthorizedAt === 'string' ? { landAuthorizedAt } : {}),
         ...(typeof failure === 'string' && failure ? { failure } : {}),
       }
