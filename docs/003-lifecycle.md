@@ -171,6 +171,8 @@ Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.a
 
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入；已有 `queued` 的同名 Task 直接返回，不重复入队（`src/dispatch.js:52-59`）。
 
+这类残留的 `running` 记录不会自动收尾。Task 状态只由 Worker 生命周期事件写入；Host 重启或插件重载时子会话被 dispose，`subagent/end` 不一定会到达，即使到达，插件关闭路径已经 abort 时也会直接跳过处理（`index.js:223-269`）。插件启动时也不扫描旧记录，所以失联的 `running` 记录会一直停在原状态。判定条件是「存储状态是 `starting`、`running` 或 `resuming`，且 `ctx.agents.get(workerSessionId)` 为空」，面板据此显示「运行中 + 未确认」（`src/board.js:60-74`）。`running` 的失联记录不占启动队列名额，因为只有活着的 Worker 才计入；`starting` 和 `resuming` 在 2 分钟窗口内计入名额，超时没有活 Session 时由下一次 `pumpWorkers` 回收为 `failed`（`src/launch-queue.js:50-86`）。手工收尾前先核对交付事实：`review.approved`、review head、worktree HEAD 与分支都在时按 `awaiting-merge` 收尾，否则按 `failed` 收尾并写清会话在恢复前结束、已被回收。`continue_worker` 对这类 `running` 记录仍按 `running` 处理，会话无法唤醒时发送失败并保持原状（`src/continue.js:174-219`）。
+
 ### GitHub 交付失败
 
 发送 PR 失败时，Task 标为 `delivery-blocked`，错误写入 `failure`；已创建的 PR 保留链接。精确匹配的 PR 在交付状态中被关闭时也落为 `delivery-blocked`；精确 PR 已合并时落为 `merged`（`src/git-actions.js:151-201`、`src/git-actions.js:479-482`）。发送 PR 与合并共用同一套状态、审查和 HEAD 前置校验，唯一额外条件是 `gh` 登录和 GitHub remote（`src/delivery.js:7-19`）。
