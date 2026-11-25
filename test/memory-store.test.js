@@ -8,7 +8,9 @@ const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
 await mkdir(tmp, { recursive: true })
 const root = await mkdtemp(join(tmp, 'memory-store-'))
 const agentsHome = join(root, 'agents')
-const store = (await import('../src/memory-store.js')).createMemoryStore(join(root, 'data'), { agentsHome })
+const storeModule = await import('../src/memory-store.js')
+const store = storeModule.createMemoryStore(join(root, 'data'), { agentsHome })
+const { MAX_PROJECT_SKILLS } = storeModule
 
 after(async () => {
   await rm(root, { recursive: true, force: true })
@@ -235,6 +237,77 @@ test('a project skill is kept out of the project checkout status through .git/in
   await store.writeSkill('project', project, { description: 'Excluded project skill.', content: 'Body.' })
   const exclude = await readFile(join(project, '.git', 'info', 'exclude'), 'utf8')
   assert.equal(exclude, '.dsh/skills/superagent-project-memory/\n')
+})
+
+test('a project keeps at most ten skills while updates and global skills still write', async () => {
+  assert.equal(MAX_PROJECT_SKILLS, 10)
+  const project = join(root, 'project-skill-limit')
+  for (let index = 1; index <= MAX_PROJECT_SKILLS; index += 1) {
+    await store.writeSkill('project', project, {
+      name: `capped-skill-${index}`,
+      description: `Capped skill ${index}.`,
+      content: `Body ${index}.`,
+    })
+  }
+  assert.equal(await store.projectSkillCount(project), MAX_PROJECT_SKILLS)
+  await assert.rejects(store.writeSkill('project', project, {
+    name: 'capped-skill-eleven', description: 'Over the cap.', content: 'Body.',
+  }), /limited to 10/)
+  assert.equal(await store.projectSkillCount(project), MAX_PROJECT_SKILLS)
+  assert.equal(await store.readSkill('project', project, 'capped-skill-eleven'), undefined)
+  await store.writeSkill('project', project, {
+    name: 'capped-skill-1', description: 'Updated capped skill.', content: 'Updated body.',
+  })
+  assert.equal((await store.readSkill('project', project, 'capped-skill-1')).description, 'Updated capped skill.')
+  await store.writeSkill('global', project, {
+    name: 'shared-skill-at-project-cap', description: 'Global skills stay uncapped.', content: 'Body.',
+  })
+  assert.equal(await store.readSkill('global', project, 'shared-skill-at-project-cap') !== undefined, true)
+})
+
+test('a project skill batch over the cap writes none of its skills', async () => {
+  const project = join(root, 'project-skill-batch-limit')
+  for (let index = 1; index <= MAX_PROJECT_SKILLS - 1; index += 1) {
+    await store.writeSkill('project', project, {
+      name: `batch-skill-${index}`,
+      description: `Batch skill ${index}.`,
+      content: `Body ${index}.`,
+    })
+  }
+  await assert.rejects(store.writeSkills('project', project, [{
+    name: 'batch-skill-new-one', description: 'New skill one.', content: 'Body one.',
+  }, {
+    name: 'batch-skill-new-two', description: 'New skill two.', content: 'Body two.',
+  }]), /limited to 10/)
+  assert.equal(await store.projectSkillCount(project), MAX_PROJECT_SKILLS - 1)
+  assert.equal(await store.readSkill('project', project, 'batch-skill-new-one'), undefined)
+  assert.equal(await store.readSkill('project', project, 'batch-skill-new-two'), undefined)
+  const { written } = await store.writeSkills('project', project, [{
+    name: 'batch-skill-1', description: 'Changed batch skill.', content: 'Changed body.',
+  }])
+  assert.deepEqual(written, ['batch-skill-1'])
+  assert.deepEqual(await store.writeSkills('project', project, [{
+    name: 'batch-skill-new-one', description: 'New skill one.', content: 'Body one.',
+  }]), { written: ['batch-skill-new-one'] })
+  assert.equal(await store.projectSkillCount(project), MAX_PROJECT_SKILLS)
+})
+
+test('a project already over the cap can update existing skills but not add one', async () => {
+  const project = join(root, 'project-skill-over-cap')
+  for (let index = 1; index <= MAX_PROJECT_SKILLS + 1; index += 1) {
+    await mkdir(join(project, '.dsh', 'skills', `over-skill-${index}`), { recursive: true })
+    await writeFile(join(project, '.dsh', 'skills', `over-skill-${index}`, 'SKILL.md'),
+      `---\nname: over-skill-${index}\nauthor: memory\ndescription: "Over ${index}."\n---\n\nBody.\n`)
+  }
+  assert.equal(await store.projectSkillCount(project), MAX_PROJECT_SKILLS + 1)
+  await store.writeSkill('project', project, {
+    name: 'over-skill-1', description: 'Updated over the cap.', content: 'Updated body.',
+  })
+  assert.equal((await store.readSkill('project', project, 'over-skill-1')).description, 'Updated over the cap.')
+  await assert.rejects(store.writeSkill('project', project, {
+    name: 'over-skill-new', description: 'New over the cap.', content: 'Body.',
+  }), /limited to 10/)
+  assert.equal(await store.readSkill('project', project, 'over-skill-new'), undefined)
 })
 
 test('worker turns archive under task/archive with their source key', async () => {

@@ -121,7 +121,8 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 不同项目的项目记忆和项目 skill 互相不可见；全局记忆、全局 skill 和知识库所有项目共享（`src/memory-store.js`）。
 - 全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在项目 checkout 的 `.dsh/skills/<skill名>/SKILL.md`，每个 skill 一个目录；项目 skill 目录会追加到 `.git/info/exclude`。项目 skill 由 Worker 作用域的 provider 读取，因此不会弄脏 report 和 merge 要求的干净 checkout。
 - memory 写入的 skill 在 frontmatter 带 `author: memory`，不同内容用不同名字；写入的 skill 名与已有非 memory 作者 skill 冲突时拒绝写入，不静默覆盖；同一次更新内重复名字也拒绝。既有的固定名字 `superagent-shared-memory` / `superagent-project-memory` 在没有 author 时仍可读取和更新，写入时补上 author。
-- 每个文本字段最多 4,000 字符；skill description 最多 500 字符；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
+- 项目 skill 同时最多 10 个：达到上限后 memory 只能复用已有 memory 管理的项目 skill 名字更新，不能新建；写入路径拒绝并返回明确的超限错误，整次提取在写字段和 skill 前失败，不产生半写入。skill 只放可复用的固定流程或方法步骤，知识、事实、经验、结论和观察写全局知识库（`src/memory-store.js`、`src/memory.js`）。
+- 每个文本字段最多 4,000 字符；skill description 最多 500 字符；项目 skill 最多 10 个；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
 - 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动。拦截按会话（agent）的 catalog 基线和 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。

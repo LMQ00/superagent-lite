@@ -68,6 +68,7 @@ test('the memory role describes both scopes, their fields and the storage rules'
   assert.equal(memoryRole.maxArgument, 500)
   assert.equal(memoryRole.maxField, 4_000)
   assert.equal(memoryRole.maxSkillDescription, 500)
+  assert.equal(memoryRole.maxProjectSkills, 10)
   assert.deepEqual(memoryRole.globalFields, ['userProfile'])
   assert.deepEqual(memoryRole.projectFields, ['responsibilities', 'positioning'])
   assert.deepEqual(memoryOutputSchema.required, [
@@ -84,6 +85,7 @@ test('the memory role describes both scopes, their fields and the storage rules'
       global: [{ name: 'superagent-shared-memory', description: 'Shared inspection skill.', content: 'Inspect first.' }],
       project: [{ name: 'superagent-project-memory', description: 'Project skill.', content: 'Run npm test.' }],
     },
+    projectSkillCount: 1,
   })
   assert.match(prompt, /You are the memory role/)
   assert.match(prompt, /Read the worker session record with the read tool/)
@@ -100,6 +102,11 @@ test('the memory role describes both scopes, their fields and the storage rules'
   assert.match(prompt, /knowledge_get/)
   assert.match(prompt, /knowledge_write/)
   assert.match(prompt, /The knowledge base is global/)
+  assert.match(prompt, /1 of at most 10 project skills/)
+  assert.match(prompt, /Never add an 11th project skill/)
+  assert.match(prompt, /reuse the name of an existing memory-managed project skill/)
+  assert.match(prompt, /Knowledge, facts, experience, conclusions and observations belong in the global knowledge base/)
+  assert.match(prompt, /A skill is only a reusable fixed procedure or method/)
   assert.match(prompt, /Saving nothing is normal and preferred/)
   assert.match(prompt, /Do not use the number of written entries as a goal/)
   assert.match(prompt, /Only this role may write knowledge/)
@@ -283,6 +290,75 @@ test('extraction migrates a legacy project skill to the memory author', async ()
   const changed = await runMemoryExtraction(ctx, agent, { projectRoot }, new AbortController().signal)
   assert.deepEqual(changed, ['projectSkills'])
   assert.match(await readFile(file, 'utf8'), /author: memory/)
+})
+
+test('an extraction that would add an 11th project skill saves nothing', async () => {
+  const { createMemoryStore, runMemoryExtraction } = await import('../src/memory.js')
+  const { MAX_PROJECT_SKILLS } = await import('../src/memory-store.js')
+  const projectRoot = join(home, 'skill-limit-project')
+  const store = createMemoryStore()
+  for (let index = 1; index <= MAX_PROJECT_SKILLS; index += 1) {
+    await store.writeSkill('project', projectRoot, {
+      name: `limit-skill-${index}`, description: `Limit skill ${index}.`, content: `Body ${index}.`,
+    })
+  }
+  const agent = { id: 'worker', session: sessionWith([textMessage('user', 'Learn more.')], 4) }
+  const { ctx } = context(memoryResult({
+    responsibilities: 'Unsaved responsibility.',
+    projectSkills: [{ name: 'skill-eleven', description: 'Over the cap.', content: 'Body.' }],
+  }))
+  await assert.rejects(runMemoryExtraction(ctx, agent, { projectRoot }, new AbortController().signal),
+    /limited to 10/)
+  assert.equal((await store.readProject(projectRoot)).responsibilities, '')
+  assert.equal(await store.readSkill('project', projectRoot, 'skill-eleven'), undefined)
+  assert.equal(await store.projectSkillCount(projectRoot), MAX_PROJECT_SKILLS)
+})
+
+test('an extraction batch over the project skill cap leaves no partial skills', async () => {
+  const { createMemoryStore, runMemoryExtraction } = await import('../src/memory.js')
+  const { MAX_PROJECT_SKILLS } = await import('../src/memory-store.js')
+  const projectRoot = join(home, 'skill-batch-limit-project')
+  const store = createMemoryStore()
+  for (let index = 1; index <= MAX_PROJECT_SKILLS - 1; index += 1) {
+    await store.writeSkill('project', projectRoot, {
+      name: `batch-limit-${index}`, description: `Batch limit ${index}.`, content: `Body ${index}.`,
+    })
+  }
+  const agent = { id: 'worker', session: sessionWith([textMessage('user', 'Learn two skills.')], 4) }
+  const { ctx } = context(memoryResult({
+    projectSkills: [{
+      name: 'batch-limit-new-one', description: 'New one.', content: 'Body one.',
+    }, {
+      name: 'batch-limit-new-two', description: 'New two.', content: 'Body two.',
+    }],
+  }))
+  await assert.rejects(runMemoryExtraction(ctx, agent, { projectRoot }, new AbortController().signal),
+    /limited to 10/)
+  assert.equal(await store.projectSkillCount(projectRoot), MAX_PROJECT_SKILLS - 1)
+  assert.equal(await store.readSkill('project', projectRoot, 'batch-limit-new-one'), undefined)
+  assert.equal(await store.readSkill('project', projectRoot, 'batch-limit-new-two'), undefined)
+})
+
+test('an extraction at the project skill limit can still update an existing skill', async () => {
+  const { createMemoryStore, runMemoryExtraction } = await import('../src/memory.js')
+  const { MAX_PROJECT_SKILLS } = await import('../src/memory-store.js')
+  const projectRoot = join(home, 'skill-limit-update-project')
+  const store = createMemoryStore()
+  for (let index = 1; index <= MAX_PROJECT_SKILLS; index += 1) {
+    await store.writeSkill('project', projectRoot, {
+      name: `cap-skill-${index}`, description: `Cap skill ${index}.`, content: `Body ${index}.`,
+    })
+  }
+  const agent = { id: 'worker', session: sessionWith([textMessage('user', 'Refine a skill.')], 4) }
+  const { ctx } = context(memoryResult({
+    responsibilities: 'Saved at the limit.',
+    projectSkills: [{ name: 'cap-skill-1', description: 'Updated at cap.', content: 'Updated body.' }],
+  }))
+  assert.deepEqual(await runMemoryExtraction(ctx, agent, { projectRoot }, new AbortController().signal),
+    ['responsibilities', 'projectSkills'])
+  assert.equal((await store.readProject(projectRoot)).responsibilities, 'Saved at the limit.')
+  assert.equal((await store.readSkill('project', projectRoot, 'cap-skill-1')).description, 'Updated at cap.')
+  assert.equal(await store.projectSkillCount(projectRoot), MAX_PROJECT_SKILLS)
 })
 
 test('global memory is shared while project memory stays with its project', async () => {

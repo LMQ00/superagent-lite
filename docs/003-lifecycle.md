@@ -84,10 +84,10 @@ memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为
 | --- | --- |
 | 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
 | 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
-| 输出 | 全局 `userProfile`、`sharedSkills`；项目 `responsibilities`、`positioning`、`projectSkills`；技能项含 `name`、`description`、`content`，每个文本字段最多 4,000 字符，skill description 最多 500 字符 |
+| 输出 | 全局 `userProfile`、`sharedSkills`；项目 `responsibilities`、`positioning`、`projectSkills`；技能项含 `name`、`description`、`content`，每个文本字段最多 4,000 字符，skill description 最多 500 字符，项目 skill 同时最多 10 个 |
 | 知识库 | 用 `knowledge_query` 按关键词查编号和上下文片段，再用 `knowledge_get` 按编号取完整条目；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
 | 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |
-| 写入 | 只覆盖非空且与当前值不同的字段；skill 需要 name、description 和 content，同一作用域内名字不能重复；全局写 `memory/global.json`，项目写 `memory/projects/<hash>.json`，skill 写到各自名字的 `SKILL.md` |
+| 写入 | 只覆盖非空且与当前值不同的字段；skill 需要 name、description 和 content，同一作用域内名字不能重复；项目 skill 达到 10 个后只能复用已有名字更新，新建会导致整次提取在写任何字段和 skill 前被拒绝；全局写 `memory/global.json`，项目写 `memory/projects/<hash>.json`，skill 写到各自名字的 `SKILL.md` |
 | 空结果 | 没有非空更新时不写；触发失败只记录警告，不阻塞最终报告 |
 
 自动触发发生在报告送达之后，属于 Worker Session 而不是 Task 状态；它不改变 Task 状态或 Review 记录（`src/message-router.js`、`index.js`）。
