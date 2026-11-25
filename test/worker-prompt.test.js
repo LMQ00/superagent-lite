@@ -124,6 +124,8 @@ test('report-only tasks are told to inspect in place and end with report_task', 
 
   assert.match(text, /Mode: report-only/)
   assert.match(text, /Do not create a worktree, edit files, commit, or request review/)
+  assert.match(text, /project checkout must stay unchanged/)
+  assert.match(text, /Read-only external lookup is allowed: web search, page reads, knowledge queries, and read-only shell commands/)
   assert.match(text, /Do not call create_worktree/)
   assert.match(text, /do not call review_worker_commit/)
   assert.match(text, /Call report_task once with the conclusion and evidence/)

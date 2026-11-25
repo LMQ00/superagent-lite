@@ -38,7 +38,7 @@
 | 模式 | 适用 | 结果 |
 | --- | --- | --- |
 | `change` | 用户请求需要改动项目文件、运行命令或交付代码 | 创建 Task 和 change worker；Git 项目在 Worktree 修改、提交并请求审查，非 Git 项目直接在工作区修改并请求工作区审查 |
-| `report` | 用户只是询问，但回答需要查证仓库或运行只读命令 | 创建 Task 和 report worker，在项目 checkout 只读检查，用 `report_task` 交回结论 |
+| `report` | 用户只是询问，但回答需要查证仓库、运行只读命令，或联网检索/读取网页 | 创建 Task 和 report worker，在项目 checkout 只读检查，并可用只读的网页搜索、网页读取和知识库查询做调研，用 `report_task` 交回结论 |
 | `answer` | 用户只是询问，Router 凭知识或对话已经能回答 | Router 直接回答；不启动 worker、不建 Worktree、不写 Task 记录 |
 | `merge` | 用户明确授权合并已交付分支 | 创建 Task 和 merge worker；已有运行中的 merge worker 时把目标追加给同一个 Task，不另起 worker。先 `merge_branch` 合并目标分支，审查合并结果，再把 reviewed commit 合入 base branch；`land=true` 与 `branches` 必填 |
 

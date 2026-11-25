@@ -127,12 +127,20 @@ test('a report-only task completes through report_task without a branch, commit,
 
   assert.equal(guard({ name: 'read' }), undefined)
   assert.equal(guard({ name: 'bash' }), undefined)
+  assert.equal(guard({ name: 'pwsh' }), undefined)
   assert.equal(guard({ name: 'knowledge_query' }), undefined)
   assert.equal(guard({ name: 'knowledge_get' }), undefined)
   assert.equal(guard({ name: 'skill' }), undefined)
+  assert.equal(guard({ name: 'web_search' }), undefined)
+  assert.equal(guard({ name: 'web_fetch' }), undefined)
+  assert.equal(guard({ name: 'read_page' }), undefined)
+  assert.equal(guard({ name: 'x_search' }), undefined)
+  assert.equal(guard({ name: 'job_output' }), undefined)
+  assert.equal(guard({ name: 'job_list' }), undefined)
   assert.match(guard({ name: 'bash', arguments: { command: 'git push origin main' } }), /Landing is not authorized/)
   assert.match(guard({ name: 'bash', arguments: { command: 'git merge HEAD' } }), /Landing is not authorized/)
   assert.match(guard({ name: 'write' }), /Report-only tasks/)
+  assert.match(guard({ name: 'edit' }), /Report-only tasks/)
   assert.match(guard({ name: 'create_worktree' }), /Report-only tasks/)
   assert.equal(registered.get('create_worktree').options.when(), false)
   assert.equal(registered.get('review_worker_commit').options.when(), false)
@@ -188,6 +196,29 @@ test('a report-only task cannot report after committing', async () => {
   assert.notEqual(task.status, 'review-required')
   assert.equal(task.review, undefined)
   assert.equal(task.prUrl, undefined)
+  assert.deepEqual(ghCalls(env.commands), [])
+})
+
+test('a report-only task cannot report after changing the project checkout', async () => {
+  const { repo, baseCommit } = await createRepo('report-dirty')
+  const env = harness(repo)
+  await apply(env.ctx)
+  const taskId = 'fedcba9876543211'
+  await createRunningTask({ id: taskId, workerSessionId: 'worker-dirty', repo, baseCommit, mode: 'report', teamId: 'team-dirty' })
+  const { worker, registered } = await createWorker(env.agents, 'worker-dirty')
+  await env.listeners.get('agent/created')({ agent: worker })
+
+  await writeFile(join(repo, 'notes.txt'), 'changed\n')
+  await assert.rejects(
+    registered.get('report_task').tool.execute({ report: '结论' }, { agent: worker, signal: new AbortController().signal }),
+    /must leave the project checkout unchanged/,
+  )
+
+  env.listeners.get('subagent/end')({ id: 'worker-dirty', parentSessionId: 'router', stopReason: 'completed' })
+  await waitFor()
+  const task = await readTask(taskId)
+  assert.equal(task.status, 'failed')
+  assert.equal(task.review, undefined)
   assert.deepEqual(ghCalls(env.commands), [])
 })
 
