@@ -463,7 +463,9 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     for (const entry of entries) {
       if (!entry.isDirectory() || !isSkillName(entry.name)) continue
       const skill = await readSkill(scope, projectRoot, entry.name)
-      if (skill) skills.push({ name: entry.name, ...skill })
+      if (skill) {
+        skills.push({ name: entry.name, ...skill, path: skillPath(scope, projectRoot, entry.name) })
+      }
     }
     return skills.sort((left, right) => left.name.localeCompare(right.name))
   }

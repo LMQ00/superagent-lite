@@ -129,9 +129,10 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；项目 skill 最多 10 个；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
 - 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
+- memory 触发消息只给 skill 清单：名称、作者是否为 `author: memory`、`SKILL.md` 路径，以及项目 skill 已用数量和 10 个上限；不注入 skill 全文。skill catalog 已提供名称和 description，清单不重复描述；memory 需要正文时按路径读取。项目 skill 达到 10 个时复用已有 memory 管理的名字，不新增第 11 个（`src/memory.js`、`src/memory-store.js`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动。拦截按会话（agent）的 catalog 基线和 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
-- memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径和任务、角色、分支等元信息，不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/message-router.js`、`index.js`）。
+- memory 角色只在 change worker 的最终报告后触发一次；触发消息含会话记录路径、任务/角色/分支等元信息以及 skill 清单（名称、作者、`SKILL.md` 路径、项目用量/10 上限），不含对话正文和 skill 全文，memory 自己用 `read` / `grep` 读取完整记录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。

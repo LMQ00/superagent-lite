@@ -139,6 +139,7 @@ test('memory writes named skills to their own directories with the memory author
       description: 'Reusable inspection guidance across projects.',
       content: 'Inspect the repository before changing it.',
       author: 'memory',
+      path: globalFile,
     }],
     project: [
       {
@@ -146,15 +147,18 @@ test('memory writes named skills to their own directories with the memory author
         description: 'How tests are written here.',
         content: 'Prefer node --test.',
         author: 'memory',
+        path: secondFile,
       },
       {
         name: 'superagent-project-memory',
         description: 'How to work on this project.',
         content: 'Run npm test before reporting.',
         author: 'memory',
+        path: projectFile,
       },
     ],
   })
+  assert.equal(await store.projectSkillCount(project), 2)
   await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
 })
 
@@ -176,6 +180,9 @@ test('a same-name conflict does not overwrite a skill memory does not manage', a
     name: 'authorless-skill', description: 'Memory copy.', content: 'New body.',
   }), /not managed by memory/)
   assert.equal(await readFile(authorlessFile, 'utf8'), authorless)
+  // The usage count includes directories memory does not manage, because the
+  // project skill limit counts every project skill.
+  assert.equal(await store.projectSkillCount(project), 2)
 })
 
 test('memory-authored skills are identified by their author field', async () => {
