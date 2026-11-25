@@ -4,7 +4,7 @@
 
 ## 运行什么
 
-Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:16-32`）。
+Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一个 worktree 服务、路由工具、Worker 工具、Task 存储、记忆存储和面板。它不启动独立守护进程，也不开放自己的端口（`cordis.patch.yml:1-123`、`index.js:17-33`）。
 
 | 组件 | 作用 |
 | --- | --- |
@@ -99,9 +99,9 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
 | 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
-| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
+| 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；排队中提供取消；每行提供删除任务（运行中禁用）。任务行可勾选后批量删除。「分支 / worktree」标签页只列本插件创建的 Worktree 和 `sl-*` 分支，分别提供删除 Worktree 与删除分支（运行中禁用）；删除成功后就地更新该标签页。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 排队变化 | 排队中的 Worker 开始执行、排队中的 Task 被取消时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。取消会在 `tasks/cancelled/` 留下墓碑供 `worker_status` 查询，面板列表仍移除该行 |
-| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/` |
+| 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录，`tasks/cancelled/` 保存排队取消的墓碑；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/`；Worktree 在 `<项目根>/.agents/worktrees/`，由面板「分支 / worktree」标签页单独管理 |
 | 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
@@ -109,12 +109,12 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 
 | 码 | 含义 |
 | --- | --- |
-| `200` | 列表、记忆读取或删除、Git 动作、任务删除或排队取消成功 |
-| `400` | 任务 ID、JSON 请求体、项目根或记忆删除目标（kind/scope/field/name/id）不对 |
+| `200` | 列表、记忆读取或删除、分支 / Worktree 读取或删除、Git 动作、任务删除或排队取消成功 |
+| `400` | 任务 ID、JSON 请求体、项目根或分支删除目标（kind/projectRoot/branch/path）、记忆删除目标（kind/scope/field/name/id）不对 |
 | `403` | 请求者不是安装 owner；其他准入拒绝使用 Host 返回的拒绝码 |
 | `404` | Git 详情、任务删除或排队取消找不到 Task |
 | `405` | 方法不被该端点接受 |
-| `409` | Git 动作被拒绝或失败、任务删除或排队取消被拒绝，或记忆读取/删除失败 |
+| `409` | Git 动作被拒绝或失败、分支 / Worktree 删除被拒绝、任务删除或排队取消被拒绝，或记忆读取/删除失败 |
 | `413` | Git 动作请求体超过 4 KB |
 | `415` | 动作请求体不是 `application/json` |
 

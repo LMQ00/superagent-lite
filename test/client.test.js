@@ -203,10 +203,11 @@ test('keeps the task list scrollable beside the settings tab', async () => {
   await flush()
   const tree = board.render()
   const tabs = nodes(tree).filter(node => node.type === 'button' && node.props?.role === 'tab')
-  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置', '记忆系统'])
+  assert.deepEqual(tabs.map(node => text(node)), ['项目任务', '设置', '记忆系统', '分支 / worktree'])
   assert.equal(tabs[0].props['aria-selected'], true)
   assert.equal(tabs[1].props['aria-selected'], false)
   assert.equal(tabs[2].props['aria-selected'], false)
+  assert.equal(tabs[3].props['aria-selected'], false)
   assert.match(source, /\.sl-board\{[^}]*height:100%[^}]*overflow:hidden/)
   assert.match(source, /\.sl-scroll\{[^}]*flex:1[^}]*overflow-y:auto/)
   assert.equal(byClass(tree, 'sl-scroll').length, 1)
@@ -1455,4 +1456,129 @@ test('keeps failed task selections for retry and shows the host error', async ()
   assert.match(text(tree), /所选任务已删除/)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
   board.dispose()
+})
+
+test('the branches tab lists only plugin objects and deletes each kind in place', async () => {
+  const requests = []
+  const rows = [
+    {
+      projectRoot: '/one', branch: 'sl-feature', path: '/one/.agents/worktrees/sl-feature',
+      task: { id: 'a', title: 'Task A', status: 'running', running: true },
+      canDeleteWorktree: false, worktreeReason: 'The task is still running; stop its worker before deleting the worktree',
+      canDeleteBranch: false, branchReason: 'The task is still running; stop its worker before deleting the branch',
+    },
+    {
+      projectRoot: '/one', branch: 'sl-delivered', path: '/one/.agents/worktrees/sl-delivered',
+      task: { id: 'b', title: 'Task B', status: 'unmerged', running: false },
+      canDeleteWorktree: true,
+      canDeleteBranch: false,
+      branchReason: 'Delete the worktree at /one/.agents/worktrees/sl-delivered before deleting its branch',
+    },
+    {
+      projectRoot: '/one', branch: 'sl-orphan',
+      canDeleteWorktree: false, worktreeReason: 'This branch has no worktree to delete',
+      canDeleteBranch: true,
+    },
+  ]
+  let rejectBranchDelete = false
+  const board = setup({
+    fetch: async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task({ projectRoot: '/one' })] }) }
+      if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
+      if (path.startsWith('/superagent-lite/branches') && options.method === 'DELETE') {
+        const params = new URL(path, 'http://localhost').searchParams
+        if (params.get('kind') === 'worktree') {
+          assert.equal(params.get('projectRoot'), '/one')
+          assert.equal(params.get('branch'), 'sl-delivered')
+          assert.equal(params.get('path'), '/one/.agents/worktrees/sl-delivered')
+          return {
+            ok: true,
+            json: async () => ({
+              branch: 'sl-delivered',
+              path: '/one/.agents/worktrees/sl-delivered',
+              deleted: true,
+              row: {
+                projectRoot: '/one', branch: 'sl-delivered',
+                task: { id: 'b', title: 'Task B', status: 'unmerged', running: false },
+                canDeleteWorktree: false, worktreeReason: 'This branch has no worktree to delete',
+                canDeleteBranch: true,
+              },
+              message: 'Deleted the worktree at /one/.agents/worktrees/sl-delivered for sl-delivered.',
+            }),
+          }
+        }
+        assert.equal(params.get('branch'), 'sl-orphan')
+        if (rejectBranchDelete) {
+          rejectBranchDelete = false
+          return { ok: false, json: async () => ({ error: 'The worker branch sl-orphan is still checked out' }) }
+        }
+        return { ok: true, json: async () => ({ branch: 'sl-orphan', deleted: true, message: 'Deleted the worker branch sl-orphan.' }) }
+      }
+      if (path === '/superagent-lite/branches') return { ok: true, json: async () => ({ branches: rows }) }
+      return { ok: true, json: async () => ({ records: [] }) }
+    },
+    language: 'zh',
+  })
+  board.render()
+  await flush()
+  board.render()
+  await flush()
+  let tree = board.render()
+  tab(tree, '分支 / worktree').props.onClick()
+  tree = board.render()
+  assert.equal(tab(tree, '分支 / worktree').props['aria-selected'], true)
+  assert.match(text(tree), /正在加载任务/)
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /只显示和删除本插件创建的 worktree/)
+  for (const branch of ['sl-feature', 'sl-delivered', 'sl-orphan', 'Task A', 'Task B', '无任务记录']) {
+    assert.match(text(tree), new RegExp(branch))
+  }
+  assert.equal(byClass(tree, 'sl-task').length, 3)
+
+  let delWorktree = buttons(tree, '删除 worktree')
+  const delBranch = buttons(tree, '删除分支')
+  assert.deepEqual(delWorktree.map(node => node.props.disabled), [true, false, true])
+  assert.match(delWorktree[0].props.title, /still running/)
+  assert.match(delBranch[1].props.title, /Delete the worktree/)
+  assert.equal(delBranch[2].props.disabled, false)
+
+  // Deleting the branch without a worktree removes only that row in place.
+  rejectBranchDelete = true
+  delBranch[2].props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /删除分支/)
+  assert.match(text(tree), /sl-orphan/)
+  button(tree, '删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.match(text(tree), /still checked out/)
+  assert.equal(byClass(tree, 'sl-task').length, 3)
+  button(tree, '删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.equal(byClass(tree, 'sl-task').some(row => text(row).includes('sl-orphan')), false)
+  assert.equal(byClass(tree, 'sl-task').length, 2)
+  assert.equal(nodes(tree).filter(node => node.props?.role === 'dialog').length, 0)
+
+  // Deleting the worktree keeps the branch row and enables its branch action.
+  buttons(tree, '删除 worktree')[1].props.onClick()
+  tree = board.render()
+  assert.match(text(tree), /删除 worktree/)
+  assert.match(text(tree), /sl-delivered · \/one\/\.agents\/worktrees\/sl-delivered/)
+  button(tree, '删除').props.onClick()
+  await flush()
+  tree = board.render()
+  assert.equal(byClass(tree, 'sl-task').length, 2)
+  const delivered = byClass(tree, 'sl-task').find(row => text(row).includes('sl-delivered'))
+  assert.ok(delivered)
+  assert.doesNotMatch(text(delivered), /\/one\/\.agents\/worktrees\/sl-delivered/)
+  assert.match(text(delivered), /无 worktree/)
+  delWorktree = buttons(tree, '删除 worktree')
+  assert.equal(delWorktree[1].props.disabled, true)
+  assert.equal(buttons(tree, '删除分支')[1].props.disabled, false)
+  assert.equal(requests.filter(request => request.path === '/superagent-lite/branches').length, 1)
+  board.dispose()
+  assert.ok(requests.filter(request => request.options.signal).every(request => request.options.signal.aborted))
 })

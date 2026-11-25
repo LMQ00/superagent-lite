@@ -46,6 +46,31 @@ async function setupRepo({ remote = true } = {}) {
   return { root, repo, worktree, baseCommit, workerHead }
 }
 
+// A project with one plugin Worktree inside .agents/worktrees, one leftover
+// plugin branch, and user branches/worktrees that must stay invisible.
+async function setupPluginRepo() {
+  const root = await mkdtemp(join(tmp, 'git-branches-'))
+  roots.push(root)
+  const repo = join(root, 'repo')
+  const worktree = join(repo, '.agents', 'worktrees', 'sl-feature')
+  await mkdir(repo)
+  await git(['init', '-b', 'main'], repo)
+  await writeFile(join(repo, 'notes.txt'), 'original\n')
+  await git(['add', 'notes.txt'], repo)
+  await git(['commit', '-m', 'initial'], repo)
+  const baseCommit = await git(['rev-parse', 'HEAD'], repo)
+  await git(['branch', 'release'], repo)
+  await git(['branch', 'sl-orphan', baseCommit], repo)
+  await mkdir(join(repo, '.agents', 'worktrees'), { recursive: true })
+  await git(['worktree', 'add', '-b', 'sl-feature', worktree, baseCommit], repo)
+  await writeFile(join(worktree, 'notes.txt'), 'updated\n')
+  await git(['commit', '-am', 'change notes'], worktree)
+  const workerHead = await git(['rev-parse', 'HEAD'], worktree)
+  const userWorktree = join(root, 'user-worktree')
+  await git(['worktree', 'add', '-b', 'feature', userWorktree, baseCommit], repo)
+  return { root, repo, worktree, userWorktree, baseCommit, workerHead }
+}
+
 function taskStore(initial) {
   const records = new Map(initial.map(record => [record.id, { ...record }]))
   return {
@@ -923,4 +948,125 @@ test('the manager refuses unknown actions and report-only tasks', async () => {
   const manager = managerFor(store)
   await assert.rejects(manager.perform(taskId, 'merge', { target: 'main' }, signal), /Report-only/)
   await assert.rejects(manager.perform(taskId, 'unknown', {}, signal), /Unknown Git action/)
+})
+
+function pluginRecordFor(facts, overrides = {}) {
+  return recordFor({
+    repo: facts.repo,
+    worktree: facts.worktree,
+    baseCommit: facts.baseCommit,
+    workerHead: facts.workerHead,
+  }, overrides)
+}
+
+test('the branch inventory lists only plugin Worktrees and sl-* branches with their task', async () => {
+  const facts = await setupPluginRepo()
+  const record = pluginRecordFor(facts)
+  const rows = await managerFor(taskStore([record])).branches(signal)
+  assert.deepEqual(rows.map(row => [row.branch, row.path ?? null, row.task?.id ?? null]), [
+    ['sl-feature', facts.worktree, taskId],
+    ['sl-orphan', null, null],
+  ])
+  assert.equal(rows[0].task.status, 'unmerged')
+  assert.equal(rows[0].task.running, false)
+  assert.equal(rows[0].canDeleteWorktree, true)
+  assert.equal(rows[0].canDeleteBranch, false)
+  assert.match(rows[0].branchReason, /Delete the worktree/)
+  assert.equal(rows[1].canDeleteWorktree, false)
+  assert.equal(rows[1].canDeleteBranch, true)
+  assert.equal(rows[1].worktreeReason, 'This branch has no worktree to delete')
+  for (const hidden of ['main', 'release', 'feature']) {
+    assert.equal(rows.some(row => row.branch === hidden), false, hidden)
+  }
+  assert.equal(rows.some(row => row.path === facts.userWorktree), false)
+})
+
+test('a running task blocks deleting its Worktree and its branch', async () => {
+  const facts = await setupPluginRepo()
+  const store = taskStore([pluginRecordFor(facts, { status: 'running' })])
+  const manager = managerFor(store)
+  const rows = await manager.branches(signal)
+  assert.equal(rows[0].task.status, 'running')
+  assert.equal(rows[0].task.running, true)
+  assert.equal(rows[0].canDeleteWorktree, false)
+  assert.equal(rows[0].canDeleteBranch, false)
+  assert.match(rows[0].worktreeReason, /still running/)
+  assert.match(rows[0].branchReason, /still running/)
+  await assert.rejects(
+    manager.removeWorktree({ projectRoot: facts.repo, branch: 'sl-feature', path: facts.worktree }, signal),
+    /still running/,
+  )
+  await assert.rejects(
+    manager.removeBranch({ projectRoot: facts.repo, branch: 'sl-feature' }, signal),
+    /still running/,
+  )
+})
+
+test('a plugin Worktree and its branch are deleted through separate actions', async () => {
+  const facts = await setupPluginRepo()
+  const store = taskStore([pluginRecordFor(facts)])
+  const manager = managerFor(store)
+  const removedWorktree = await manager.removeWorktree({
+    projectRoot: facts.repo, branch: 'sl-feature', path: facts.worktree,
+  }, signal)
+  assert.equal(removedWorktree.deleted, true)
+  assert.equal(removedWorktree.row.path, undefined)
+  assert.equal(removedWorktree.row.canDeleteBranch, true)
+  assert.equal((await git(['worktree', 'list', '--porcelain'], facts.repo)).includes(facts.worktree), false)
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo)).length > 0)
+  const removedBranch = await manager.removeBranch({ projectRoot: facts.repo, branch: 'sl-feature' }, signal)
+  assert.equal(removedBranch.deleted, true)
+  const stored = await store.readTask(taskId)
+  assert.equal(stored.worktree, undefined)
+  assert.equal(typeof stored.branchDeletedAt, 'string')
+  await assert.rejects(git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo))
+})
+
+test('the branch inventory refuses user branches, master and user worktrees', async () => {
+  const facts = await setupPluginRepo()
+  const manager = managerFor(taskStore([pluginRecordFor(facts)]))
+  for (const branch of ['main', 'release', 'feature']) {
+    await assert.rejects(
+      manager.removeBranch({ projectRoot: facts.repo, branch }, signal),
+      /not created by this plugin/,
+    )
+  }
+  await assert.rejects(
+    manager.removeWorktree({ projectRoot: facts.repo, branch: 'feature', path: facts.userWorktree }, signal),
+    /not created by this plugin/,
+  )
+  await assert.rejects(
+    manager.removeBranch({ projectRoot: facts.repo, branch: 'sl-feature' }, signal),
+    /Delete the worktree/,
+  )
+  await assert.rejects(
+    manager.removeWorktree({ projectRoot: facts.repo, branch: 'sl-orphan', path: facts.worktree }, signal),
+    /not created by this plugin/,
+  )
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo)).length > 0)
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/feature'], facts.repo)).length > 0)
+})
+
+test('deleting a dirty plugin Worktree is refused and keeps its branch', async () => {
+  const facts = await setupPluginRepo()
+  await writeFile(join(facts.worktree, 'dirty.txt'), 'dirty\n')
+  const manager = managerFor(taskStore([pluginRecordFor(facts)]))
+  await assert.rejects(
+    manager.removeWorktree({ projectRoot: facts.repo, branch: 'sl-feature', path: facts.worktree }, signal),
+    /uncommitted changes/,
+  )
+  assert.ok((await git(['rev-parse', '--verify', 'refs/heads/sl-feature'], facts.repo)).length > 0)
+  assert.equal((await git(['worktree', 'list', '--porcelain'], facts.repo)).includes(facts.worktree), true)
+})
+
+test('a plugin branch without a matching task record can still be deleted', async () => {
+  const facts = await setupPluginRepo()
+  const store = taskStore([pluginRecordFor(facts, { id: 'f'.repeat(16), worktree: undefined, review: undefined })])
+  const manager = managerFor(store)
+  const rows = await manager.branches(signal)
+  assert.deepEqual(rows.map(row => row.branch), ['sl-feature', 'sl-orphan'])
+  assert.equal(rows.every(row => row.task === undefined), true)
+  const removed = await manager.removeBranch({ projectRoot: facts.repo, branch: 'sl-orphan' }, signal)
+  assert.equal(removed.deleted, true)
+  await assert.rejects(git(['rev-parse', '--verify', 'refs/heads/sl-orphan'], facts.repo))
 })

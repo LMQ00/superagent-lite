@@ -16,7 +16,7 @@
 | 报告与路由消息 | 工具描述和长度限制 | `src/report-tool.js:9-18`、`src/message-router.js:6-15` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-537` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
-| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-131` |
+| 面板文字 | 任务状态、动作和弹窗的中英文字典 | `client.js:6-155` |
 
 提示词文字都在仓库文件里，没有提示词编辑器；改文字等于改文件并重载 bundle。面板「设置」标签页保存 worker 模型和并发上限，不编辑提示词；记忆由 memory 角色维护，「记忆系统」标签页展示并可删除单条记忆、memory 管理的 skill 和知识，没有新增或编辑入口。
 
@@ -88,7 +88,7 @@ Router persona 固定可见回复（`cordis.patch.yml:36-43`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:67-85`、`src/review.js:42-89`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:76-94`、`src/review.js:42-89`）。
 
 ## 装配顺序
 
@@ -106,7 +106,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:67-85`、`src/helper-guard.js:76-117`、`src/git-actions.js:168-237`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:1-16`、`index.js:76-94`、`src/helper-guard.js:76-117`、`src/git-actions.js:170-239`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
