@@ -13,7 +13,7 @@ import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
 import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
-import { pumpWorkers } from './src/launch-queue.js'
+import { pumpWorkers, reclaimStaleTasks } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import { reconcileHostPatches } from './src/host-patch.js'
 import {
@@ -274,4 +274,9 @@ export async function apply(ctx) {
     workers.clear()
     await Promise.allSettled(jobs)
   }, 'superagent-lite: worker lifecycle and delivery')
+
+  // A Host restart or a plugin reload can dispose worker Sessions without a
+  // `subagent/end`, so scan the persisted records once instead of leaving them
+  // unconfirmed until the next pump.
+  if (!lifetime.signal.aborted) track(reclaimStaleTasks(ctx))
 }
