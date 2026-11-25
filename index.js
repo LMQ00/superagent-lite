@@ -118,7 +118,13 @@ export async function apply(ctx) {
       : undefined
     const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
     const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
-    const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'todo_write', 'knowledge_query', 'knowledge_get', 'skill'])
+    const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'pwsh', 'todo_write', 'skill'])
+    // External lookup reads nothing in the checkout, so a report-only task may
+    // use it from anywhere while the project writes stay refused.
+    const externalReadTools = new Set([
+      'read_page', 'web_fetch', 'web_search', 'x_search',
+      'job_output', 'job_list', 'knowledge_query', 'knowledge_get',
+    ])
     const landingDenial = input => {
       if (typeof input?.command !== 'string') return undefined
       const sessionCwd = ctx.workingDirectory.get(agent.session)
@@ -134,8 +140,9 @@ export async function apply(ctx) {
           const denial = landingDenial(input)
           if (denial) return denial
         }
-        if (name === 'report_task' || (inspectingProject() && inspectionTools.has(name))) return
-        return 'Report-only tasks inspect the project checkout read-only and end with report_task.'
+        if (name === 'report_task' || externalReadTools.has(name) ||
+            (inspectingProject() && inspectionTools.has(name))) return
+        return 'Report-only tasks inspect the checkout and external sources read-only and end with report_task.'
       }
       if (name !== 'create_worktree' && !inCheckout()) {
         return 'Create the assigned project worktree before using any other tool.'
