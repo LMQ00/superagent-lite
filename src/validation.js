@@ -1,3 +1,5 @@
+import { validateImagePaths } from './message-images.js'
+
 const MODES = ['change', 'report', 'answer', 'merge']
 const BRANCH_NAME = /^[A-Za-z0-9._/-]{1,200}$/
 const TASK_ID = /^[a-f0-9]{16}$/
@@ -32,7 +34,11 @@ function validateMergeTargets(value) {
 export function validateDispatchArguments(args) {
   const mode = args?.mode
   if (!MODES.includes(mode)) throw new TypeError('mode must be change, report, answer, or merge')
-  if (mode === 'answer') return { delegate: false, mode }
+  const images = validateImagePaths(args?.images)
+  if (mode === 'answer') {
+    if (images.length > 0) throw new TypeError('images need a worker message; mode=answer sends none')
+    return { delegate: false, mode }
+  }
   if (typeof args.teamId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(args.teamId)) {
     throw new TypeError('teamId must use 1-64 letters, digits, dots, underscores, or hyphens')
   }
@@ -47,10 +53,16 @@ export function validateDispatchArguments(args) {
   if (mode === 'report' && land) throw new TypeError('report-only tasks cannot be authorized to land')
   if (mode === 'merge') {
     if (!land) throw new TypeError('merge tasks require land=true')
-    return { delegate: true, title, teamId: args.teamId, task, mode, land, worktreeName, branches: validateMergeTargets(args.branches) }
+    return {
+      delegate: true, title, teamId: args.teamId, task, mode, land, worktreeName,
+      branches: validateMergeTargets(args.branches), ...(images.length > 0 ? { images } : {}),
+    }
   }
   if (args.branches !== undefined) throw new TypeError('branches are only accepted for merge tasks')
-  return { delegate: true, title, teamId: args.teamId, task, mode, land, ...(worktreeName ? { worktreeName } : {}) }
+  return {
+    delegate: true, title, teamId: args.teamId, task, mode, land,
+    ...(worktreeName ? { worktreeName } : {}), ...(images.length > 0 ? { images } : {}),
+  }
 }
 
 export function validateLandFlag(value) {

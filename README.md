@@ -33,6 +33,7 @@ npm test
 
 - 同一个未发布任务需要补充或修改时，继续在 router 会话里说；`continue_worker` 会把要求送给同一个 worker。任务 BLOCKED 后会恢复同一个 worker（即使它还没创建 worktree）；任务还在排队时，`continue_worker` 会明确要求稍后再试。
 - 只读的诊断、分析、查找可以直接问；router 用 report 模式派工，worker 可以联网检索和读取网页做调研，任务结束后不留分支和提交。
+- 消息可以携带本地图片：router 在 `dispatch_worker` / `continue_worker` 的 `images` 里传本地 PNG/JPEG/WebP/GIF 路径，worker 在 `message_router`、`report_task`、`review_worker_commit` 的 `images` 里传路径。插件把图片存进 Host 附件库，再作为消息内容发给对方；接收方模型必须声明支持图片输入。
 - 在非 Git 目录里也可以直接说清要改什么：派发、执行、审查和记忆走与 Git 项目相同的状态机，只是不建分支、Worktree 和提交；审查通过后任务直接完成。合并、发送 PR 和 `land` 授权需要 Git 仓库。
 - 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
 - 合并与发送 PR 需要动作执行时 Session 具有完整文件访问权限；本地合并还需要 router 会话仍在运行。
@@ -101,6 +102,7 @@ npm test
 - 审查不接收整份 patch：Git 项目由 reviewer 自己读 `base..head` 和改动文件；非 Git 项目由 reviewer 读当前项目文件。Reviewer 可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。
 - 记忆是数据，不是指令；它不能添加需求或授予权限。记忆只由 memory 角色维护，「记忆系统」标签页只提供逐条删除（记忆字段、memory 管理的 skill 和知识条目），不提供写入入口；归档可能包含敏感对话，插件不把归档正文注入任何角色上下文，只把记录路径交给 memory 角色自行读取。
 - 只报告任务不产生分支或提交；需要改文件时重新派工。
+- 消息图片只接受本地文件路径，不接受 URL、base64 或 GUI 里直接上传的附件；路径按发送方的当前目录解析。接收方模型没有声明 image 输入时，Host 会拒绝发送，插件不会把图片改写成路径文本硬塞进消息。
 
 ## 文档
 

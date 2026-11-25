@@ -4,6 +4,7 @@ import { forgetLanding } from './landing.js'
 import { notifyWorkerStatus } from './worker-status.js'
 import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
 import { interruptWorker } from './worker-control.js'
+import { imageBlocksFromReferences } from './message-images.js'
 
 // Worker launches beyond the configured limit wait as `queued` Task records.
 // The queue is serialized per data root so two dispatches cannot claim the same slot.
@@ -125,7 +126,7 @@ async function launch(ctx, task) {
           land: task.land === true,
           branches: task.mergeBranches ?? [],
         }),
-      }],
+      }, ...imageBlocksFromReferences(task.images)],
       ...(agentOptions ? { agentOptions } : {}),
       promptSource: { kind: 'agent-message', form: 'relay', senderSessionId: parent.id },
       signal: lifetime(),

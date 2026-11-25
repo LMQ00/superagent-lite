@@ -52,7 +52,7 @@ function context(repo, { sendMessage, liveWorker } = {}) {
       async startActivation(spec) { activations.push(spec); return { childId: spec.childId } },
       async sendMessage(sender, targetId, content, options) {
         if (sendMessage) await sendMessage(sender, targetId, content, options)
-        sends.push({ sender: sender.id, targetId, text: content[0].text })
+        sends.push({ sender: sender.id, targetId, content, text: content[0].text })
       },
     },
     subprocess: {
@@ -223,6 +223,57 @@ test('mode=merge appends a new request to a running merge worker instead of disp
   assert.equal(task.followUps[0].text, 'Also merge the extra branch.')
   assert.equal(task.land, true)
   assert.equal(task.status, 'running')
+})
+
+test('mode=merge appends images to the running merge worker message', async () => {
+  const facts = await repoFixture('append-images')
+  const extra = 'sl-append-images-extra'
+  addBranch(facts.repo, extra)
+  const imagePath = join(home, 'append-screenshot.png')
+  await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]))
+  const mergeId = '3333333333333333'
+  await createTask({
+    id: mergeId,
+    title: 'Merge the delivered branch',
+    teamId: 'team-append-images',
+    task: 'Merge the delivered branch into main.',
+    mode: 'merge',
+    land: true,
+    mergeBranches: [facts.branch],
+    parentSessionId: 'router',
+    projectRoot: facts.repo,
+    baseCommit: facts.baseCommit,
+    baseBranch: 'main',
+    workerSessionId: 'worker-merge-images',
+    status: 'running',
+    createdAt: new Date().toISOString(),
+  })
+  const { ctx, activations, sends } = context(facts.repo)
+  const saved = []
+  ctx.attachments = {
+    imageLimits: { maxImagesPerMessage: 20, maxMessageImageBytes: 1_000_000 },
+    async saveImage(input) {
+      saved.push(input)
+      return { attachmentId: `sha256:${'c'.repeat(64)}`, mediaType: input.mediaType, bytes: input.data.byteLength, width: 1, height: 1, name: input.name }
+    },
+  }
+  const result = await createDispatchTool(ctx).execute({
+    mode: 'merge',
+    title: 'Merge the extra branch',
+    worktreeName: 'merge-append-images',
+    teamId: 'team-append-images',
+    task: 'Also merge the extra branch.',
+    land: true,
+    branches: [extra],
+    images: [imagePath],
+  }, exec('append-images-call'))
+  assert.equal(result.appended, true)
+  assert.equal(activations.length, 0)
+  assert.equal(saved.length, 1)
+  assert.equal(sends.length, 1)
+  assert.equal(sends[0].content[0].type, 'text')
+  assert.equal(sends[0].content[1].type, 'image')
+  assert.equal(sends[0].content[1].attachment.name, 'append-screenshot.png')
 })
 
 test('mode=merge records a repeated target once and still delivers the appended request', async () => {

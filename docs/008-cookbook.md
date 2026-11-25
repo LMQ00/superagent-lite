@@ -59,7 +59,7 @@ export function createReadTaskTool(agent, taskId, read = taskForSession) {
 ```
 
 - **身份从闭包来。** `agent` 和 `taskId` 在注册时绑定，不从模型参数读取；`exec.agent !== agent` 拒绝其他 Session。
-- **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:44-45`）。
+- **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:46-55`）。
 - **输出只含公开字段。** 不返回需求全文、Review findings 或失败原因；Task 记录里这些字段不进入返回值。
 - **不写记录。** 工具只调用 `taskForSession` 读取，不调用 `updateTask`。
 
@@ -153,6 +153,21 @@ npm test
 ```
 
 完整测试以 `fail 0` 结束才算接通。
+
+## 消息附带图片
+
+Host 的消息内容支持 `{ type: 'image', attachment }`，附件引用由 `ctx.attachments.saveImage` 生成。所有内置消息工具共用 `imagesParameter`：值是本地 PNG/JPEG/WebP/GIF 路径数组，按发送方的当前会话目录解析。例如：
+
+```js
+dispatch_worker({ mode: 'change', title: 'Fix layout', worktreeName: 'fix-layout', teamId: 'web', task: '按截图修复布局。', images: ['docs/layout-bug.png'] })
+message_router({ message: 'COMPLETED；截图见附件。', images: ['artifacts/result.png'] })
+review_worker_commit({ images: ['artifacts/before.png', 'artifacts/after.png'] })
+```
+
+- 实现顺序：先用 `imagesParameter` 声明参数，再用 `imageBlocks(ctx, images, cwd, signal)` 保存并生成图片块，最后把图片块追加在文本块之后发给 `sendMessage` 或 `startActivation`（`src/message-images.js:31-96`）。
+- 路径必须是本地文件；URL、base64 和 GUI 上传的附件不会被接受。图片格式按文件签名识别。
+- 单条消息的图片数量和总字节数受 Host `imageLimits` 约束；缺文件、格式不支持或附件保存失败时整次工具调用失败，不发送半条消息。
+- 目标模型必须声明 image 输入；Host 在投递时检查，失败报 `MODEL_DOES_NOT_SUPPORT_IMAGES` 或 `Model "<model>" does not support image input.`。
 
 ## 5. 检查清单
 
