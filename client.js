@@ -66,6 +66,18 @@ window.__ModuleLoader__.load({
         memoryGlobalHint: 'Shared by all projects.', memoryProjectHint: 'Scoped to the current project.',
         memoryKnowledgeHint: 'Shared by all projects and queried on demand.',
         memoryExpand: 'Show more', memoryCollapse: 'Show less',
+        branchesTab: 'Branches', branchesTitle: 'Branches / worktrees',
+        branchesIntro: 'Lists only the worktrees this plugin created under .agents/worktrees and its sl-* worker branches. Your own branches, other worktrees and master never appear here.',
+        branchesLoadFailed: 'Could not load branches. Try refreshing.',
+        branchesEmpty: 'No worktrees or branches created by this plugin.',
+        branchesOnlyPlugin: 'Only plugin-created worktrees and sl-* branches are shown or deletable here.',
+        branchesProject: 'Project', branchesWorktree: 'Worktree', branchesTask: 'Task',
+        branchesNoTask: 'No task record', branchesNoWorktree: 'No worktree',
+        deleteWorktree: 'Delete worktree', deleteWorktreeTitle: 'Delete the worktree',
+        deleteBranchTitle: 'Delete the branch',
+        deleteWorktreeHint: 'Removes this worktree and keeps its worker branch. This cannot be undone.',
+        deleteBranchHint: 'Deletes this worker branch. Its worktree is already removed; the branch cannot be restored.',
+        branchesDeleted: 'Done.', branchesDeleteFailed: 'Could not delete it.',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -129,6 +141,18 @@ window.__ModuleLoader__.load({
         memoryGlobalHint: '所有项目共享。', memoryProjectHint: '仅在当前项目生效。',
         memoryKnowledgeHint: '所有项目共享，按需查询。',
         memoryExpand: '展开', memoryCollapse: '收起',
+        branchesTab: '分支 / worktree', branchesTitle: '分支 / worktree',
+        branchesIntro: '只列出本插件在 .agents/worktrees 下创建的 worktree 和 sl-* 工作分支；你自己的分支、其他 worktree 和 master 不会出现在这里。',
+        branchesLoadFailed: '无法加载分支和 worktree，请重试。',
+        branchesEmpty: '本插件没有创建 worktree 或分支。',
+        branchesOnlyPlugin: '这里只显示和删除本插件创建的 worktree 与 sl-* 分支。',
+        branchesProject: '项目', branchesWorktree: 'worktree', branchesTask: '任务',
+        branchesNoTask: '无任务记录', branchesNoWorktree: '无 worktree',
+        deleteWorktree: '删除 worktree', deleteWorktreeTitle: '删除 worktree',
+        deleteBranchTitle: '删除分支',
+        deleteWorktreeHint: '会移除这个 worktree，保留对应的 worker 分支；此操作无法恢复。',
+        deleteBranchHint: '会删除这个 worker 分支；对应 worktree 已移除，分支删除后无法恢复。',
+        branchesDeleted: '操作已完成。', branchesDeleteFailed: '无法删除，请重试。',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -381,6 +405,13 @@ window.__ModuleLoader__.load({
       const [memoryPending, setMemoryPending] = useState(false)
       const [memoryQuery, setMemoryQuery] = useState('')
       const [memoryExpanded, setMemoryExpanded] = useState({})
+      const [branches, setBranches] = useState([])
+      const [branchPhase, setBranchPhase] = useState('loading')
+      const [branchError, setBranchError] = useState('')
+      const [branchNotice, setBranchNotice] = useState('')
+      const [branchDialog, setBranchDialog] = useState(null)
+      const [branchDialogError, setBranchDialogError] = useState('')
+      const [branchPending, setBranchPending] = useState(false)
       const [selectedTasks, setSelectedTasks] = useState([])
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
@@ -483,6 +514,31 @@ window.__ModuleLoader__.load({
         return () => controller.abort()
       }, [revision, phase, memoryProject, tab])
 
+      useEffect(() => {
+        if (tab !== 'branches') return () => {}
+        const controller = new AbortController()
+        setBranchPhase('loading')
+        setBranchError('')
+        setBranchNotice('')
+        async function load() {
+          try {
+            const response = await fetch('/superagent-lite/branches', {
+              method: 'GET', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            })
+            if (!response.ok) throw new Error('Branch list unavailable')
+            const value = await response.json()
+            if (!Array.isArray(value?.branches)) throw new Error('Invalid branch list')
+            if (controller.signal.aborted) return
+            setBranches(value.branches.filter(row => row && typeof row.branch === 'string' && typeof row.projectRoot === 'string'))
+            setBranchPhase('ready')
+          } catch {
+            if (!controller.signal.aborted) setBranchPhase('error')
+          }
+        }
+        void load()
+        return () => controller.abort()
+      }, [revision, tab])
+
       // A queued Task is waiting for a concurrency slot that only the Host can
       // open. Poll silently while one is listed so the row leaves the queue in
       // place, without a page refresh or a loading state.
@@ -554,6 +610,12 @@ window.__ModuleLoader__.load({
         setMemoryDialogError('')
         setMemoryPending(false)
         setMemoryExpanded({})
+        setBranchPhase('loading')
+        setBranchError('')
+        setBranchNotice('')
+        setBranchDialog(null)
+        setBranchDialogError('')
+        setBranchPending(false)
         setOpenFailed(false)
         setError('')
         setNotice('')
@@ -699,6 +761,56 @@ window.__ModuleLoader__.load({
           setMemoryDialogError(message)
         } finally {
           setMemoryPending(false)
+        }
+      }
+      const sameBranchRow = (left, right) => left.projectRoot === right.projectRoot && left.branch === right.branch
+      const branchDeleteUrl = (kind, row) => {
+        const url = new URL('/superagent-lite/branches', 'http://localhost')
+        url.searchParams.set('kind', kind)
+        url.searchParams.set('projectRoot', row.projectRoot)
+        url.searchParams.set('branch', row.branch)
+        if (kind === 'worktree' && row.path) url.searchParams.set('path', row.path)
+        return `${url.pathname}${url.search}`
+      }
+      const confirmBranchDelete = async () => {
+        if (!branchDialog) return
+        const { kind, row } = branchDialog
+        setBranchPending(true)
+        setBranchDialogError('')
+        try {
+          const response = await fetch(branchDeleteUrl(kind, row), {
+            method: 'DELETE', credentials: 'same-origin', cache: 'no-store',
+          })
+          let value
+          try {
+            value = await response.json()
+          } catch {
+            value = undefined
+          }
+          if (!response.ok) {
+            throw new Error(typeof value?.error === 'string' && value.error ? value.error : t('branchesDeleteFailed'))
+          }
+          // A deleted worktree keeps its branch row and only loses the path; a
+          // deleted branch removes the row. Neither action reloads the list.
+          if (kind === 'worktree') {
+            setBranches(current => current.map(item => sameBranchRow(item, row)
+              ? (value?.row ?? {
+                ...item, path: undefined, canDeleteWorktree: false, canDeleteBranch: true,
+                worktreeReason: 'This branch has no worktree to delete', branchReason: undefined,
+              })
+              : item))
+          } else {
+            setBranches(current => current.filter(item => !sameBranchRow(item, row)))
+          }
+          setBranchDialog(null)
+          setBranchNotice(typeof value?.message === 'string' && value.message ? value.message : t('branchesDeleted'))
+        } catch (actionError) {
+          const message = typeof actionError?.message === 'string' && actionError.message
+            ? actionError.message : t('branchesDeleteFailed')
+          setBranchError(message)
+          setBranchDialogError(message)
+        } finally {
+          setBranchPending(false)
         }
       }
       const stopTask = async task => {
@@ -1145,6 +1257,8 @@ window.__ModuleLoader__.load({
             }, t('saveSettings')))))
       const memoryView = tab === 'memory'
       const memoryTabId = `${headingId}-memory-tab`
+      const branchView = tab === 'branches'
+      const branchesTabId = `${headingId}-branches-tab`
       const memoryProjects = optionsFor('projectRoot')
       const memoryDeleteButton = target => h('button', {
         type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
@@ -1320,20 +1434,88 @@ window.__ModuleLoader__.load({
                 onClick: () => void confirmMemoryDelete(),
               }, t('confirmDelete')))))
       }
+      const branchRow = row => {
+        const task = row.task && typeof row.task === 'object' ? row.task : undefined
+        const path = typeof row.path === 'string' && row.path ? row.path : undefined
+        const status = task && typeof task.status === 'string' ? task.status : undefined
+        return h('li', { key: `${row.projectRoot}\0${row.branch}`, className: 'sl-task' },
+          h('div', { className: 'sl-task__stage' },
+            status ? statusMark(status) : h('span', { className: 'sl-hint' }, t('branchesNoTask'))),
+          h('div', { className: 'sl-task__body' },
+            h('div', { className: 'sl-task__title' },
+              h('code', { className: 'sl-code', title: row.branch }, row.branch)),
+            h('div', { className: 'sl-task__meta' },
+              chip('branchesProject', row.projectRoot),
+              chip('branchesWorktree', path ?? t('branchesNoWorktree')),
+              task && chip('branchesTask', task.title || task.id),
+              task && h('code', { className: 'sl-code', title: task.id }, task.id)),
+            h('div', { className: 'sl-task__actions' },
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: branchPending || !row.canDeleteWorktree,
+                title: row.canDeleteWorktree ? undefined : row.worktreeReason,
+                onClick: () => setBranchDialog({ kind: 'worktree', row }),
+              }, icon('trash'), t('deleteWorktree')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                disabled: branchPending || !row.canDeleteBranch,
+                title: row.canDeleteBranch ? undefined : row.branchReason,
+                onClick: () => setBranchDialog({ kind: 'branch', row }),
+              }, icon('trash'), t('deleteBranch')),
+              branchPending && h('span', { className: 'sl-hint' }, t('working')))))
+      }
+      const branchesViewPanel = () => h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': branchesTabId },
+        h('p', { className: 'sl-hint' }, t('branchesOnlyPlugin')),
+        branchPhase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),
+        branchPhase === 'error' && h('p', { className: 'sl-error', role: 'alert' }, t('branchesLoadFailed')),
+        branchError && h('p', { className: 'sl-error', role: 'alert' }, branchError),
+        branchNotice && h('p', { className: 'sl-notice', role: 'status' }, branchNotice),
+        branchPhase === 'ready' && branches.length === 0 && h('p', { className: 'sl-hint', role: 'status' }, t('branchesEmpty')),
+        branchPhase === 'ready' && branches.length > 0 && h('div', { className: 'sl-scroll' },
+          h('div', { className: 'sl-groups' },
+            h('section', { className: 'sl-group' },
+              h('h2', { className: 'sl-group__title' }, t('branchesTab'),
+                h('span', { className: 'sl-group__count' }, String(branches.length))),
+              h('ul', { className: 'sl-list' }, ...branches.map(branchRow))))))
+      const branchDialogView = () => {
+        if (!branchDialog) return null
+        const { kind, row } = branchDialog
+        const title = kind === 'worktree' ? t('deleteWorktreeTitle') : t('deleteBranchTitle')
+        return h('div', { className: 'sl-modal-backdrop' },
+          h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+            h('h2', null, title),
+            h('p', null, t(kind === 'worktree' ? 'deleteWorktreeHint' : 'deleteBranchHint')),
+            h('p', null, h('code', null, kind === 'worktree' ? `${row.branch} · ${row.path ?? ''}` : row.branch)),
+            branchDialogError && h('p', { role: 'alert', className: 'sl-error' }, branchDialogError),
+            h('div', { className: 'sl-modal__actions' },
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--outline', disabled: branchPending,
+                onClick: () => {
+                  setBranchDialog(null)
+                  setBranchDialogError('')
+                },
+              }, t('cancel')),
+              h('button', {
+                type: 'button', className: 'sl-btn sl-btn--primary', disabled: branchPending,
+                onClick: () => void confirmBranchDelete(),
+              }, t('confirmDelete')))))
+      }
       return h('section', { className: 'sl-board', 'aria-labelledby': headingId },
         h('style', null, styles),
         h('div', { className: 'sl-column' },
           h('header', { className: 'sl-head' },
             h('div', { className: 'sl-head__text' },
               h('h1', { id: headingId },
-                t(taskView ? 'title' : settingsView ? 'workerSettingsTitle' : 'memoryTitle')),
+                t(taskView ? 'title' : settingsView ? 'workerSettingsTitle' : memoryView ? 'memoryTitle' : 'branchesTitle')),
               h('p', { className: 'sl-intro' },
-                t(taskView ? 'intro' : settingsView ? 'workerSettingsIntro' : 'memoryIntro'))),
+                t(taskView ? 'intro' : settingsView ? 'workerSettingsIntro' : memoryView ? 'memoryIntro' : 'branchesIntro'))),
             h('div', { className: 'sl-toolbar' },
               h('button', {
                 type: 'button', className: 'sl-btn sl-btn--outline',
                 onClick: refresh,
-                disabled: taskView ? phase === 'loading' : settingsView ? settingsPhase === 'loading' : memoryPhase === 'loading',
+                disabled: taskView ? phase === 'loading'
+                  : settingsView ? settingsPhase === 'loading'
+                    : memoryView ? memoryPhase === 'loading' : branchPhase === 'loading',
               }, icon('refresh'), t('refresh')))),
           h('div', { className: 'sl-tabs', role: 'tablist', 'aria-label': t('views') },
             h('button', {
@@ -1350,7 +1532,12 @@ window.__ModuleLoader__.load({
               id: memoryTabId, type: 'button', role: 'tab', className: 'sl-tab',
               'aria-selected': memoryView,
               onClick: () => setTab('memory'),
-            }, t('memoryTab'))),
+            }, t('memoryTab')),
+            h('button', {
+              id: branchesTabId, type: 'button', role: 'tab', className: 'sl-tab',
+              'aria-selected': branchView,
+              onClick: () => setTab('branches'),
+            }, t('branchesTab'))),
           taskView
             ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
               filters,
@@ -1364,10 +1551,11 @@ window.__ModuleLoader__.load({
               phase === 'ready' && tasks.length > 0 && shown.length === 0 &&
                 h('p', { className: 'sl-hint', role: 'status' }, t(category ? 'emptyCategory' : 'noMatch')),
               list)
-            : settingsView ? settingsViewPanel() : memoryViewPanel()),
+            : settingsView ? settingsViewPanel() : memoryView ? memoryViewPanel() : branchesViewPanel()),
         dialogView(),
         batchDialog(),
-        memoryDialogView())
+        memoryDialogView(),
+        branchDialogView())
     }
 
     function PanelIcon({ size }) {

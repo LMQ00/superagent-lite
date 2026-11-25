@@ -43,7 +43,7 @@ flowchart LR
 | Project | Task 工作的项目根：Git 仓库或普通目录。 | Git 仓库派发时必须有分支被检出、工作区干净，Task 保存项目根、基础分支和基础 commit；非 Git 目录保存项目根并标记 `git: false`，不要求分支或 commit（`src/dispatch.js:60-85`）。 |
 | Project checkout | Project 的主工作区，位于任何 Worktree 之外。 | report 任务在这里检查（另可使用 checkout 之外的只读检索工具）；本地合并只在这里写入；非 Git 项目没有 Worktree，change worker 也直接在这里修改（`src/report-tool.js:26-31`、`src/merge.js:28-55`、`index.js`）。 |
 | Worker Session | 执行一个 Task 的 DSH Session，运行 `superagent-lite-worker` 预设。 | 从项目根启动；Git 项目除 `create_worktree` 外的工具要求工作目录在分配的 Worktree；非 Git 项目工作目录直接是项目根，不注册可用的 `create_worktree`；subagent 结束时冻结；面板停止会中断当前执行但不删除 Session（`index.js:73-119`、`src/worker-control.js:5-20`）。 |
-| Worktree | worktree 服务为一个 Git Task 创建的隔离检出。 | 一个 Git Task 一个 Worktree，位于 `<project>/.agents/worktrees`，名字为 `sl-<worktreeName>-<Task ID 前 12 位>`；`worktreeName` 是 1–4 个英文小写短词；文件与其他 Task 分开；它不是操作系统安全边界；非 Git 项目没有 Worktree（`cordis.patch.yml:1-7`、`src/worktree-tool.js:42-46`）。 |
+| Worktree | worktree 服务为一个 Git Task 创建的隔离检出。 | 一个 Git Task 一个 Worktree，位于 `<project>/.agents/worktrees`，名字为 `sl-<worktreeName>-<Task ID 前 12 位>`；`worktreeName` 是 1–4 个英文小写短词；文件与其他 Task 分开；它不是操作系统安全边界；非 Git 项目没有 Worktree。面板的「分支 / worktree」标签页只列这些 Worktree 和 `sl-*` 分支，允许安装 owner 分开删除工作树与分支（`cordis.patch.yml:1-7`、`src/worktree-tool.js:42-46`、`src/branches-panel.js:15-68`、`src/git-actions.js:603-701`、`src/merge.js:175-216`）。 |
 | Worker branch | Worktree 所在的分支。 | 仅 Git 项目有；分支名取自 worktree 服务的返回值并写入 `task.worktree.branch`；只有审查过的 HEAD 会被合并或发布（`src/worktree-tool.js:40-49`、`src/git-actions.js:168-179`）。 |
 | Review | 独立子代理对已提交 diff 或非 Git 工作区内容的裁决。 | Reviewer 用 `submit_review` 记录裁决：内容「通过」即通过，其他内容记为审查意见；工具记录 reviewed HEAD 或工作区标识与 reviewer Session；裁决针对 Task 保存的需求，follow-up 只作上下文；审查本身不改 Task 状态（`src/review.js:12-34`、`src/review.js:81-119`）。 |
 | Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-22`、`index.js:240-286`）。 |
@@ -59,7 +59,7 @@ flowchart LR
 | 原始归档（Raw archive） | Worker 完整回合的原始记录和 memory 读取的会话记录。 | 每个 `turn/end` 把一轮事件存到 `~/.dsh/superagent-lite/task/archive/<hash>.json`，带 Session 序号和轮内 `reference` 编号；memory 触发时再把完整会话写成 `task/archive/sessions/<sha256(Session ID)>.md`，路径随触发消息交给 memory；都由 Host 写入，其他模型工具没有专用读取入口，Git 与非 Git 项目走同一位置（`src/memory.js`、`src/memory-store.js`）。 |
 | Role message | 角色消息、子代理状态通知和插件系统提醒在聊天里的卡片。 | 角色间消息（`agent-message`，含派发任务、worker 报告、follow-up、reviewer 审查请求和 memory 蒸馏请求）、子代理结束通知（`subagent-settled`）和插件自有通知（`superagent-lite-*`，当前是派发守卫提醒）在应用 Host 补丁后统一渲染为任务消息卡片，包括被 steer 进运行中回合的消息；没有补丁时按普通用户消息或上下文行显示。npm Host 升级覆盖包后，插件启动时会自动补打两个补丁并在 Host 日志要求再重启一次；DSH-go 仍手动应用。审查和记忆 helper 的结果通过工具结果返回，不是会话消息（`docs/HOST-PATCH.md`、`docs/HOST-PATCH-AGENT-MESSAGE.md`、`src/host-patch.js`）。 |
 | Worker 设置 | 面板「设置」标签页保存的 worker 默认值和并发上限。 | 只允许安装 owner 读写；worker 模型留空时跟随 DSH 默认模型；并发上限约束新启动的 worker，超出的 Task 排队且可停止，review 不占名额；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/settings-panel.js`、`src/launch-queue.js`）。 |
-| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取和删除记忆；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、停止任务和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限；「记忆系统」标签页可本地搜索并展示记忆、全局/项目 skill 和知识库，并允许 owner 删除单条记忆字段、memory 管理的 skill 或知识条目（`src/board.js:16-150`、`src/status.js:14-53`、`src/memory-panel.js`、`client.js:348-1369`）。 |
+| Panel | Web 侧的「项目任务」面板。 | 只允许安装 owner 读取和删除记忆；任务列表是唯一状态分类来源，面板状态由任务、分支和审查事实推导，可按六个面板状态分组过滤并单独筛出排队中的 Task；合并、发送 PR、审查、删除分支、停止任务和删除任务记录都是任务行内的动作；任务行可勾选后批量删除；面板只读任务；「设置」标签页保存 worker 模型与并发上限；「记忆系统」标签页可本地搜索并展示记忆、全局/项目 skill 和知识库，并允许 owner 删除单条记忆字段、memory 管理的 skill 或知识条目；「分支 / worktree」标签页只列本插件创建的 Worktree 和 `sl-*` 分支，沿用任务已有状态，并允许 owner 分别删除 Worktree 与分支（`src/board.js:16-150`、`src/status.js:14-53`、`src/memory-panel.js`、`src/branches-panel.js:15-68`、`client.js:348-1536`）。 |
 
 ## 聚合
 
@@ -133,7 +133,7 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败，或失联的 `starting`/`resuming` 被启动队列回收（`src/dispatch.js:104-112`、`index.js:250-266`、`src/continue.js:281-288`、`src/launch-queue.js:50-86`） |
 | 结束 | `cancelled` | 安装 owner 在面板停止运行中或排队中的 Task；worker 被中断，并发名额立即释放，记录保留在面板并归入「失败」分组（`src/worker-stop.js:6-29`、`src/task-store.js:126-146`） |
 
-删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:288-293`）。
+删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:290-295`）。
 
 面板字典还识别 `ready`、`merge-queued`、`merge-conflict`、`interrupted`、`cancelled` 这些文案；新的停止路径写入 `cancelled` 终态并保留活动记录，面板把它归入「失败」分组并加「已取消」标签。它不同于 `failed`（worker/回合失败）和 `delivery-blocked`/`merge-conflict`（自动交付阻塞），表示用户主动停止，不会自动恢复。旧版本排队取消留下的 `cancelled` 墓碑仍可被 `worker_status` 查询，但面板不显示（`client.js:14-15`、`client.js:77-78`、`src/status.js:8-10`、`src/task-store.js`）。
 

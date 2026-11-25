@@ -13,6 +13,7 @@ import { createMessageRouterTool } from './src/message-router.js'
 import { createReportTool } from './src/report-tool.js'
 import { createSettingsPanelHandler } from './src/settings-panel.js'
 import { createMemoryPanelHandler } from './src/memory-panel.js'
+import { createBranchesPanelHandler } from './src/branches-panel.js'
 import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers } from './src/launch-queue.js'
 import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
@@ -58,6 +59,14 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/memory',
       handler: createMemoryPanelHandler(web.connection),
+    }))
+    web.effect(() => web.webServer.register({
+      kind: 'exact', path: '/superagent-lite/branches',
+      handler: createBranchesPanelHandler(web.connection, {
+        list: signal => gitManager.branches(signal),
+        removeWorktree: (target, signal) => gitManager.removeWorktree(target, signal),
+        removeBranch: (target, signal) => gitManager.removeBranch(target, signal),
+      }),
     }))
   })
   const dispatchGuard = createDispatchGuard(ctx)
