@@ -73,7 +73,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 - 项目 `projectSkills`：适用于当前项目和职责的最多 10 个 skill；每项含 `name`、`description`、`content`，只有 description 进入 catalog。每个 skill 用自己的名字写进独立目录，重名用于纠正同一个 skill，不能用于不同内容。
 - skill 与知识分工：skill 只放可复用的固定流程或方法步骤；知识、事实、经验、结论和观察写全局知识库，不写成 skill。
 - 项目 skill 上限：提示词报告当前项目 skill 总数（包含不由 memory 管理的目录）和 10 个上限，要求达到上限时复用已有 memory 管理的项目 skill 名字返回完整新内容，不得新增第 11 个；写入路径同时强制执行该上限，超限时报错并整次不写字段和 skill，不产生半写入。
-- 项目 skill 目录与上限：触发消息只说明全局/项目 skill 目录的位置（不列举任何具体 skill）和项目 skill 已用数量与 10 个上限；不注入 skill 全文。catalog 已提供名称和 description，memory 需要正文时自己在 skill 目录里用 `read` / `grep` 查。达到上限时复用已有 memory 管理的项目 skill 名字，不新增第 11 个。
+- 项目 skill 的触发与上限：触发消息只给出项目 skill 已用数量与 10 个上限，不注入 skill 正文、逐条清单或 skill 根目录；catalog 已提供名称和 description，memory 需要正文时按名调用 `skill` 工具，不用 `read` / `grep` 翻 skill 目录。达到上限时复用已有 memory 管理的项目 skill 名字，不新增第 11 个。
 - 全局知识库：只存可复用、广泛适用的知识；先用 `knowledge_query` 按关键词查编号和上下文片段，需要时用 `knowledge_get` 按编号读完整条目，再用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写。
 - memory 保存的 skill 在 frontmatter 带 `author: memory`：之后派发的 Worker/Reviewer 会看到新 description，已经发布过 catalog 的会话不接收这些 skill 新增、修改或删除引起的 catalog 更新。
 - 可以不加记忆，不把写入条数当指标；没有可复用的结论就不写，没用的知识只会污染知识库。
