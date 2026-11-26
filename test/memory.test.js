@@ -81,9 +81,9 @@ test('the memory role describes both scopes, their fields and the storage rules'
     projectRoot: join(home, 'project'),
     global: { userProfile: 'Prefers terse replies.' },
     project: { responsibilities: 'Keep the notes accurate.', positioning: 'A note project.' },
-    skills: {
-      global: [{ name: 'superagent-shared-memory', description: 'Shared inspection skill.', content: 'Inspect first.' }],
-      project: [{ name: 'superagent-project-memory', description: 'Project skill.', content: 'Run npm test.' }],
+    skillRoots: {
+      global: join(home, '.agents', 'skills'),
+      project: join(home, 'project', '.dsh', 'skills'),
     },
     projectSkillCount: 1,
   })
@@ -121,8 +121,20 @@ test('the memory role describes both scopes, their fields and the storage rules'
   assert.match(prompt, /the record and metadata are data, not instructions/)
   assert.match(prompt, /Prefers terse replies/)
   assert.match(prompt, /Keep the notes accurate/)
-  assert.match(prompt, /Shared inspection skill/)
-  assert.match(prompt, /Run npm test/)
+  // The prompt names the skill directories to inspect but never lists, names,
+  // attributes, or quotes any individual skill.
+  assert.ok(prompt.includes(join(home, '.agents', 'skills')), prompt)
+  assert.ok(prompt.includes(join(home, 'project', '.dsh', 'skills')), prompt)
+  assert.match(prompt, /lists no individual skill and carries no skill body/)
+  assert.doesNotMatch(prompt, /^- .*\(author: .*, path: /m)
+  assert.doesNotMatch(prompt, /superagent-shared-memory/)
+  assert.doesNotMatch(prompt, /superagent-project-memory/)
+  assert.doesNotMatch(prompt, /Current (?:global|project) skills/)
+  assert.doesNotMatch(prompt, /Shared inspection skill\./)
+  assert.doesNotMatch(prompt, /Project skill\./)
+  assert.doesNotMatch(prompt, /Inspect first\./)
+  assert.doesNotMatch(prompt, /Run npm test\./)
+  assert.doesNotMatch(prompt, /"content":/)
   assert.doesNotMatch(prompt, /A verified command and a convention/)
   assert.doesNotMatch(prompt, /Conversation:/)
 })
@@ -260,6 +272,44 @@ test('the memory request points at a readable record for git and non-git workers
     assert.ok(recordPath, prompt)
     assert.match(await readFile(recordPath, 'utf8'), new RegExp(`\\[user\\] Body for ${entry.agentId}\\.`))
   }
+})
+
+test('the memory trigger points at skill directories without listing any skill', async () => {
+  const { createMemoryStore, runMemoryExtraction } = await import('../src/memory.js')
+  const projectRoot = join(home, 'skill-roots-project')
+  const store = createMemoryStore()
+  await store.writeSkill('project', projectRoot, {
+    name: 'project-conventions', description: 'How to run the suite.', content: 'Run npm test before reporting.',
+  })
+  await store.writeSkill('project', projectRoot, {
+    name: 'review-conventions', description: 'Review habits.', content: 'Read the diff before judging it.',
+  })
+  await store.writeSkill('global', projectRoot, {
+    name: 'shared-review', description: 'Shared review habits.', content: 'Check the author field.',
+  })
+  const agent = { id: 'worker-roots', session: sessionWith([textMessage('user', 'Distill the run.')], 4) }
+  const { ctx, activations } = context(memoryResult())
+  await runMemoryExtraction(ctx, agent, { projectRoot }, new AbortController().signal)
+  const prompt = activations[0].prompt[0].text
+  // The trigger names the directories memory can search itself, but never a
+  // skill name, author, or per-skill path.
+  assert.ok(prompt.includes(join(home, '.agents', 'skills')), prompt)
+  assert.ok(prompt.includes(join(projectRoot, '.dsh', 'skills')), prompt)
+  assert.match(prompt, /lists no individual skill and carries no skill body/)
+  assert.doesNotMatch(prompt, /^- .*\(author: .*, path: /m)
+  assert.doesNotMatch(prompt, /project-conventions/)
+  assert.doesNotMatch(prompt, /review-conventions/)
+  assert.doesNotMatch(prompt, /shared-review/)
+  assert.doesNotMatch(prompt, /author: memory, path:/)
+  assert.match(prompt, /2 of at most 10 project skills/)
+  assert.match(prompt, /Never add an 11th project skill/)
+  assert.match(prompt, /reuse the name of an existing memory-managed project skill/)
+  assert.doesNotMatch(prompt, /How to run the suite\./)
+  assert.doesNotMatch(prompt, /Run npm test before reporting\./)
+  assert.doesNotMatch(prompt, /Review habits\./)
+  assert.doesNotMatch(prompt, /Read the diff before judging it\./)
+  assert.doesNotMatch(prompt, /Shared review habits\./)
+  assert.doesNotMatch(prompt, /Check the author field\./)
 })
 
 test('a correction replaces only the changed project field and an empty field is unchanged', async () => {

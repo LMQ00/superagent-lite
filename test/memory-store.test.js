@@ -155,6 +155,11 @@ test('memory writes named skills to their own directories with the memory author
       },
     ],
   })
+  assert.equal(await store.projectSkillCount(project), 2)
+  assert.deepEqual(store.skillRoots(project), {
+    global: join(agentsHome, 'skills'),
+    project: join(project, '.dsh', 'skills'),
+  })
   await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
 })
 
@@ -176,6 +181,9 @@ test('a same-name conflict does not overwrite a skill memory does not manage', a
     name: 'authorless-skill', description: 'Memory copy.', content: 'New body.',
   }), /not managed by memory/)
   assert.equal(await readFile(authorlessFile, 'utf8'), authorless)
+  // The usage count includes directories memory does not manage, because the
+  // project skill limit counts every project skill.
+  assert.equal(await store.projectSkillCount(project), 2)
 })
 
 test('memory-authored skills are identified by their author field', async () => {
