@@ -140,7 +140,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:128-145`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:304-307`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:128-145`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:314-317`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -148,6 +148,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 
 | 现象 | 原因与修法 |
 | --- | --- |
+| 「项目任务」标签页只显示「无法加载任务，请重试。」，`/superagent-lite/tasks` 返回 `400` 空响应 | 正在运行的 DSH 进程仍加载修复前的插件代码；新 Host 的 `connection.admit` 在未注入 `connection.authentication` 的请求 fiber 上抛出 `cannot get property "connection.authentication" without inject`。重启 DSH Web，让面板路由从注入了该服务的上下文注册 |
 | 派发消息显示为普通对话，不是「收到任务消息」卡片 | DSH 升级覆盖了 npm 包，客户端任务卡补丁（或 `0.2.2` Host 的子代理 `promptSource` 补丁）丢失。插件启动时会自动补打并在日志提示重启；看到提示后再重启一次 DSH。`0.2.3-alpha.1` 的子代理初始任务由 Host 原生记录，不需要该补丁。DSH-go 按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用 |
 | `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash Git 项目的 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore`。非 Git 目录不会报这条 |
 | `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |
