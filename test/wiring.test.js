@@ -107,6 +107,66 @@ test('the catalog guard wraps preset listeners that add the catalog after next()
   assert.deepEqual((await step()).messages, [])
 })
 
+test('web panels register where connection.admit can resolve its authentication service', async () => {
+  const { apply } = await import('../index.js')
+  const serve = async authService => {
+    const routes = new Map()
+    let registrations = 0
+    const ctx = {
+      logger: { warn() {} },
+      inject(deps, callback) {
+        if (!deps.includes('webServer')) return
+        const withAuth = deps.includes('connection.authentication')
+        if (withAuth && !authService) return
+        const web = {
+          webServer: {
+            register(route) {
+              registrations += 1
+              routes.set(route.path, route.handler)
+              return () => {}
+            },
+          },
+          connection: {
+            ...(withAuth ? { authentication: {} } : {}),
+            ...(authService || withAuth ? {} : { requestRejection() { return undefined } }),
+            admit() {
+              // The newer Host resolves this service from the calling fiber.
+              if (authService && !withAuth) {
+                throw new Error('cannot get property "connection.authentication" without inject')
+              }
+              return { peer: { principal: { kind: 'owner' } } }
+            },
+          },
+          effect(fn) { fn(); return () => {} },
+        }
+        callback(web)
+      },
+      effect() { return () => {} },
+      on() {},
+      agents: { get: () => undefined },
+      agentPresets: { composedPreset: () => 'superagent-lite' },
+    }
+    await apply(ctx)
+    return { routes, registrations }
+  }
+
+  for (const authService of [false, true]) {
+    const { routes, registrations } = await serve(authService)
+    assert.equal(registrations, 5)
+    const handler = routes.get('/superagent-lite/tasks')
+    assert.ok(handler)
+    const res = {
+      status: undefined,
+      body: undefined,
+      writeHead(status) { this.status = status; return this },
+      end(body) { this.body = body },
+    }
+    await handler({ method: 'GET', url: '/superagent-lite/tasks', headers: {} }, res)
+    assert.equal(res.status, 200)
+    assert.deepEqual(JSON.parse(res.body), { tasks: [] })
+  }
+})
+
 test('apply reclaims a stale running record without a live worker', async () => {
   const { createTask, listTasks, readTask } = await import('../src/task-store.js')
   const { STALE_ACTIVE_MS } = await import('../src/launch-queue.js')
