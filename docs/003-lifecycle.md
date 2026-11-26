@@ -47,7 +47,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 
 ### Worker Session
 
-`dispatch_worker` 先写 `queued` 记录，再由启动队列在并发名额内标记为 `starting`，通过 `ctx.subagents.startActivation` 启动一个 Worker Session（`src/dispatch.js:106-132`、`src/launch-queue.js`）。启动成功后队列向 Router 注入一条后台状态通知，说明排队任务已开始；Router 也可随时用 `worker_status` 查询。change、report 和 merge 模式都走同一条启动路径；`mode=merge` 遇到同一 Router Session 和 Project 已有运行中的 merge worker 时，不启动新 Session，而是把目标追加到该 Task 并给 worker 发送 follow-up。启动前队列会重读 Task；如果它在拿到名额后被停止，就不再启动 Worker。激活期间被停止或删除的 Task，启动路径和 `agent/created` 都会中断新 worker，避免停止后仍留下运行中的会话（`src/launch-queue.js:120-187`、`index.js:110-127`）。
+`dispatch_worker` 先写 `queued` 记录，再由启动队列在并发名额内标记为 `starting`，通过 `ctx.subagents.startActivation` 启动一个 Worker Session（`src/dispatch.js:106-132`、`src/launch-queue.js`）。启动成功后队列向 Router 注入一条后台状态通知，说明排队任务已开始；Router 也可随时用 `worker_status` 查询。change、report 和 merge 模式都走同一条启动路径；`mode=merge` 遇到同一 Router Session 和 Project 已有运行中的 merge worker 时，不启动新 Session，而是把目标追加到该 Task 并给 worker 发送 follow-up。启动前队列会重读 Task；如果它在拿到名额后被停止，就不再启动 Worker。激活期间被停止或删除的 Task，启动路径和 `agent/created` 都会中断新 worker，避免停止后仍留下运行中的会话（`src/launch-queue.js:121-188`、`index.js:110-127`）。
 
 | 属性 | 值 |
 | --- | --- |
@@ -58,7 +58,7 @@ Task 记录只保存一个生命周期状态；面板不直接显示它，而是
 | 预设 | `superagent-lite-worker` |
 | 投递 | `parent`，Router 接收 Worker 报告 |
 | 深度 | `ctx.subagents.resolveMaxDepth()` |
-| 首条消息 | `buildWorkerPrompt` 生成的任务消息，以及派发时 `images` 保存的图片块（`src/launch-queue.js:147-160`） |
+| 首条消息 | `buildWorkerPrompt` 生成的任务消息，以及派发时 `images` 保存的图片块（`src/launch-queue.js:148-161`） |
 
 Host 创建 Worker agent 后，`agent/created` 通过 Session 映射找到 Task，核对父 Session，并把 `starting` 或 `resuming` 改为 `running`（`index.js:110-127`、`src/task-store.js:174-188`）。这个状态更新带条件：如果 Task 已被停止成 `cancelled`，不会写回 `running`，而是直接中断 agent。同一事件先注册项目 skill provider 和项目 + 全局记忆上下文，再安装工具守卫、注册 Worker 工具和知识库查询工具；记忆与上下文注入不依赖 Worktree 是否已创建，非 Git 项目没有 Worktree 时同样注入（`index.js:82-234`、`src/memory.js`）。
 
@@ -68,22 +68,22 @@ Worker 的 subagent 结束时冻结工具调用能力：冻结后所有工具被
 
 ### Reviewer
 
-`review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree；非 Git 项目为项目根，delivery 为 `caller`，深度 2（`src/review.js:90-140`）。worker 可以在审查请求里附带本地图片，图片块追加在提示词文本之后；接收方模型必须声明图片输入。
+`review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree；非 Git 项目为项目根，delivery 为 `caller`，深度 2（`src/review.js:91-141`）。worker 可以在审查请求里附带本地图片，图片块追加在提示词文本之后；接收方模型必须声明图片输入。
 
-Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:58-72`）。非 Git 项目 Reviewer 收到需求、follow-up、项目 + 全局记忆和项目根；提示词说明没有 commit 和 diff，Reviewer 读取当前项目文件和工作区内容，裁决记为工作区标识 `workspace`。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:116`、`src/helper-guard.js:105-117`）。Git 项目审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:160`、`src/review.js:46-55`）；非 Git 项目没有 HEAD 可复核。
+Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:59-73`）。非 Git 项目 Reviewer 收到需求、follow-up、项目 + 全局记忆和项目根；提示词说明没有 commit 和 diff，Reviewer 读取当前项目文件和工作区内容，裁决记为工作区标识 `workspace`。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:117`、`src/helper-guard.js:107-119`）。Git 项目审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:161`、`src/review.js:47-56`）；非 Git 项目没有 HEAD 可复核。
 
-Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:150-165`、`src/review.js:181-183`）。
+Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:151-166`、`src/review.js:182-184`）。
 
 面板的 `review` 动作从活着的 Worker Session 对 `unreviewed` 的 HEAD 运行同一审查；通过后 Task 修正为 `awaiting-merge`，有意见则落到 `review-required`（`src/git-actions.js:408-429`）。
 
 ### Memory 角色
 
-memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径和任务、角色、分支、Session、项目根等元信息，不含对话正文；memory 自己用 `read` / `grep` 读取，不使用 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
+memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径和任务、角色、分支、Session、项目根等元信息，以及项目 skill 已用数量与 10 个上限，不含对话正文；memory 自己用 `read` / `grep` 读取，不使用 worker 提交的摘要；skill 只通过会话里的 catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文、逐条清单或 skill 根目录；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`、`src/helper-guard.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
 
 | 属性 | 值 |
 | --- | --- |
 | 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
-| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
+| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息和项目 skill 已用数量与 10 个上限；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；skill 只通过会话里的 skill catalog（名称 + description）获知，需要正文时按名调用 `skill` 工具，不注入 skill 正文、逐条清单或 skill 根目录；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
 | 输出 | 全局 `userProfile`、`sharedSkills`；项目 `responsibilities`、`positioning`、`projectSkills`；技能项含 `name`、`description`、`content`，每个文本字段最多 4,000 字符，skill description 最多 500 字符，项目 skill 同时最多 10 个 |
 | 知识库 | 用 `knowledge_query` 按关键词查编号和上下文片段，再用 `knowledge_get` 按编号取完整条目；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
 | 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |
@@ -111,7 +111,7 @@ Worker 每个回合结束时归档整个回合。`archiveWorkerTurn` 从 `turn/e
 
 - 一个 Task 只有一个 Worker Session；follow-up 复用该 Session，不占第二个名额（`src/task-store.js:167-188`）。
 - 并发 worker 上限来自面板「设置」，默认 3，范围 1–16；设置只影响之后启动的 worker（`src/worker-settings.js`、`src/launch-queue.js`）。
-- 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和每次 `pumpWorkers` 都会回收记录：先读 Review 结论、worker 分支和 Worktree HEAD，Review 通过且 HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时不再计入并发名额。派发、Task 结束、停止任务、Worker 释放名额或保存并发设置都会触发 `pumpWorkers`，面板下一次读取时显示回收后的状态（`src/launch-queue.js:51-118`、`src/launch-queue.js:189-194`、`index.js:304-307`）。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新；任务列表的「排队中」筛选可以单独筛出这些 Task，筛选后仍保留「排队中」标签和停止按钮。排队中的 Worker 开始执行时，启动队列向 Router 注入后台状态通知；运行中或排队中的 Task 也可以停止：面板发送 `POST /superagent-lite/tasks`（`action=stop`），Host 在 Task 锁内把状态写成 `cancelled`、中断 Worker 并立即释放名额，随后排队任务按顺序启动；任务行保留并带「已取消」标签，重复停止返回 200，已结束的 Task 返回 `409`。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:249-295`、`client.js:546-578`、`src/board.js:23-69`、`src/task-store.js:126-146`、`src/worker-stop.js`、`src/worker-status.js`）。
+- 名额内立即启动；超出上限的 Task 写为 `queued`，按创建时间排队，Worker 结束或失联释放名额后启动。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和每次 `pumpWorkers` 都会回收记录：先读 Review 结论、worker 分支和 Worktree HEAD，Review 通过且 HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时不再计入并发名额。派发、Task 结束、停止任务、Worker 释放名额或保存并发设置都会触发 `pumpWorkers`，面板下一次读取时显示回收后的状态（`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:304-307`）。面板在存在排队任务时每 3 秒静默轮询任务列表，该行随后就地转为运行中，不需要整页刷新；任务列表的「排队中」筛选可以单独筛出这些 Task，筛选后仍保留「排队中」标签和停止按钮。排队中的 Worker 开始执行时，启动队列向 Router 注入后台状态通知；运行中或排队中的 Task 也可以停止：面板发送 `POST /superagent-lite/tasks`（`action=stop`），Host 在 Task 锁内把状态写成 `cancelled`、中断 Worker 并立即释放名额，随后排队任务按顺序启动；任务行保留并带「已取消」标签，重复停止返回 200，已结束的 Task 返回 `409`。Reviewer 是 Worker 的子代理，不创建 Task，也不占额外名额（`src/launch-queue.js`、`index.js:249-295`、`client.js:546-578`、`src/board.js:23-69`、`src/task-store.js:126-146`、`src/worker-stop.js`、`src/worker-status.js`）。
 - `mode=merge` 例外：同一 Router Session 和 Project 只有一个活着的 merge worker，新的 merge 请求追加给它，并发的 merge 派发按 Router 和 Project 排队；没有活 Worker Session 的残留运行中 Task 不参与追加（`src/dispatch.js`）。
 - Git 项目的同一 Project 下多个 Task 各用自己的 Worktree 并行；非 Git 项目没有 Worktree，多个 change 任务会直接共享同一目录，不应并发派发（`cordis.patch.yml:1-7`）。
 - 嵌套深度由 Host 的子代理上限约束；Reviewer 和 memory 角色都以深度 2 启动（`src/review.js`、`src/memory.js`）。
@@ -167,7 +167,7 @@ Review 记录保留 `approved: false`，Task 落为 `review-required`。Worker �
 
 ### Host 重启或插件重载
 
-Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签；`queued` 显示「排队中」，不算未确认（`src/board.js:128-145`）。其中失联的 `starting`、`running` 或 `resuming` 超过 2 分钟仍没有活着的 Worker Session 时，插件启动时先扫描一次，之后派发、Task 结束、停止任务、Worker 释放名额或保存并发设置触发的 `pumpWorkers` 也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过、分支存在且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，失败原因写明「无 turn/end」或「会话在恢复前结束」。回收在 Task 锁内复核状态和活 Session，因此幂等，也不会动真正在跑的会话（`src/launch-queue.js:51-118`、`src/launch-queue.js:189-194`、`index.js:304-307`）。任务停止后保留 `cancelled` 记录并显示「已取消」标签；旧版本排队取消留下的墓碑保存在 `tasks/cancelled/`，只供 `worker_status` 查询。这样的残留 merge Task 不会被新的 merge 请求追加；新的请求会新派发 merge worker。
+Task 记录保存在 `~/.dsh/superagent-lite/`，Worktree 保存在项目的 `.agents/worktrees/`。存储状态仍在 `starting`、`running` 或 `resuming` 但没有活着的 Worker Session 时，面板显示「运行中」并带「未确认」标签；`queued` 显示「排队中」，不算未确认（`src/board.js:128-145`）。其中失联的 `starting`、`running` 或 `resuming` 超过 2 分钟仍没有活着的 Worker Session 时，插件启动时先扫描一次，之后派发、Task 结束、停止任务、Worker 释放名额或保存并发设置触发的 `pumpWorkers` 也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过、分支存在且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，失败原因写明「无 turn/end」或「会话在恢复前结束」。回收在 Task 锁内复核状态和活 Session，因此幂等，也不会动真正在跑的会话（`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:304-307`）。任务停止后保留 `cancelled` 记录并显示「已取消」标签；旧版本排队取消留下的墓碑保存在 `tasks/cancelled/`，只供 `worker_status` 查询。这样的残留 merge Task 不会被新的 merge 请求追加；新的请求会新派发 merge worker。
 
 `continue_worker` 可以唤醒空闲 Worker；派发调用遇到 `starting` 或 `failed` 的同名 Task 会被拒绝，需要新的输入；已有 `queued` 的同名 Task 直接返回，不重复入队（`src/dispatch.js:52-59`）。
 

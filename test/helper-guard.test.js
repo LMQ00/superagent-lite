@@ -91,7 +91,7 @@ test('the memory helper guard allows read-only inspection and confines its shell
   const { appends, check } = registerHelper()
   assert.deepEqual(appends, [['sandbox/mode', { mode: 'read-only', source: 'delegation' }]])
   for (const name of [
-    'structured_output', 'read', 'read_image', 'glob', 'grep', 'bash', 'pwsh',
+    'structured_output', 'read', 'read_image', 'glob', 'grep', 'skill', 'bash', 'pwsh',
     'read_page', 'web_fetch', 'web_search', 'x_search', 'job_output', 'job_list',
     'knowledge_query', 'knowledge_get',
   ]) {
@@ -100,7 +100,7 @@ test('the memory helper guard allows read-only inspection and confines its shell
   for (const name of [
     'write', 'edit', 'create_worktree', 'review_worker_commit', 'message_router',
     'superagent_memory', 'extract_memory', 'subagent', 'job_kill', 'present',
-    'skill', 'todo_write', 'working_directory', 'submit_review',
+    'todo_write', 'working_directory', 'submit_review',
   ]) {
     assert.match(check({ name }), /Read-only helpers cannot use/, name)
   }

@@ -11,7 +11,7 @@
 
 ## 安装
 
-前置：DSH `0.2.2-rc.5`、Node.js 24.9 或更新、Git。发布到 GitHub 还需要已登录 `github.com` 的 `gh`。
+前置：DSH `>=0.2.2-rc.1 <=0.2.3-alpha.1`、Node.js 24.9 或更新、Git。发布到 GitHub 还需要已登录 `github.com` 的 `gh`。
 
 包发布在 npm registry，直接从 registry 安装，不需要 clone 仓库：
 
@@ -40,13 +40,13 @@ npm i @lmq00/superagent-lite
 
 记忆分全局和项目两层，项目记忆按项目根隔离，不跨项目混用；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker（包括 report、merge 这类只读或受控 worker）和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
 
-- 全局记忆保存用户画像和多个所有项目共用的 skill；项目记忆保存职责、定位和最多 10 个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；每个 skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。
+- 全局记忆保存用户画像和多个所有项目共用的 skill；项目记忆保存职责、定位和最多 10 个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；每个 skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。memory 角色触发时同样只依赖这个 catalog：需要某个 skill 时按名调用 `skill` 工具，不把 skill 正文或逐条清单放进触发消息，也不用 read/glob/grep 翻 skill 目录。
 - 记忆内容按用途分工：知识、事实、经验、结论和观察写进全局知识库；skill 只放可复用的固定流程或方法步骤。项目 skill 同时最多 10 个，达到上限后 memory 不能再新建：写入路径会拒绝并返回明确错误，提示词要求复用已有 memory 管理的项目 skill 名字返回完整新内容，或把内容写进知识库；超出上限的那次提取不会写入任何记忆字段或 skill。
-- 每个 skill 用自己的名字和目录：全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/<skill名>/SKILL.md`。memory 写入的 skill 在 frontmatter 里带 `author: memory`；同名冲突不会覆盖不由 memory 管理的 skill。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker 和 Reviewer 能在 catalog 里看到它们的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
+- 每个 skill 用自己的名字和目录：全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/<skill名>/SKILL.md`。memory 写入的 skill 在 frontmatter 里带 `author: memory`；同名冲突不会覆盖不由 memory 管理的 skill。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker、Reviewer 和 memory 角色能在 catalog 里看到它们的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
 - 既有的 `superagent-project-memory` 和 `superagent-shared-memory` 继续可用：它们按旧名字读取，下一次 memory 写入时会补上 `author: memory`。其他按内容命名的新 skill 各自独立并存。
 - 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。归属按 skill 文件里的作者判断：新增、修改或删除的 skill 全部带 `author: memory` 时，这次 catalog 变化不注入已有会话；判定只看会话（agent）和 skill 作者，与任务状态无关，running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入。作者缺失的 skill 按普通 skill 处理，变化照常发布。
 - 知识库是全局的，只存可复用、广泛适用的知识，内容不注入角色上下文。Worker、Reviewer 和 memory 角色用 `knowledge_query` 按关键词查询，结果带编号和匹配关键词前后的上下文片段；再用 `knowledge_get` 按编号读取完整条目。只有 memory 角色能用 `knowledge_write` 新增、纠正或删除；安装 owner 也可以在面板里删除单条知识，删除后查询不再返回该条目。知识库保存在 `~/.dsh/superagent-lite/memory/knowledge.json`。
-- 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。memory 不再收到整段对话：触发消息只给会话记录的可读路径和任务、角色、分支等元信息，memory 自己用 `read` / `grep` 按需读取后返回需要更新的记忆字段；插件只写回发生变化的字段和 skill。没有可复用的结论就不写，也不把写入条数当指标；记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。没用的知识只会污染知识库，宁可不写。
+- 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。memory 不再收到整段对话：触发消息只给会话记录的可读路径和任务、角色、分支等元信息，以及项目 skill 已用数量与 10 个上限。提示词不列举任何具体 skill，也不注入 skill 全文或 skill 根目录；skill 只通过会话里的 catalog 获知名称和 description，memory 需要完整内容时按名调用 `skill` 工具（`src/memory.js:201-232`、`src/helper-guard.js:4-20`）。项目 skill 达到 10 个时，提示词要求复用已有 memory 管理的项目 skill 名字，不新增第 11 个。memory 自己用 `read` / `grep` 按需读取会话记录后返回需要更新的记忆字段；插件只写回发生变化的字段和 skill。没有可复用的结论就不写，也不把写入条数当指标；记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。没用的知识只会污染知识库，宁可不写。
 - memory 读取的会话记录写在 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，在触发时由 Host 写入完整会话和最终报告工具名；Worker 每一轮的原始事件仍按回合归档在 `~/.dsh/superagent-lite/task/archive/`，保留 Session 序号和轮内编号。归档只由 Host 写入，只有 memory 角色拿到记录路径并读取，其他模型工具没有专用读取入口。
 
 ## 面板
@@ -88,7 +88,7 @@ npm i @lmq00/superagent-lite
 
 ## 当前限制
 
-- 绑定 DSH `0.2.2-rc.5`；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。npm Host 在插件启动时会检查并自动补打客户端任务卡补丁与子代理 `promptSource` 补丁，应用后在 Host 日志提示重启 DSH；DSH-go 的 rootfs 仍按文档用 `--dsh-go` 手动应用。客户端任务卡补丁另支持 `0.2.2-rc.3`、`0.2.2-rc.1` 和 DSH-go 的 `0.2.2-rc.1` Host，见 [HOST-PATCH-AGENT-MESSAGE](docs/HOST-PATCH-AGENT-MESSAGE.md)。
+- 绑定 DSH `>=0.2.2-rc.1 <=0.2.3-alpha.1`（实测 `0.2.2-rc.1` 到 `0.2.2-rc.5` 及 `0.2.3-alpha.1`）；同一 `worktrees` 服务只由这个 bundle 挂载，启用前确认没有第二个 bundle 挂载它。npm Host 在插件启动时会检查并自动补打客户端任务卡补丁与子代理 `promptSource` 补丁，应用后在 Host 日志提示重启 DSH；DSH-go 的 rootfs 仍按文档用 `--dsh-go` 手动应用。客户端任务卡补丁对区间内全部版本生效：`0.2.2-rc.1` 走仅 bundle 的 target，`0.2.2-rc.2` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 共用源码 + bundle 的 target；子代理 `promptSource` 补丁覆盖 `0.2.2-rc.1` 到 `0.2.2-rc.5`（rc.1 用仅 bundle 的 diff），`0.2.3-alpha.1` 由 Host 原生把初始任务记录为 agent 消息，见 [HOST-PATCH-AGENT-MESSAGE](docs/HOST-PATCH-AGENT-MESSAGE.md) 和 [HOST-PATCH](docs/HOST-PATCH.md)。
 - 非 Git 目录支持 change 和 report：worker 直接修改目录，reviewer 审查当前文件和工作区内容，Task 以审查通过为 `completed`；没有分支、Worktree、提交、合并、发布或 `land`。不要把多个 change 任务同时派到同一个非 Git 目录，它们没有 Worktree 隔离。
 - router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由 merge worker 执行：没有正在运行的 merge worker 时新派发一个，已有则追加给它；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。

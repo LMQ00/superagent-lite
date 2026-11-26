@@ -59,7 +59,7 @@ export function createReadTaskTool(agent, taskId, read = taskForSession) {
 ```
 
 - **身份从闭包来。** `agent` 和 `taskId` 在注册时绑定，不从模型参数读取；`exec.agent !== agent` 拒绝其他 Session。
-- **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:46-55`）。
+- **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:47-56`）。
 - **输出只含公开字段。** 不返回需求全文、Review findings 或失败原因；Task 记录里这些字段不进入返回值。
 - **不写记录。** 工具只调用 `taskForSession` 读取，不调用 `updateTask`。
 
@@ -93,7 +93,7 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 | 导出 | 不需要新增 `package.json` export；这是 bundle 内部模块 |
 | 捆绑配置 | `cordis.patch.yml` 不改；没有新的工具行或预设 |
 | 重启 | 重载 bundle 或重启 DSH Web；运行中的 Worker 不会自动获得新工具 |
-| Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:23`） |
+| Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:25`） |
 
 ## 4. 测试
 

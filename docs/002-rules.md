@@ -21,8 +21,8 @@
 - 非 Git 项目支持 `change` 和 `report`：worker 直接在工作区执行，没有 Worktree、提交、合并或推送；`mode=merge` 与 `land=true` 需要 Git 仓库，派发时直接拒绝（`src/dispatch.js`）。
 - `mode=merge` 还要求 `land=true` 和非空 `branches`；每项是分支名或 16 位 Task ID，最多 20 项。Task ID 会按本 Router Session 和 Project 解析成 worker 分支，目标分支必须存在且不能是 base branch（`src/validation.js:7-54`、`src/dispatch.js:14-44`）。
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:74-79`）。
-- 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占额外名额。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:51-118`、`src/launch-queue.js:189-194`、`index.js:304-307`、`src/worker-stop.js`）。
-- `images` 可选，是本地 PNG/JPEG/WebP/GIF 路径数组，按 Router 当前目录解析；插件交给 Host 附件存储后把附件引用写进 Task，worker 启动时附在首条消息文本之后。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`、`src/dispatch.js:216-228`、`src/launch-queue.js:147-160`、`src/message-images.js:54-90`）。
+- 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占额外名额。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:304-307`、`src/worker-stop.js`）。
+- `images` 可选，是本地 PNG/JPEG/WebP/GIF 路径数组，按 Router 当前目录解析；插件交给 Host 附件存储后把附件引用写进 Task，worker 启动时附在首条消息文本之后。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`、`src/dispatch.js:216-228`、`src/launch-queue.js:148-161`、`src/message-images.js:54-90`）。
 - 只询问 worker 或任务状态时，Router 用 `worker_status` 查询本会话派发的任务，不新建 Task；任务被停止或排队 worker 开始执行时，Router 收到后台状态通知。
 
 ### 已有工作
@@ -61,7 +61,7 @@
 | 停止任务 | 安装 owner 在运行中或排队中的 Task 行点击「停止」 | 在 Task 锁内把 `queued`、`starting`、`running`、`resuming` 写成 `cancelled` 终态，中断 Worker Session 当前执行并立即释放并发名额；记录保留在面板，重复停止返回同一状态 | 否；需要明确点击，已结束的 Task 拒绝；停止不会删除记录、分支或 Worktree |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 先停止运行中或排队中的 Task 并等待 worker 离开运行态，再移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支和 Worktree | 否；需要明确点击，正在合并或发布的 Task 除外 |
 | 修改设置 | owner 在面板「设置」保存 | 保存 worker 模型和并发上限，只影响之后启动的 worker | 否；需要 owner 明确点击 |
-| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | Host 把完整 Worker 会话写成可读归档并把路径、任务、角色、分支等元信息发给 memory；memory 自己按路径读取后写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
+| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | Host 把完整 Worker 会话写成可读归档并把路径、任务、角色、分支等元信息发给 memory；memory 自己按路径读取后写回全局/项目记忆和 skill；skill 只通过会话里的 catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文或逐条清单；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
 
 ## 准入
 
@@ -102,13 +102,13 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 ## Review 规则
 
-- Git 项目的 `review_worker_commit` 要求 Task 处于 `running`、已有 Worktree、工作区干净、HEAD 不是基础 commit、基础 commit 是 HEAD 的祖先，且 base..head 有净改动；非 Git 项目只要求 Task 处于 `running` 和项目根存在（`src/review.js:169-188`、`src/review.js:90-165`）。
-- Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree（非 Git 项目为项目根），delivery 为 `caller`，深度 2（`src/review.js:90-140`）。
-- Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:58-88`）。非 Git 项目收到需求、follow-up、项目 + 全局记忆和项目根，提示词说明没有 commit/diff，Reviewer 读取当前项目文件和工作区内容。
-- `review_worker_commit.images` 可选，按 Worker 当前目录解析成本地图片，附在审查提示词文本之后；附件失败时本次审查不启动（`src/review.js:169-182`、`src/review.js:90-140`）。
-- 审查针对已提交的 diff，或非 Git 项目的当前工作区内容；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:58-88`）。
-- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:16-38`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局知识，但不能写入。
-- 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:150-165`、`src/review.js:181-183`）。
+- Git 项目的 `review_worker_commit` 要求 Task 处于 `running`、已有 Worktree、工作区干净、HEAD 不是基础 commit、基础 commit 是 HEAD 的祖先，且 base..head 有净改动；非 Git 项目只要求 Task 处于 `running` 和项目根存在（`src/review.js:170-189`、`src/review.js:91-166`）。
+- Reviewer 是独立子代理，标签 `Independent code review`，工作目录为 Worktree（非 Git 项目为项目根），delivery 为 `caller`，深度 2（`src/review.js:91-141`）。
+- Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:59-89`）。非 Git 项目收到需求、follow-up、项目 + 全局记忆和项目根，提示词说明没有 commit/diff，Reviewer 读取当前项目文件和工作区内容。
+- `review_worker_commit.images` 可选，按 Worker 当前目录解析成本地图片，附在审查提示词文本之后；附件失败时本次审查不启动（`src/review.js:170-183`、`src/review.js:91-141`）。
+- 审查针对已提交的 diff，或非 Git 项目的当前工作区内容；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:59-89`）。
+- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:17-39`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局知识，但不能写入。
+- 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:151-166`、`src/review.js:182-184`）。
 - 面板的 `review` 动作对 `unreviewed` 的 Git Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`。非 Git Task 没有分支，面板不提供该动作（`src/git-actions.js:403-425`）。
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:259-276`、`src/git-actions.js:293-305`）。
 - 审查没有通过不直接改 Task 状态；Worker 修完再提交（非 Git 项目则继续改文件）、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`；非 Git 项目审查通过后结束时落到 `completed`（`index.js:277-285`）。
@@ -128,10 +128,10 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 项目 skill 同时最多 10 个：达到上限后 memory 只能复用已有 memory 管理的项目 skill 名字更新，不能新建；写入路径拒绝并返回明确的超限错误，整次提取在写字段和 skill 前失败，不产生半写入。skill 只放可复用的固定流程或方法步骤，知识、事实、经验、结论和观察写全局知识库（`src/memory-store.js`、`src/memory.js`）。
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；项目 skill 最多 10 个；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-- 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
+- 职责和定位直接注入；skill 只把 description 放进 skill catalog，Worker、Reviewer 和 memory 角色需要完整内容时用 `skill` 工具按名加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`src/helper-guard.js`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动。拦截按会话（agent）的 catalog 基线和 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
-- memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径和任务、角色、分支等元信息，不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/message-router.js`、`index.js`）。
+- memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径、任务/角色/分支等元信息以及项目 skill 已用数量与 10 个上限，不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；skill 只通过会话里的 catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文、逐条清单或 skill 根目录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/helper-guard.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
@@ -145,14 +145,14 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 | 项目 | 放行 | 拒绝 |
 | --- | --- | --- |
-| 工具 | 除写改工具外的全部继承工具，包括 `submit_review`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`、网络与 job 工具（`src/helper-guard.js:105-117`） | `write`、`edit`、`apply_patch`、`str_replace_editor`（`src/helper-guard.js:23`） |
+| 工具 | 除写改工具外的全部继承工具，包括 `submit_review`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`、网络与 job 工具（`src/helper-guard.js:107-119`） | `write`、`edit`、`apply_patch`、`str_replace_editor`（`src/helper-guard.js:25`） |
 | Git 子命令 | 读取与检查类命令，如 `diff`、`show`、`log`、`status`、`blame` | `init`、`commit`、`merge`、`rebase`、`cherry-pick`、`revert`、`reset`、`checkout`、`switch`、`branch`、`tag`、`stash`、`push`、`fetch`、`pull`、`am`、`update-ref`、`symbolic-ref`、`worktree`、`filter-branch`、`replace`、`commit-tree`（`src/review-scope.js:15-19`、`src/review-scope.js:123-130`） |
 | 命令形态 | 任意 shell 命令，包括管道、重定向、引号、后台运行、任意 workdir 和沙箱参数；`sh -c`、`bash -lc`、`pwsh -Command`、`env`、`sudo`、`xargs` 等包装中的命令同样检查 | 包装或分段后出现的被禁 git 子命令 |
 | 路径 | Worktree（非 Git 项目为项目根）内外均可，绝对路径、符号链接和 `.git` 不再额外拦截 | 由写改工具完成的文件写入 |
-| 证据 | 必须实际读过改动：Git 项目为一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用；非 Git 项目为对项目根内任意文件的 `read`、`read_image`、`grep`（`src/review-scope.js:260-281`） | 没有证据的裁决被拒绝：Git 项目为 `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`，非 Git 项目为 `The reviewer did not inspect the project files; read a file in the project folder before deciding`（`src/review.js:119`） |
+| 证据 | 必须实际读过改动：Git 项目为一次 `git diff base..head`、带 patch 的 `git log base..head`、`git show <head>`，或对改动文件的 `read`、`read_image`、`grep` 调用；非 Git 项目为对项目根内任意文件的 `read`、`read_image`、`grep`（`src/review-scope.js:260-281`） | 没有证据的裁决被拒绝：Git 项目为 `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding`，非 Git 项目为 `The reviewer did not inspect the project files; read a file in the project folder before deciding`（`src/review.js:120`） |
 
 - 命令检查会跳过 git 的全局选项（如 `-c`、`-C`、`--git-dir`、`--work-tree`）再取子命令，所以 `git -C <path> commit` 同样被拒。
-- 审查结束后仍会复核 Worktree 的分支、干净工作区和 HEAD；HEAD 变动时审查失败并需重跑（`src/review.js:121`、`src/review.js:45-55`）。
+- 审查结束后仍会复核 Worktree 的分支、干净工作区和 HEAD；HEAD 变动时审查失败并需重跑（`src/review.js:122`、`src/review.js:46-56`）。
 
 ## Git 操作规则
 
@@ -214,12 +214,12 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 ## 版本
 
-Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:70-88`、`src/review.js:57-72`、`src/continue.js:70-175`）。
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:70-88`、`src/review.js:58-73`、`src/continue.js:70-175`）。
 
 Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:564-579`、`src/merge.js:24-44`）。
 
 ## 不完成时
 
-无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；用户主动停止的 Task 记录 `cancelled`，worker 被中断且名额释放。面板显示对应状态，由用户决定下一步（`index.js:249-295`、`src/worker-stop.js`）。失联的 `starting`、`running` 或 `resuming` 不需要人工清理：超过 2 分钟没有活着的 Worker Session 后，插件启动和下一次 `pumpWorkers` 会读 Review、分支与 Worktree HEAD 后落为 `awaiting-merge` 或 `failed`，并释放并发名额（`src/launch-queue.js:51-118`、`index.js:304-307`）。
+无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；用户主动停止的 Task 记录 `cancelled`，worker 被中断且名额释放。面板显示对应状态，由用户决定下一步（`index.js:249-295`、`src/worker-stop.js`）。失联的 `starting`、`running` 或 `resuming` 不需要人工清理：超过 2 分钟没有活着的 Worker Session 后，插件启动和下一次 `pumpWorkers` 会读 Review、分支与 Worktree HEAD 后落为 `awaiting-merge` 或 `failed`，并释放并发名额（`src/launch-queue.js:52-119`、`index.js:304-307`）。
 
 无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE` 并说明剩下什么（`src/worker-prompt.js:61-73`）。
