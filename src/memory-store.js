@@ -485,6 +485,20 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     }
   }
 
+  // The memory prompt repeats each skill name with its author so memory can
+  // tell which catalog names it manages, including names it cannot reuse. The
+  // catalog itself carries no author, so this reads every skill directory.
+  async function readSkillAuthors(projectRoot) {
+    const summarize = skills => skills.map(skill => ({
+      name: skill.name,
+      author: skill.author === SKILL_AUTHOR ? SKILL_AUTHOR : 'none',
+    }))
+    return {
+      global: summarize(await listSkills('global')),
+      project: projectRoot === undefined ? [] : summarize(await listSkills('project', projectRoot)),
+    }
+  }
+
   // The catalog guard only trusts the author field. A legacy skill without an
   // author keeps normal catalog behavior until memory writes it again.
   async function memoryAuthoredSkillNames(projectRoot) {
@@ -635,6 +649,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     getKnowledge,
     readSkill,
     readSkills,
+    readSkillAuthors,
     projectSkillCount,
     memoryAuthoredSkillNames,
     writeSkill,
