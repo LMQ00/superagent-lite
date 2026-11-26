@@ -156,10 +156,6 @@ test('memory writes named skills to their own directories with the memory author
     ],
   })
   assert.equal(await store.projectSkillCount(project), 2)
-  assert.deepEqual(store.skillRoots(project), {
-    global: join(agentsHome, 'skills'),
-    project: join(project, '.dsh', 'skills'),
-  })
   await assert.rejects(store.writeSkill('project', project, { description: 'x'.repeat(501), content: 'x' }), /at most 500/)
 })
 

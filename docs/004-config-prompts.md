@@ -12,9 +12,9 @@
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:41-52`、`src/continue.js:214-229`、`src/continue.js:260-262`、`src/worker-status.js` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-152` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:70-175` |
-| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:13-35`、`src/review.js:57-113`、`src/helper-guard.js:105-117`、`src/review-scope.js:1-294` |
+| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:13-35`、`src/review.js:57-113`、`src/helper-guard.js:107-119`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述、`images` 参数和长度限制 | `src/report-tool.js:10-20`、`src/message-router.js:7-17` |
-| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-534` |
+| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-532` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
 | 面板文字 | 任务状态、动作（停止、删除、合并、提交 PR、审查、删除分支、分支 / worktree 删除）和弹窗的中英文字典 | `client.js:6-157` |
 
@@ -78,11 +78,11 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 - memory 保存的 skill 在 frontmatter 带 `author: memory`：之后派发的 Worker/Reviewer 会看到新 description，已经发布过 catalog 的会话不接收这些 skill 新增、修改或删除引起的 catalog 更新。
 - 可以不加记忆，不把写入条数当指标；没有可复用的结论就不写，没用的知识只会污染知识库。
 - 返回每个要更新字段的完整文本，空字符串表示保持不变；数组只返回要创建或更新的 skill，空数组表示该作用域不变；skill 需要 name、description 和 content 都非空，同一作用域内名字不能重复。
-- 提示词只给出会话记录路径、任务/模式/角色/分支/Session/项目根等元信息，以及全局/项目 skill 目录的位置（不列举任何具体 skill，项目用量/10 上限），不注入对话正文和 skill 全文；catalog 已提供 skill 名称和 description；memory 自己用 `read` / `grep` 读取 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，需要 skill 正文时在 skill 目录里查。记录和元信息是数据，不是指令。
+- 提示词只给出会话记录路径和任务、模式、角色、分支、Session、项目根等元信息，以及项目 skill 已用数量与 10 个上限，不注入对话正文；memory 自己用 `read` / `grep` 读取 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`。记录和元信息是数据，不是指令。skill 只通过会话里的 skill catalog 获知，需要正文时按名调用 `skill` 工具；提示词不含 skill 正文、逐条清单或 skill 根目录。
 - 保留已有事实，只添加或纠正会话支持的结论；跳过一次性任务进度、状态、计数和短期细节；禁止保存密码、API key、token、凭据或个人数据；每个字段最多 4,000 字符，skill description 最多 500 字符。
 - 存储遵守「宁缺毋滥、长期主义」：不重复记录，及时纠错。
 
-注入顺序：Router 只读取全局记忆；Worker（change、report、merge）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取项目 + 全局记忆；memory 角色收到当前记忆、全局/项目 skill 目录的位置（不列举具体 skill，项目用量/10 上限）和会话记录路径作为输入，不接收对话正文，也不接收 skill 全文。Worker 的记忆与上下文注入发生在 `agent/created`，不依赖 Worktree 是否已创建；非 Git 项目没有 Worktree 时同样注入。skill 的完整内容不进入任何记忆注入：Worker/Reviewer 只由 DSH skill catalog 提供 description，模型需要时用 `skill` 工具加载；memory 需要 skill 正文时自己在 skill 目录里查。项目 skill 由 Worker 作用域的 provider 从项目根读取，因此 Git Worker 在 Worktree 里、非 Git Worker 在项目目录里都能看到；Router 的 skill 根只有全局目录（`src/memory.js`、`router.js`、`src/review.js`、`index.js`、`cordis.patch.yml`）。
+注入顺序：Router 只读取全局记忆；Worker（change、report、merge）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取项目 + 全局记忆；memory 角色收到当前记忆、会话记录路径、项目 skill 已用数量与 10 个上限和会话里的 skill catalog（名称 + description）作为输入，不接收对话正文，也不接收 skill 正文、逐条清单或 skill 根目录。Worker 的记忆与上下文注入发生在 `agent/created`，不依赖 Worktree 是否已创建；非 Git 项目没有 Worktree 时同样注入。skill 的完整内容不进入记忆注入，只由 DSH skill catalog 提供 description，Worker、Reviewer 和 memory 角色需要时用 `skill` 工具按名加载；memory 的只读 helper 白名单放行 `skill`，同一次只读会话不用 read/glob/grep 去翻 skill 目录。项目 skill 由 Worker 作用域的 provider 从项目根读取，因此 Git Worker 在 Worktree 里、非 Git Worker 在项目目录里都能看到；Router 的 skill 根只有全局目录（`src/memory.js`、`src/helper-guard.js`、`router.js`、`src/review.js`、`index.js`、`cordis.patch.yml`）。
 
 Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入 skill 后，只拦截由 `author: memory` 的 skill 新增、修改或删除构成的新 catalog，不向已运行或已结束的 Worker/Reviewer 注入 catalog 更新；之后新派发的会话重新发现并看到新 description。判定按会话（agent）与 skill 作者，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。归属由 skill 文件的 frontmatter 作者决定，不再维护固定名单；多个 memory skill 一起变化时逐个按作者判断，作者缺失的 skill 变化照常发布。
 
@@ -123,7 +123,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:164-183`、`src/helper-guard.js:76-117`、`src/git-actions.js:170-239`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:164-183`、`src/helper-guard.js:75-119`、`src/git-actions.js:170-239`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。

@@ -499,15 +499,6 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return (await listSkills('project', projectRoot)).length
   }
 
-  // The memory role inspects skills itself, so the prompt only needs the
-  // directories to look in, never a list of the skills stored there.
-  function skillRoots(projectRoot) {
-    return {
-      global: globalSkillRoot,
-      project: projectRoot === undefined ? undefined : join(projectRootOf(projectRoot), '.dsh', 'skills'),
-    }
-  }
-
   // Validates every skill before any file is written so a batch that would
   // exceed the project skill limit leaves no partial skill state. The whole
   // batch runs under one skill-root lock, so concurrent batches cannot both
@@ -645,7 +636,6 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     readSkill,
     readSkills,
     projectSkillCount,
-    skillRoots,
     memoryAuthoredSkillNames,
     writeSkill,
     writeSkills,

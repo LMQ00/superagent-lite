@@ -70,7 +70,7 @@ Worker 的 subagent 结束时冻结工具调用能力：冻结后所有工具被
 
 `review_worker_commit` 启动独立子代理，标签 `Independent code review`，工作目录为 Worktree；非 Git 项目为项目根，delivery 为 `caller`，深度 2（`src/review.js:90-140`）。worker 可以在审查请求里附带本地图片，图片块追加在提示词文本之后；接收方模型必须声明图片输入。
 
-Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:58-72`）。非 Git 项目 Reviewer 收到需求、follow-up、项目 + 全局记忆和项目根；提示词说明没有 commit 和 diff，Reviewer 读取当前项目文件和工作区内容，裁决记为工作区标识 `workspace`。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:116`、`src/helper-guard.js:105-117`）。Git 项目审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:160`、`src/review.js:46-55`）；非 Git 项目没有 HEAD 可复核。
+Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；提示词明确不附 diff，Reviewer 自己运行 `git diff <base>..<head>` 或 `git show <head>` 并读取改动文件（`src/review.js:58-72`）。非 Git 项目 Reviewer 收到需求、follow-up、项目 + 全局记忆和项目根；提示词说明没有 commit 和 diff，Reviewer 读取当前项目文件和工作区内容，裁决记为工作区标识 `workspace`。helper 守卫在子代理创建前登记改动范围，创建后只拒绝写改文件的工具和会改变分支或历史的 git 命令（`src/review.js:116`、`src/helper-guard.js:107-119`）。Git 项目审查结束复核 Worktree 的分支、干净工作区和 HEAD 未移动（`src/review.js:160`、`src/review.js:46-55`）；非 Git 项目没有 HEAD 可复核。
 
 Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。工具确认裁决存在、Reviewer 实际读过改动、Worker HEAD 未移动后，才写入 `review.head`、`review.reviewerSessionId`、`review.approved`（`src/review.js:150-165`、`src/review.js:181-183`）。
 
@@ -78,12 +78,12 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### Memory 角色
 
-memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径、任务/角色/分支/Session/项目根等元信息，以及全局/项目 skill 目录的位置（不列举具体 skill，项目用量/10 上限），不含对话正文和 skill 全文；memory 自己用 `read` / `grep` 读取记录、需要 skill 正文时在 skill 目录里查，不使用 worker 提交的摘要；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
+memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径和任务、角色、分支、Session、项目根等元信息，以及项目 skill 已用数量与 10 个上限，不含对话正文；memory 自己用 `read` / `grep` 读取，不使用 worker 提交的摘要；skill 只通过会话里的 catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文、逐条清单或 skill 根目录；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`、`src/helper-guard.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
 
 | 属性 | 值 |
 | --- | --- |
 | 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
-| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，任务、模式、角色、分支、Session、项目根等元信息，以及全局/项目 skill 目录的位置（不列举任何具体 skill）和项目 skill 已用数量/10 上限；消息里不含对话正文，也不含 skill 全文；catalog 已提供 skill 名称和 description，需要正文时 memory 用 `read` / `grep` 在记录和 skill 目录里查（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
+| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息和项目 skill 已用数量与 10 个上限；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；skill 只通过会话里的 skill catalog（名称 + description）获知，需要正文时按名调用 `skill` 工具，不注入 skill 正文、逐条清单或 skill 根目录；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
 | 输出 | 全局 `userProfile`、`sharedSkills`；项目 `responsibilities`、`positioning`、`projectSkills`；技能项含 `name`、`description`、`content`，每个文本字段最多 4,000 字符，skill description 最多 500 字符，项目 skill 同时最多 10 个 |
 | 知识库 | 用 `knowledge_query` 按关键词查编号和上下文片段，再用 `knowledge_get` 按编号取完整条目；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
 | 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |

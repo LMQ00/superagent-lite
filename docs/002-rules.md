@@ -61,7 +61,7 @@
 | 停止任务 | 安装 owner 在运行中或排队中的 Task 行点击「停止」 | 在 Task 锁内把 `queued`、`starting`、`running`、`resuming` 写成 `cancelled` 终态，中断 Worker Session 当前执行并立即释放并发名额；记录保留在面板，重复停止返回同一状态 | 否；需要明确点击，已结束的 Task 拒绝；停止不会删除记录、分支或 Worktree |
 | 删除任务 | 安装 owner 在面板点击「删除任务」或批量「删除所选」 | 先停止运行中或排队中的 Task 并等待 worker 离开运行态，再移除所选 Task 记录和各自的 worker 会话映射，保留 worker 分支和 Worktree | 否；需要明确点击，正在合并或发布的 Task 除外 |
 | 修改设置 | owner 在面板「设置」保存 | 保存 worker 模型和并发上限，只影响之后启动的 worker | 否；需要 owner 明确点击 |
-| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | Host 把完整 Worker 会话写成可读归档并把路径、任务、角色、分支等元信息发给 memory；memory 自己按路径读取后写回全局/项目记忆和 skill；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
+| 提取记忆 | change worker 的最终 `message_router` 报告送达后自动触发一次 | Host 把完整 Worker 会话写成可读归档并把路径、任务、角色、分支等元信息发给 memory；memory 自己按路径读取后写回全局/项目记忆和 skill；skill 只通过会话里的 catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文或逐条清单；知识库通过 `knowledge_write` 写入；没有可复用内容就不写，不把写入条数当指标 | 否；每个 Worker Session 最多一次，失败不阻塞报告 |
 
 ## 准入
 
@@ -128,11 +128,10 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 项目 skill 同时最多 10 个：达到上限后 memory 只能复用已有 memory 管理的项目 skill 名字更新，不能新建；写入路径拒绝并返回明确的超限错误，整次提取在写字段和 skill 前失败，不产生半写入。skill 只放可复用的固定流程或方法步骤，知识、事实、经验、结论和观察写全局知识库（`src/memory-store.js`、`src/memory.js`）。
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；项目 skill 最多 10 个；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-- 职责和定位直接注入；skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`cordis.patch.yml`）。
-- memory 触发消息只给全局/项目 skill 目录的位置（不列举任何具体 skill）和项目 skill 已用数量与 10 个上限，不注入 skill 全文。skill catalog 已提供名称和 description，memory 需要正文时自己在 skill 目录里用 `read` / `grep` 查。项目 skill 达到 10 个时复用已有 memory 管理的名字，不新增第 11 个（`src/memory.js`、`src/memory-store.js`）。
+- 职责和定位直接注入；skill 只把 description 放进 skill catalog，Worker、Reviewer 和 memory 角色需要完整内容时用 `skill` 工具按名加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`src/helper-guard.js`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动。拦截按会话（agent）的 catalog 基线和 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
-- memory 角色只在 change worker 的最终报告后触发一次；触发消息含会话记录路径、任务/角色/分支等元信息以及全局/项目 skill 目录位置（不列举具体 skill，项目用量/10 上限），不含对话正文和 skill 全文，memory 自己用 `read` / `grep` 读取完整记录和 skill 目录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/message-router.js`、`index.js`）。
+- memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径、任务/角色/分支等元信息以及项目 skill 已用数量与 10 个上限，不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；skill 只通过会话里的 catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文、逐条清单或 skill 根目录；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/helper-guard.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
 - 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
@@ -146,7 +145,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 | 项目 | 放行 | 拒绝 |
 | --- | --- | --- |
-| 工具 | 除写改工具外的全部继承工具，包括 `submit_review`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`、网络与 job 工具（`src/helper-guard.js:105-117`） | `write`、`edit`、`apply_patch`、`str_replace_editor`（`src/helper-guard.js:23`） |
+| 工具 | 除写改工具外的全部继承工具，包括 `submit_review`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`、网络与 job 工具（`src/helper-guard.js:107-119`） | `write`、`edit`、`apply_patch`、`str_replace_editor`（`src/helper-guard.js:25`） |
 | Git 子命令 | 读取与检查类命令，如 `diff`、`show`、`log`、`status`、`blame` | `init`、`commit`、`merge`、`rebase`、`cherry-pick`、`revert`、`reset`、`checkout`、`switch`、`branch`、`tag`、`stash`、`push`、`fetch`、`pull`、`am`、`update-ref`、`symbolic-ref`、`worktree`、`filter-branch`、`replace`、`commit-tree`（`src/review-scope.js:15-19`、`src/review-scope.js:123-130`） |
 | 命令形态 | 任意 shell 命令，包括管道、重定向、引号、后台运行、任意 workdir 和沙箱参数；`sh -c`、`bash -lc`、`pwsh -Command`、`env`、`sudo`、`xargs` 等包装中的命令同样检查 | 包装或分段后出现的被禁 git 子命令 |
 | 路径 | Worktree（非 Git 项目为项目根）内外均可，绝对路径、符号链接和 `.git` 不再额外拦截 | 由写改工具完成的文件写入 |
