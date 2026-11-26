@@ -102,7 +102,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；运行中或排队中提供停止；每行提供删除任务（运行中或排队中会先停止再删除，合并或发布中禁用）。任务行可勾选后批量删除。「分支 / worktree」标签页只列本插件创建的 Worktree 和 `sl-*` 分支，分别提供删除 Worktree 与删除分支（运行中禁用）；删除成功后就地更新该标签页。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 停止变化 | 任务被停止时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。停止把 Task 写成 `cancelled` 终态并保留记录，面板显示「已取消」标签；worker 被中断，并发名额立即释放，排队任务可以启动 |
 | 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；旧版本 `tasks/cancelled/` 的排队取消墓碑仍可被 `worker_status` 查询；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/`；Worktree 在 `<项目根>/.agents/worktrees/`，由面板「分支 / worktree」标签页单独管理 |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；skill 只放固定流程，知识、事实、经验、结论写知识库，项目 skill 同时最多 10 个，达到上限后 memory 拒绝新建并整次不写字段和 skill；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；memory 触发只给全局/项目 skill 目录位置（不列举具体 skill）和项目 skill 已用数量/10 上限，不注入 skill 全文，需要正文时 memory 自己在目录里查；skill 只放固定流程，知识、事实、经验、结论写知识库，项目 skill 同时最多 10 个，达到上限后 memory 拒绝新建并整次不写字段和 skill；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
 
 面板 HTTP 端点的状态码：
