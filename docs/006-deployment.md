@@ -20,7 +20,7 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 
 | 要求 | 值 |
 | --- | --- |
-| DeepSeek Harness | `0.2.2-rc.5`，即 `package.json` 的 `engines.dsh` |
+| DeepSeek Harness | `>=0.2.2-rc.1 <=0.2.3-alpha.1`，即 `package.json` 的 `engines.dsh` |
 | Node.js | 24.9 或更新，跟随 DSH 引擎要求 |
 | Git | 支持 `git merge-tree --write-tree HEAD HEAD` 的版本 |
 | GitHub CLI | 发送 PR 需要；`gh auth status --hostname github.com` 必须成功 |
@@ -29,17 +29,19 @@ Bundle 运行在一个 DeepSeek Harness Web 进程内，增加两个预设、一
 
 ### 版本矩阵与检测
 
-Bundle 的 `engines.dsh` 是 `0.2.2-rc.5`，Host 版本不满足时插件管理器拒绝安装或启用。Host 补丁则按 `@deepseek-ai/dsh-client-ui-chat` 与 `@deepseek-ai/dsh-subagent` 的 `package.json` 版本和实际文件布局分别检测，不受 bundle 的 `engines.dsh` 限制。
+Bundle 的 `engines.dsh` 是 `>=0.2.2-rc.1 <=0.2.3-alpha.1`，Host 版本不满足时插件管理器拒绝安装或启用。DSH 用 `semver.satisfies(version, range, { includePrerelease: true })` 判断这个区间：它包含 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1`，排除 `0.2.2-alpha.3`（低于下限）、`0.2.3-alpha.2`、`0.2.3` 及更高版本。不能写成 `<0.2.3`，因为 `includePrerelease` 会把它扩大成包含 `0.2.3-alpha.2`。Host 补丁则按 `@deepseek-ai/dsh-client-ui-chat` 与 `@deepseek-ai/dsh-subagent` 的 `package.json` 版本和实际文件布局分别检测，不受 bundle 的 `engines.dsh` 限制。
+
+> 发布核查：npm 的 `@deepseek-ai/dsh@0.2.3-alpha.1` 自身不能启动。它把 `@deepseek-ai/cordis-plugin-loader` 声明为 `~1.1.0`，但 `dsh-app-boot@0.2.3-alpha.1` 静态导入 1.1.0 不导出的 `EntryValidationError`，`dsh --version` 会直接报 `does not provide an export named 'EntryValidationError'`。这是上游发布的依赖声明问题；本仓库按 alpha.1 的实际包内容验证补丁。`0.2.3-alpha.2` 已把依赖改为 `~1.2.0-alpha.1`，但不在本任务的支持区间内；在 alpha.1 上安装本 bundle 前需要自行覆盖 loader 版本，或等上游重新发布。
 
 | 组件 | 支持版本 | 检测方式 |
 | --- | --- | --- |
-| Bundle | `0.2.2-rc.5` | `dsh --version`；`package.json` 的 `engines.dsh` |
-| 客户端任务卡补丁 | npm `0.2.2-rc.5` / `0.2.2-rc.3`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle）、DSH-go 的 `0.2.2-rc.1` Host | `node scripts/dsh-client-ui-chat-agent-message-card.mjs --check` 输出匹配的版本、布局和待改文件；版本或片段不匹配时退出码 1 且不写入 |
-| 子代理 promptSource 补丁 | `0.2.2-rc.5` / `0.2.2-rc.3`（两个版本发布相同的 subagent 源码与 bundle） | `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch` 成功，且补丁后 `src/manager.ts`、`lib/index.js`、`lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }` |
+| Bundle | `>=0.2.2-rc.1 <=0.2.3-alpha.1` | `dsh --version`；`package.json` 的 `engines.dsh` |
+| 客户端任务卡补丁 | npm `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5` / `0.2.3-alpha.1`（源码 + bundle，共用一个 target）、`0.2.2-rc.1`（仅 bundle）、DSH-go 的 `0.2.2-rc.1` Host | `node scripts/dsh-client-ui-chat-agent-message-card.mjs --check` 输出匹配的版本、布局和待改文件；版本或片段不匹配时退出码 1 且不写入 |
+| 子代理 promptSource 补丁 | `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle，单独的 diff）、`0.2.3-alpha.1` 不需要补丁 | 对 `0.2.2-rc.2` 到 `0.2.2-rc.5` 运行 `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch`（rc.1 用 `scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch`）成功；rc.2 到 rc.5 补丁后 `src/manager.ts` 与 `lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }`，rc.1 的 `lib/index.js` 与 `lib/types/manager.js` 有一处 `request.promptSource ?? { kind: 'user' }`；`0.2.3-alpha.1` 的 `src/manager.ts` 已用 `createAgentMessage` 记录初始任务，插件只读检测并报告 `native` |
 
-rc.5 和 rc.3 的 `@deepseek-ai/dsh-client-ui-chat` 发布内容逐字节相同，因此客户端补丁脚本把两个版本映射到同一个 source-and-bundle 目标；`0.2.2-rc.4` 与 `0.2.3-alpha.*` 未验证，脚本会拒绝。
+按实际内容归并：`0.2.2-rc.2` 到 `0.2.2-rc.5` 的 `@deepseek-ai/dsh-client-ui-chat` 除 `package.json` 外逐字节相同，因此共用同一个 source-and-bundle 目标；`0.2.3-alpha.1` 的 Chat 包有变化，但被补丁修改的两个源码文件和所有 bundle 片段与 rc.2–rc.5 相同，所以也归入该目标。`0.2.2-rc.1` 的 Chat 包没有 `src/`，单独走 bundle-only 目标。子代理包 `0.2.2-rc.2` 到 `0.2.2-rc.5` 除 `package.json` 外相同，共用一个源码 + bundle 补丁；`0.2.2-rc.1` 没有 `src/` 且初始请求嵌套在 `request` 下，使用单独的 bundle-only 补丁和 `src/subagent-start.js` 的 rc.1 请求形状；`0.2.3-alpha.1` 原生记录 agent 消息。区间内 `dsh-base` 的 `cordis.patch.yml` 差异只在账号、web provider、agent-team 等基础行，未触及本 bundle 挂载的 `worktrees` 服务或补丁目标，因此不调整本仓库的 `cordis.patch.yml`。
 
-`npm install -g @deepseek-ai/dsh` 会整包替换 `dsh-subagent` 和 `dsh-client-ui-chat`，上表中的两个补丁随之丢失。Bundle 启动时由 `src/host-patch.js` 从运行入口解析已安装的 `@deepseek-ai/dsh`，对受支持的 npm Host 自动执行同样的检测和应用，并写入 Host 日志 `superagent-lite host patch: applied ...; restart DSH to load it`。这次启动已经导入了旧的 subagent bundle，所以看到该日志后要再重启一次 DSH，卡片才会恢复；DSH-go 的 rootfs 保持只读，不自动修补，仍按上面两个 Host 补丁文档手动运行。
+`npm install -g @deepseek-ai/dsh` 会整包替换 `dsh-subagent` 和 `dsh-client-ui-chat`，上表中的补丁随之丢失。Bundle 启动时由 `src/host-patch.js` 从运行入口解析已安装的 `@deepseek-ai/dsh`，对区间内的 npm Host 自动执行同样的检测和应用，并写入 Host 日志 `superagent-lite host patch: applied ...; restart DSH to load it`。`0.2.2` Host 的 subagent 补丁要下次启动才生效，客户端补丁也要重启后才加载，所以看到该日志后要再重启一次 DSH，卡片才会恢复；`0.2.3-alpha.1` 只需补客户端卡片补丁，子代理初始任务已由 Host 原生记录。DSH-go 的 rootfs 保持只读，不自动修补，仍按上面两个 Host 补丁文档手动运行。
 
 Bundle 自带 worktree 服务，不要与另一个挂载 worktree 服务的 bundle 同时启用。
 
@@ -75,7 +77,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `worktree.retainOnArchive` | 是，默认 `true` | Session 归档后保留 worker 分支和检出 |
 | Router `preset.id` | 是，`superagent-lite` | Router 预设 ID |
 | Worker `preset.id` | 是，`superagent-lite-worker` | Worker 预设 ID |
-| `engines.dsh` | 是，`0.2.2-rc.5` | Bundle 面向的 Host 版本 |
+| `engines.dsh` | 是，`>=0.2.2-rc.1 <=0.2.3-alpha.1` | Bundle 面向的 Host 版本区间 |
 | 面板「设置」 | 否 | worker 模型（留空跟随 DSH 默认模型）与并发 worker 上限（1–16，默认 3），保存在 `~/.dsh/superagent-lite/worker-settings.json` |
 | Router skill 根 | 是 | Router 预设只扫描全局 skill 根（`~/.dsh/skills` 与 `~/.agents/skills`），不扫描项目 skill；Worker 预设保留项目 + 全局 skill 根（`cordis.patch.yml`） |
 
@@ -87,7 +89,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | GitHub remote | 发送 PR | `git remote -v` 显示一个 remote，fetch 与 push URL 指向同一个 GitHub 仓库；面板列出 remote 供选择 |
 | `gh` 登录 | 发送 PR | `gh auth status --hostname github.com` |
 | GitHub 分支保护与必需检查 | 在 GitHub 上合并 PR | 在 GitHub 仓库设置；插件不预检检查状态 |
-| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | npm Host 由插件启动时自动检测并补打；也可按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用。客户端卡片补丁支持 npm `0.2.2-rc.5` / `0.2.2-rc.3` / `0.2.2-rc.1` 与 DSH-go 的 `0.2.2-rc.1` Host，子代理 promptSource 补丁支持 `0.2.2-rc.5` / `0.2.2-rc.3`；DSH-go 不自动补；不打补丁也能运行 |
+| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | npm Host 由插件启动时自动检测并补打；也可按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用。客户端卡片补丁覆盖 `0.2.2-rc.2` 到 `0.2.2-rc.5` 及 `0.2.3-alpha.1`（源码 + bundle）和 `0.2.2-rc.1`（仅 bundle）与 DSH-go 的 `0.2.2-rc.1` Host；子代理 promptSource 补丁覆盖 `0.2.2-rc.1` 到 `0.2.2-rc.5`，`0.2.3-alpha.1` 由 Host 原生记录初始任务；DSH-go 不自动补；不打补丁也能运行 |
 
 ## 启停与状态
 
@@ -146,7 +148,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 
 | 现象 | 原因与修法 |
 | --- | --- |
-| 派发消息显示为普通对话，不是「收到任务消息」卡片 | DSH 升级覆盖了 npm 包，客户端任务卡补丁或子代理 `promptSource` 补丁丢失。插件启动时会自动补打并在日志提示重启；看到提示后再重启一次 DSH。DSH-go 按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用 |
+| 派发消息显示为普通对话，不是「收到任务消息」卡片 | DSH 升级覆盖了 npm 包，客户端任务卡补丁（或 `0.2.2` Host 的子代理 `promptSource` 补丁）丢失。插件启动时会自动补打并在日志提示重启；看到提示后再重启一次 DSH。`0.2.3-alpha.1` 的子代理初始任务由 Host 原生记录，不需要该补丁。DSH-go 按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用 |
 | `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash Git 项目的 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore`。非 Git 目录不会报这条 |
 | `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |
 | `Landing requires a git repository; this project is not under git` | 非 Git 项目不能推送、开 PR 或合并；去掉 `land` 后按 change 流程交付 |

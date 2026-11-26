@@ -20,9 +20,10 @@
  * compact context row. No delivery semantics change.
  *
  * Supported installs:
- *   - dsh 0.2.2-rc.5 and 0.2.2-rc.3: source files plus the minified
- *     `lib/client.js` bundle. The two releases publish the same Chat client, so
- *     they share one target.
+ *   - dsh 0.2.3-alpha.1 and 0.2.2-rc.2 through 0.2.2-rc.5: source files plus
+ *     the minified `lib/client.js` bundle. The two source files and the patched
+ *     bundle snippets are identical in these releases, so they share one target;
+ *     alpha.1 changes the rest of the Chat package.
  *   - dsh 0.2.2-rc.1: the shipped `lib/client.js` bundle only (no `src/`).
  *   - DSH-go Host: the DSH 0.2.2-rc.1 bundle in the DSH-go PRoot rootfs or its
  *     build prefix. DSH-go's own engine patches are left untouched.
@@ -200,11 +201,17 @@ const PUBLISHED_TARGETS = {
 }
 
 /**
- * The supported version matrix. rc.5 and rc.3 publish a byte-identical Chat
- * client (source files and `lib/client.js`), so both share the rc.3 target.
+ * The supported version matrix. rc.2 through rc.5 publish a byte-identical Chat
+ * client, so all four share the rc.3 target. alpha.1 ships changed Chat sources
+ * and bundle, but the two patched source files and every patch snippet are
+ * unchanged, so it shares that target too. rc.1 keeps the bundle-only layout.
  */
 export const TARGETS = {
+  '0.2.3-alpha.1': PUBLISHED_TARGETS['0.2.2-rc.3'],
   '0.2.2-rc.5': PUBLISHED_TARGETS['0.2.2-rc.3'],
+  '0.2.2-rc.4': PUBLISHED_TARGETS['0.2.2-rc.3'],
+  '0.2.2-rc.3': PUBLISHED_TARGETS['0.2.2-rc.3'],
+  '0.2.2-rc.2': PUBLISHED_TARGETS['0.2.2-rc.3'],
   ...PUBLISHED_TARGETS,
 }
 

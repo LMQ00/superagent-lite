@@ -1,0 +1,48 @@
+--- a/lib/types/types.d.ts
++++ b/lib/types/types.d.ts
+@@ -10,7 +10,7 @@
+  */
+ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent';
+ import type { Branded } from '@deepseek-ai/dsh-brand';
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm';
++import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm';
+ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
+ import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools';
+ /** Identifies one accepted subagent run across its lifecycle event pair. */
+@@ -138,6 +138,14 @@
+     /** Content delivered as the child's user message. */
+     readonly prompt: ContentBlock[];
+     /**
++     * Optional attribution recorded on the child's initial user message.
++     * Omitted keeps the ordinary `user` source, so the creation prompt renders
++     * as a plain input row; a non-`user` source lets a waking initial turn render
++     * as a turn-trigger card. Local backends deliver this source themselves;
++     * external backends receive it on the resolved request and own delivery.
++     */
++    readonly promptSource?: MessageSource;
++    /**
+      * The spawning agent. Its effective directory supplies the default cwd;
+      * in-process children retain its origin, lineage, and delegation depth.
+      */
+--- a/lib/types/manager.js
++++ b/lib/types/manager.js
+@@ -393,7 +393,7 @@
+                 const childHeader = child.session.header;
+                 return await this.submitMaterialized(activation, spec.delivery !== 'caller' && isAdjacentAgentSendMessageTool(this.ctx.get('tools')?.get('send_message', child))
+                     ? withContinuableReturnGuidance(parent.id, request.prompt)
+-                    : request.prompt, { source: { kind: 'user' }, signal: spec.signal, delivery: 'queue' }, parent, () => {
++                    : request.prompt, { source: request.promptSource ?? { kind: 'user' }, signal: spec.signal, delivery: 'queue' }, parent, () => {
+                     establishCatalogChild(parent.session, childHeader, descriptor);
+                 });
+             });
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1464,7 +1464,7 @@
+ 				const child = requireLocalActivation(activation).handle.agent;
+ 				const childHeader = child.session.header;
+ 				return await this.submitMaterialized(activation, spec.delivery !== "caller" && isAdjacentAgentSendMessageTool(this.ctx.get("tools")?.get("send_message", child)) ? withContinuableReturnGuidance(parent.id, request.prompt) : request.prompt, {
+-					source: { kind: "user" },
++					source: request.promptSource ?? { kind: "user" },
+ 					signal: spec.signal,
+ 					delivery: "queue"
+ 				}, parent, () => {

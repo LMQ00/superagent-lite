@@ -204,7 +204,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/git-actions.js` | 构建面板视图（非 Git 任务不调用 git/gh），执行合并、发送 PR、审查和删除分支动作；为「分支 / worktree」标签页推导本插件创建的 Worktree 与 `sl-*` 分支，并执行只删 Worktree 或只删分支的动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper；记忆对话保持只读，Reviewer 只禁写改工具与改变分支的 git 命令。 |
-| `src/host-patch.js` | 插件启动时从运行入口解析已安装的 `@deepseek-ai/dsh`，对受支持的 npm Host 自动补打客户端任务卡补丁与子代理 `promptSource` 补丁；已打过时不动，版本/布局不匹配、片段失败或只读安装只写告警，不阻断启动；DSH-go 不自动修改。 |
+| `src/host-patch.js` | 插件启动时从运行入口解析已安装的 `@deepseek-ai/dsh`，对 `0.2.2-rc.1` 到 `0.2.3-alpha.1` 的 npm Host 自动补打客户端任务卡补丁与子代理 `promptSource` 补丁；rc.1 使用仅 bundle 的子代理 diff，`0.2.3-alpha.1` 只补客户端并报告 `native`；已打过时不动，版本/布局不匹配、片段失败或只读安装只写告警，不阻断启动；DSH-go 不自动修改。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
 | `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型，启动前重读 Task 避免停止后仍启动，并向 Router 通知排队任务已开始；启动扫描和每次 pump 回收失联超过 2 分钟且没有活 Session 的 `starting`/`running`/`resuming` Task，按 Review、分支和 Worktree HEAD 落为 `awaiting-merge` 或 `failed`。 |
 | `src/message-images.js` | 把工具参数里的本地图片保存为 Host 附件引用，并生成消息图片块；校验格式、数量和字节上限。 |
@@ -222,6 +222,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射，按锁把运行中或排队中的 Task 写成 `cancelled` 终态并保留记录；旧取消墓碑仍可读取。 |
 | `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/skill-catalog.js` | 稳定已运行 Worker/Reviewer 会话的 skill catalog，按 skill 文件的 `author: memory` 拦截由 memory skill 新增、修改或删除构成的 catalog 更新；以 `prepend` 注册在预设 catalog 监听器外层，才能看到并过滤它们在 `next()` 之后追加的 catalog；作者缺失按普通 skill 处理。 |
+| `src/subagent-start.js` | 按已安装 subagent 服务选择启动请求形状：`0.2.2-rc.1` 把任务嵌套在 `request` 下，`0.2.2-rc.2` 到 `0.2.3-alpha.1` 使用平铺 spec。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发、续派或状态查询决定，并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
 | `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
@@ -249,8 +250,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/memory-panel.test.js` | 记忆端点的 owner 准入、项目根校验、全局/项目记忆、全局/项目 skill 与全局知识库返回、字段/skill/知识删除、skill 删除参数校验和存储失败，以及删除后查询不再返回。 |
 | `test/branches-panel.test.js` | 分支 / Worktree 端点的 owner 准入、方法限制、删除目标校验（kind/projectRoot/branch/path）、两类删除成功和拒绝映射。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话按作者拦截多个 memory skill 的新增、修改和删除，其他 skill 变化和 Router 会话不受影响。 |
-| `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁在 `0.2.2-rc.5`、`0.2.2-rc.3`、`0.2.2-rc.1` 和 DSH-go 形态下的检查、旧补丁升级、应用、重复应用、回滚，以及版本/布局/片段不匹配时的拒绝；真实安装用例从 `DSH_INSTALL_DIR` 解析，rc.5/rc.3 共用同一源码补丁。 |
-| `test/host-patch-auto.test.js` | 插件启动时自动补打：从入口或 `DSH_INSTALL_DIR` 解析 Host、客户端与子代理补丁的应用/重复应用、版本不支持或片段失败时只告警不写入、无法解析时不动、测试进程不碰已安装 Host，以及真实 subagent 包副本上的补丁与幂等。 |
+| `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁在 `0.2.2-rc.2` 到 `0.2.2-rc.5`、`0.2.3-alpha.1`、`0.2.2-rc.1` 和 DSH-go 形态下的检查、旧补丁升级、应用、重复应用、回滚，以及版本/布局/片段不匹配和区间外版本的拒绝；真实安装用例从 `DSH_INSTALL_DIR` 解析，rc.2 到 rc.5 与 alpha.1 共用同一源码补丁。 |
+| `test/host-patch-auto.test.js` | 插件启动时自动补打：从入口或 `DSH_INSTALL_DIR` 解析 Host、客户端与子代理补丁的应用/重复应用、rc.1 的仅 bundle 子代理 diff、`0.2.3-alpha.1` 子代理的 `native` 跳过、版本不支持或片段失败时只告警不写入、无法解析时不动、测试进程不碰已安装 Host，以及真实 subagent 包（嵌套或提升布局）副本上的补丁与幂等。 |
+| `test/subagent-start.test.js` | rc.2 及以后平铺 spec、rc.1 嵌套 `request` 的启动请求形状。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
 | `test/merge-tool.test.js` | merge worker 的目标分支合并、冲突保留和 worktree 状态限制。 |

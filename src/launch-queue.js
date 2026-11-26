@@ -6,6 +6,7 @@ import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
 import { interruptWorker } from './worker-control.js'
 import { imageBlocksFromReferences } from './message-images.js'
 import { runCommand } from './process.js'
+import { startActivation } from './subagent-start.js'
 
 // Worker launches beyond the configured limit wait as `queued` Task records.
 // The queue is serialized per data root so two dispatches cannot claim the same slot.
@@ -136,7 +137,7 @@ async function launch(ctx, task) {
   if (!latest || (latest.status !== 'starting' && latest.status !== 'resuming')) return true
   task = latest
   try {
-    await ctx.subagents.startActivation({
+    await startActivation(ctx.subagents, {
       provider: 'spawn',
       parent,
       cwd: task.projectRoot,
