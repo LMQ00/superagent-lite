@@ -39,6 +39,8 @@ Bundle 的 `engines.dsh` 是 `>=0.2.2-rc.1 <=0.2.3-alpha.1`，Host 版本不满�
 | 客户端任务卡补丁 | npm `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5` / `0.2.3-alpha.1`（源码 + bundle，共用一个 target）、`0.2.2-rc.1`（仅 bundle）、DSH-go 的 `0.2.2-rc.1` Host | `node scripts/dsh-client-ui-chat-agent-message-card.mjs --check` 输出匹配的版本、布局和待改文件；版本或片段不匹配时退出码 1 且不写入 |
 | 子代理 promptSource 补丁 | `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle，单独的 diff）、`0.2.3-alpha.1` 不需要补丁 | 对 `0.2.2-rc.2` 到 `0.2.2-rc.5` 运行 `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch`（rc.1 用 `scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch`）成功；rc.2 到 rc.5 补丁后 `src/manager.ts` 与 `lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }`，rc.1 的 `lib/index.js` 与 `lib/types/manager.js` 有一处 `request.promptSource ?? { kind: 'user' }`；`0.2.3-alpha.1` 的 `src/manager.ts` 已用 `createAgentMessage` 记录初始任务，插件只读检测并报告 `native` |
 
+面板路由按 Host 的认证契约分流：`0.2.2-rc.1` 到 `0.2.2-rc.5` 的 `connection` 暴露 `requestRejection`，`admit` 在内部完成认证，插件用这个函数判断并走不需要 `connection.authentication` 的注册路径；`0.2.3-alpha.1` 移除了 `requestRejection`，`admit` 从调用方 fiber 读取 `connection.authentication`，所以五个面板路由只在注入了该服务的上下文注册（`index.js:73-81`）。两条路径都在隔离目录安装各版本真实 npm Host 启动验证：`GET /superagent-lite/tasks`、`/branches`、`/memory`、`/worker-settings` 和带 `taskId` 的 `/git` 全部返回 `200` 和 JSON，不能用单元测试模拟替代。对任意已安装版本还可以用 `DSH_INSTALL_DIR=<dsh 包目录> node --test test/host-connection.test.js` 核对它只暴露一种认证契约。
+
 按实际内容归并：`0.2.2-rc.2` 到 `0.2.2-rc.5` 的 `@deepseek-ai/dsh-client-ui-chat` 除 `package.json` 外逐字节相同，因此共用同一个 source-and-bundle 目标；`0.2.3-alpha.1` 的 Chat 包有变化，但被补丁修改的两个源码文件和所有 bundle 片段与 rc.2–rc.5 相同，所以也归入该目标。`0.2.2-rc.1` 的 Chat 包没有 `src/`，单独走 bundle-only 目标。子代理包 `0.2.2-rc.2` 到 `0.2.2-rc.5` 除 `package.json` 外相同，共用一个源码 + bundle 补丁；`0.2.2-rc.1` 没有 `src/` 且初始请求嵌套在 `request` 下，使用单独的 bundle-only 补丁和 `src/subagent-start.js` 的 rc.1 请求形状；`0.2.3-alpha.1` 原生记录 agent 消息。区间内 `dsh-base` 的 `cordis.patch.yml` 差异只在账号、web provider、agent-team 等基础行，未触及本 bundle 挂载的 `worktrees` 服务或补丁目标，因此不调整本仓库的 `cordis.patch.yml`。
 
 `npm install -g @deepseek-ai/dsh` 会整包替换 `dsh-subagent` 和 `dsh-client-ui-chat`，上表中的补丁随之丢失。Bundle 启动时由 `src/host-patch.js` 从运行入口解析已安装的 `@deepseek-ai/dsh`，对区间内的 npm Host 自动执行同样的检测和应用，并写入 Host 日志 `superagent-lite host patch: applied ...; restart DSH to load it`。`0.2.2` Host 的 subagent 补丁要下次启动才生效，客户端补丁也要重启后才加载，所以看到该日志后要再重启一次 DSH，卡片才会恢复；`0.2.3-alpha.1` 只需补客户端卡片补丁，子代理初始任务已由 Host 原生记录。DSH-go 的 rootfs 保持只读，不自动修补，仍按上面两个 Host 补丁文档手动运行。
@@ -140,7 +142,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:128-145`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:304-307`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:128-145`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:314-317`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -148,6 +150,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 
 | 现象 | 原因与修法 |
 | --- | --- |
+| 「项目任务」标签页只显示「无法加载任务，请重试。」，`/superagent-lite/tasks` 返回 `400` 空响应 | 正在运行的 DSH 进程仍加载修复前的插件代码：`0.2.3-alpha.1` 的 `connection.admit` 在未注入 `connection.authentication` 的请求 fiber 上抛出 `cannot get property "connection.authentication" without inject`，Host 兜底返回空 body。重启 DSH Web，让面板路由从注入了该服务的上下文注册。`0.2.2-rc.1` 到 `0.2.2-rc.5` 的 `admit` 自带认证，不需要这个服务，修复前后都应正常；这些旧版本仍报 400 时先检查插件是否升级到当前修复版本，再重启 DSH Web |
 | 派发消息显示为普通对话，不是「收到任务消息」卡片 | DSH 升级覆盖了 npm 包，客户端任务卡补丁（或 `0.2.2` Host 的子代理 `promptSource` 补丁）丢失。插件启动时会自动补打并在日志提示重启；看到提示后再重启一次 DSH。`0.2.3-alpha.1` 的子代理初始任务由 Host 原生记录，不需要该补丁。DSH-go 按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用 |
 | `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash Git 项目的 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore`。非 Git 目录不会报这条 |
 | `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |

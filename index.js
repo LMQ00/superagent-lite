@@ -37,19 +37,20 @@ export async function apply(ctx) {
   })
   ctx.on('agent/pre-step', catalogGuard.preStep, { prepend: true })
   const gitManager = createGitManager(ctx)
-  ctx.inject(['webServer', 'connection'], web => {
+  const registerPanels = web => {
+    const connection = web.connection
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
-      handler: createBoardHandler(web.connection, ctx.agents, undefined, gitManager, undefined,
+      handler: createBoardHandler(connection, ctx.agents, undefined, gitManager, undefined,
         (taskId, options) => stopWorker(ctx, taskId, options)),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
-      handler: createGitActionHandler(web.connection, gitManager),
+      handler: createGitActionHandler(connection, gitManager),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/worker-settings',
-      handler: createSettingsPanelHandler(web.connection, {
+      handler: createSettingsPanelHandler(connection, {
         catalog: async () => (ctx.get?.('sessionController') ?? ctx.sessionController)?.modelCatalog?.(),
         onChange: () => pumpWorkers(ctx).catch(error => {
           ctx.logger.warn(`superagent-lite worker queue: ${error instanceof Error ? error.message : String(error)}`)
@@ -58,16 +59,25 @@ export async function apply(ctx) {
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/memory',
-      handler: createMemoryPanelHandler(web.connection),
+      handler: createMemoryPanelHandler(connection),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/branches',
-      handler: createBranchesPanelHandler(web.connection, {
+      handler: createBranchesPanelHandler(connection, {
         list: signal => gitManager.branches(signal),
         removeWorktree: (target, signal) => gitManager.removeWorktree(target, signal),
         removeBranch: (target, signal) => gitManager.removeBranch(target, signal),
       }),
     }))
+  }
+  // Older Hosts authenticate inside `connection.admit` itself; newer Hosts read
+  // `connection.authentication` from the calling fiber, so their route handlers
+  // must be registered from a context that injected that service too.
+  ctx.inject(['webServer', 'connection'], web => {
+    if (typeof web.connection.requestRejection === 'function') registerPanels(web)
+  })
+  ctx.inject(['webServer', 'connection', 'connection.authentication'], web => {
+    if (typeof web.connection.requestRejection !== 'function') registerPanels(web)
   })
   const dispatchGuard = createDispatchGuard(ctx)
   const workers = new Map()
