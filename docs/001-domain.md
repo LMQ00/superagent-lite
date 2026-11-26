@@ -45,7 +45,7 @@ flowchart LR
 | Worker Session | 执行一个 Task 的 DSH Session，运行 `superagent-lite-worker` 预设。 | 从项目根启动；Git 项目除 `create_worktree` 外的工具要求工作目录在分配的 Worktree；非 Git 项目工作目录直接是项目根，不注册可用的 `create_worktree`；subagent 结束时冻结；面板停止会中断当前执行但不删除 Session（`index.js:82-223`、`src/worker-control.js:5-20`）。 |
 | Worktree | worktree 服务为一个 Git Task 创建的隔离检出。 | 一个 Git Task 一个 Worktree，位于 `<project>/.agents/worktrees`，名字为 `sl-<worktreeName>-<Task ID 前 12 位>`；`worktreeName` 是 1–4 个英文小写短词；文件与其他 Task 分开；它不是操作系统安全边界；非 Git 项目没有 Worktree。面板的「分支 / worktree」标签页只列这些 Worktree 和 `sl-*` 分支，允许安装 owner 分开删除工作树与分支（`cordis.patch.yml:1-7`、`src/worktree-tool.js:42-46`、`src/branches-panel.js:15-68`、`src/git-actions.js:603-701`、`src/merge.js:175-216`）。 |
 | Worker branch | Worktree 所在的分支。 | 仅 Git 项目有；分支名取自 worktree 服务的返回值并写入 `task.worktree.branch`；只有审查过的 HEAD 会被合并或发布（`src/worktree-tool.js:40-49`、`src/git-actions.js:170-181`）。 |
-| Review | 独立子代理对已提交 diff 或非 Git 工作区内容的裁决。 | Reviewer 用 `submit_review` 记录裁决：内容「通过」即通过，其他内容记为审查意见；工具记录 reviewed HEAD 或工作区标识与 reviewer Session；裁决针对 Task 保存的需求，follow-up 只作上下文；审查本身不改 Task 状态；审查请求可以附带 worker 指定的本地图片（`src/review.js:16-38`、`src/review.js:90-166`、`src/review.js:169-188`）。 |
+| Review | 独立子代理对已提交 diff 或非 Git 工作区内容的裁决。 | Reviewer 用 `submit_review` 记录裁决：内容「通过」即通过，其他内容记为审查意见；工具记录 reviewed HEAD 或工作区标识与 reviewer Session；裁决针对 Task 保存的需求，follow-up 只作上下文；审查本身不改 Task 状态；审查请求可以附带 worker 指定的本地图片（`src/review.js:17-39`、`src/review.js:91-167`、`src/review.js:170-189`）。 |
 | Report | Worker 通过 `message_router` 发给 Router 的最终结论。 | 1–4,000 字符；只发一次，不发过程进度；可附带 worker 当前目录下的本地图片，图片作为消息内容跟在文本后；文本不写 Task 状态，状态由生命周期事件写（`src/message-router.js:16-24`、`src/message-router.js:4-29`）。 |
 | Follow-up | 对同一未发布 Task 的补充或修正。 | 只有目标 Deliverable 相同时用 `continue_worker`；记录在 `task.followUps`；可附带本地图片，发送失败时回滚记录、不留下半条消息；尚未启动的 Task 返回「稍后再试」而不投递（`src/continue.js:240-283`、`src/continue.js:214-294`）。 |
 | Worker status | Router 查询本会话 Worker 和 Task 状态的工具与后台通知。 | `worker_status` 只返回本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，并给出 Task ID、标题、Team、模式和 Worker Session；停止后的 Task 保留 `cancelled` 记录，任务停止和排队 Worker 开始会向 Router 注入背景通知，不打开新回合、不算新输入（`src/worker-status.js`、`src/task-store.js`、`src/launch-queue.js`）。 |
@@ -123,14 +123,14 @@ Task 记录只保存一个生命周期状态。下表的生命周期值都有写
 | 工作 | `running` | Worker 已创建，或 Git 项目的 Worktree 已保存，任务进行中；非 Git 项目在 Worker 创建后即为工作目录（`index.js:110-117`、`src/worktree-tool.js:49`） |
 | 工作 | `resuming` | 已结束或在恢复中的 Task 被 follow-up 重新打开（`src/continue.js:263-274`） |
 | 审查 | `review-required` | Worker 结束时没有通过的审查，或审查后 HEAD 又移动（`index.js:249-295`） |
-| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作；失联的 `running` 记录在 Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 时也回收到这里（`index.js:287`、`src/git-actions.js:293-304`、`src/launch-queue.js:51-110`） |
+| 交付 | `awaiting-merge` | 审查过的 HEAD 等待用户授权的交付动作；失联的 `running` 记录在 Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 时也回收到这里（`index.js:287`、`src/git-actions.js:293-304`、`src/launch-queue.js:52-111`） |
 | 交付 | `merging` | 面板或命令触发的本地合并已开始（`src/merge.js:64-68`） |
 | 交付 | `publishing` | 发送 PR 的路径已开始（`src/git-actions.js:442-446`、`src/git-actions.js:478-480`） |
 | 交付 | `awaiting-ci` | reviewed HEAD 的 PR 已打开；面板读取时用 `gh` 同步 PR 状态（`src/github.js:64-99`、`src/git-actions.js:280-285`） |
 | 交付 | `merged` | 提交已进入基础分支：本地合并、外部合并 PR，或面板读取时确认已包含在基础分支（`src/merge.js:85-87`、`src/git-actions.js:311-319`） |
 | 交付 | `delivery-blocked` | 发送或合并失败，或精确匹配的 PR 被关闭（`index.js:288-290`、`src/git-actions.js:275-279`、`src/merge.js:81-82`） |
 | 结束 | `completed` | 只报告任务通过 `report_task` 交付了结论，或非 Git 的 change 任务在审查通过后结束（`src/report-tool.js:36-42`、`index.js`） |
-| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败，或失联的 `starting`/`running`/`resuming` 被启动扫描或队列回收且没有可交付的 reviewed HEAD（`src/dispatch.js:105-113`、`index.js:258-279`、`src/continue.js:284-291`、`src/launch-queue.js:51-110`） |
+| 结束 | `failed` | 派发、Worker 回合或 follow-up 发送失败，或失联的 `starting`/`running`/`resuming` 被启动扫描或队列回收且没有可交付的 reviewed HEAD（`src/dispatch.js:105-113`、`index.js:258-279`、`src/continue.js:284-291`、`src/launch-queue.js:52-111`） |
 | 结束 | `cancelled` | 安装 owner 在面板停止运行中或排队中的 Task；worker 被中断，并发名额立即释放，记录保留在面板并归入「失败」分组（`src/worker-stop.js:6-29`、`src/task-store.js:126-146`） |
 
 删除 worker 分支不新增生命周期状态：Task 保留原状态，只记录 `branchDeletedAt` 并清空 `worktree`；面板把非失败的此类 Task 显示为已完成，失败 Task 保持失败（`src/merge.js:121-170`、`src/git-actions.js:290-295`）。

@@ -12,9 +12,9 @@
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:41-52`、`src/continue.js:214-229`、`src/continue.js:260-262`、`src/worker-status.js` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-152` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:70-175` |
-| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:13-35`、`src/review.js:57-113`、`src/helper-guard.js:107-119`、`src/review-scope.js:1-294` |
+| 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:14-36`、`src/review.js:58-114`、`src/helper-guard.js:107-119`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述、`images` 参数和长度限制 | `src/report-tool.js:10-20`、`src/message-router.js:7-17` |
-| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-532` |
+| 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-533` |
 | 派发提醒 | 重开回合时插入的提醒文字 | `src/turn-guard.js:7` |
 | 面板文字 | 任务状态、动作（停止、删除、合并、提交 PR、审查、删除分支、分支 / worktree 删除）和弹窗的中英文字典 | `client.js:6-157` |
 
@@ -50,11 +50,11 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 
 | 链路 | 工具参数 | 消息构造 | 模型要求 |
 | --- | --- | --- | --- |
-| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:147-160`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
+| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:148-161`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
 | router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:240`、`src/dispatch.js:68-103`） | 目标 worker 模型声明图片输入 |
 | worker → router 报告 | `message_router.images` | 追加到报告文本之后（`src/message-router.js:23-24`） | router 模型声明图片输入 |
 | worker → router report 结论 | `report_task.images` | 追加到报告文本之后（`src/report-tool.js:37-38`） | router 模型声明图片输入 |
-| worker → review | `review_worker_commit.images` | 追加到审查提示词文本之后（`src/review.js:90-140`） | reviewer 模型声明图片输入 |
+| worker → review | `review_worker_commit.images` | 追加到审查提示词文本之后（`src/review.js:91-141`） | reviewer 模型声明图片输入 |
 
 数量、单张字节数、整条消息字节数、像素和格式由 Host 的附件服务校验；插件在保存前还会按 `imageLimits` 复核单条消息的图片数量和总字节。文件缺失、不是受支持图片或附件保存失败都会让工具调用失败，不发送半条消息（`src/message-images.js:54-90`）。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`）。
 
@@ -105,7 +105,7 @@ Router persona 固定可见回复（`cordis.patch.yml:41-48`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:164-183`、`src/review.js:43-90`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:164-183`、`src/review.js:44-91`）。
 
 ## 装配顺序
 
@@ -148,4 +148,4 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | `knowledge_query` / `knowledge_get` 每次查询时读取；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` 和 `task/archive/sessions/<sha256(Session ID)>.md` | 每个 Worker 回合 `turn/end` 时写回合事件；memory 触发时写会话记录并只把路径交给 memory；其他模型工具没有专用读取入口，Git 与非 Git 项目位置相同 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:68-81`、`src/review.js:57-72`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:68-81`、`src/review.js:58-73`）。

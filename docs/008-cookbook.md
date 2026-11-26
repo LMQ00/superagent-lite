@@ -59,7 +59,7 @@ export function createReadTaskTool(agent, taskId, read = taskForSession) {
 ```
 
 - **身份从闭包来。** `agent` 和 `taskId` 在注册时绑定，不从模型参数读取；`exec.agent !== agent` 拒绝其他 Session。
-- **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:46-55`）。
+- **状态门槛与现有工具一致。** 只允许 `running`，与 `create_worktree`、`review_worker_commit` 的 Task 状态检查一致（`src/worktree-tool.js:25-26`、`src/review.js:47-56`）。
 - **输出只含公开字段。** 不返回需求全文、Review findings 或失败原因；Task 记录里这些字段不进入返回值。
 - **不写记录。** 工具只调用 `taskForSession` 读取，不调用 `updateTask`。
 
