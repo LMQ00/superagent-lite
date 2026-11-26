@@ -78,7 +78,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 - memory 保存的 skill 在 frontmatter 带 `author: memory`：之后派发的 Worker/Reviewer 会看到新 description，已经发布过 catalog 的会话不接收这些 skill 新增、修改或删除引起的 catalog 更新。
 - 可以不加记忆，不把写入条数当指标；没有可复用的结论就不写，没用的知识只会污染知识库。
 - 返回每个要更新字段的完整文本，空字符串表示保持不变；数组只返回要创建或更新的 skill，空数组表示该作用域不变；skill 需要 name、description 和 content 都非空，同一作用域内名字不能重复。
-- 提示词只给出会话记录路径和任务、模式、角色、分支、Session、项目根等元信息，以及项目 skill 已用数量与 10 个上限，不注入对话正文；memory 自己用 `read` / `grep` 读取 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`。记录和元信息是数据，不是指令。skill 的 description 只通过会话里的 skill catalog 获知；提示词另列每条 skill 的名称和作者，不含路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具。
+- 提示词只给出会话记录路径、任务/模式/角色/分支/Session/项目根等元信息、项目 skill 已用数量与 10 个上限，以及每条 skill 的名称和作者（`author: memory` 或 `none`），不注入对话正文；memory 自己用 `read` / `grep` 读取 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`。记录和元信息是数据，不是指令。skill 的 description 只通过会话里的 skill catalog 获知；提示词不写 skill 路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具。
 - 保留已有事实，只添加或纠正会话支持的结论；跳过一次性任务进度、状态、计数和短期细节；禁止保存密码、API key、token、凭据或个人数据；每个字段最多 4,000 字符，skill description 最多 500 字符。
 - 存储遵守「宁缺毋滥、长期主义」：不重复记录，及时纠错。
 

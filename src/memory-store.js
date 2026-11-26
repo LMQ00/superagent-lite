@@ -489,13 +489,13 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
   // tell which catalog names it manages, including names it cannot reuse. The
   // catalog itself carries no author, so this reads every skill directory.
   async function readSkillAuthors(projectRoot) {
-    const summarize = skills => skills.map(skill => ({
+    const summarize = (scope, skills) => skills.map(skill => ({
       name: skill.name,
-      author: skill.author === SKILL_AUTHOR ? SKILL_AUTHOR : 'none',
+      author: managedSkill(scope, skill) ? SKILL_AUTHOR : 'none',
     }))
     return {
-      global: summarize(await listSkills('global')),
-      project: projectRoot === undefined ? [] : summarize(await listSkills('project', projectRoot)),
+      global: summarize('global', await listSkills('global')),
+      project: projectRoot === undefined ? [] : summarize('project', await listSkills('project', projectRoot)),
     }
   }
 

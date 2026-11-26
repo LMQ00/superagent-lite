@@ -78,12 +78,12 @@ Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他
 
 ### Memory 角色
 
-memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径和任务、角色、分支、Session、项目根等元信息，以及项目 skill 已用数量与 10 个上限，不含对话正文；memory 自己用 `read` / `grep` 读取，不使用 worker 提交的摘要；skill 只通过会话里的 catalog 获知 description，触发消息只列 skill 名称和作者（`author: memory` 或 `none`），不写路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`、`src/helper-guard.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
+memory 角色是独立 helper 子代理，标签 `Distill memory`，delivery 为 `caller`，深度 2（`src/memory.js`）。触发时 Host 先把 Worker 会话写成可读记录，发给 memory 的消息只含记录路径和任务、角色、分支、Session、项目根等元信息、项目 skill 已用数量与 10 个上限，以及每条 skill 的名称和作者（`author: memory` 或 `none`），不含对话正文；memory 自己用 `read` / `grep` 读取，不使用 worker 提交的摘要；skill 的 description 只通过会话里的 catalog 获知，触发消息不写 skill 路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具；最终报告工具（`message_router`、`report_task`）保留工具名但省略参数（`src/memory.js`、`src/helper-guard.js`）。面板仍把这条请求显示为「收到任务消息」卡片，卡片正文是路径与读取指引。
 
 | 属性 | 值 |
 | --- | --- |
 | 触发 | change worker 的最终 `message_router` 报告送达后自动触发一次；每个 Worker Session 最多一次 |
-| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息和项目 skill 已用数量与 10 个上限；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；skill 的 description 只通过会话里的 skill catalog 获知，触发消息另列每条 skill 的名称和作者（`author: memory` 或 `none`），不注入路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
+| 输入 | 会话记录路径 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，以及任务、模式、角色、分支、Session、项目根等元信息、项目 skill 已用数量与 10 个上限和每条 skill 的名称与作者（`author: memory` 或 `none`）；消息里不含对话正文，memory 自己按路径读取记录（含各轮 follow-up 的 `[user]`、`[assistant]`、`[tool call]`、`[tool result]` 条目）；skill 的 description 只通过会话里的 skill catalog 获知，消息不注入 skill 路径、description、正文或根目录，需要正文时按名调用 `skill` 工具；记录中单条消息最多 4,000 字符，tool call 参数最多 500 字符，但不再受注入消息的总长上限约束 |
 | 输出 | 全局 `userProfile`、`sharedSkills`；项目 `responsibilities`、`positioning`、`projectSkills`；技能项含 `name`、`description`、`content`，每个文本字段最多 4,000 字符，skill description 最多 500 字符，项目 skill 同时最多 10 个 |
 | 知识库 | 用 `knowledge_query` 按关键词查编号和上下文片段，再用 `knowledge_get` 按编号取完整条目；用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写 |
 | 不提取 | 密码、API key、token、凭据、个人数据、任务状态、一次性进度和指令 |

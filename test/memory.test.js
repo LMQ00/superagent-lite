@@ -87,7 +87,7 @@ test('the memory role describes both scopes, their fields and the storage rules'
         description: 'Shared inspection skill.', content: 'Inspect first.',
       }],
       project: [{
-        name: 'superagent-project-memory', author: 'none',
+        name: 'manual-skill', author: 'none',
         description: 'Project skill.', content: 'Run npm test.',
       }],
     },
@@ -132,7 +132,7 @@ test('the memory role describes both scopes, their fields and the storage rules'
   assert.match(prompt, /call the skill tool with its exact name/)
   assert.match(prompt, /Do not search skill directories with read, glob or grep/)
   assert.match(prompt, /^- superagent-shared-memory \(author: memory\)$/m)
-  assert.match(prompt, /^- superagent-project-memory \(author: none\)$/m)
+  assert.match(prompt, /^- manual-skill \(author: none\)$/m)
   assert.doesNotMatch(prompt, /Shared inspection skill/)
   assert.doesNotMatch(prompt, /Run npm test/)
   assert.doesNotMatch(prompt, /\.dsh\/skills|\.agents\/skills/)
@@ -294,6 +294,11 @@ test('the memory trigger lists each skill name and author without paths, descrip
   await mkdir(join(projectRoot, '.dsh', 'skills', 'manual-skill'), { recursive: true })
   await writeFile(join(projectRoot, '.dsh', 'skills', 'manual-skill', 'SKILL.md'),
     '---\nname: manual-skill\nauthor: someone-else\ndescription: "Manual habit."\n---\n\nManual body.\n')
+  // The legacy fixed name has no author yet but stays managed by memory, so it
+  // is listed as reusable instead of being mistaken for a foreign skill.
+  await mkdir(join(projectRoot, '.dsh', 'skills', 'superagent-project-memory'), { recursive: true })
+  await writeFile(join(projectRoot, '.dsh', 'skills', 'superagent-project-memory', 'SKILL.md'),
+    '---\nname: superagent-project-memory\ndescription: "Legacy project habit."\n---\n\nLegacy body.\n')
   const agent = { id: 'worker-catalog', session: sessionWith([textMessage('user', 'Distill the run.')], 4) }
   const { ctx, activations } = context(memoryResult())
   await runMemoryExtraction(ctx, agent, { projectRoot }, new AbortController().signal)
@@ -307,8 +312,9 @@ test('the memory trigger lists each skill name and author without paths, descrip
   assert.match(prompt, /^- project-conventions \(author: memory\)$/m)
   assert.match(prompt, /^- review-conventions \(author: memory\)$/m)
   assert.match(prompt, /^- manual-skill \(author: none\)$/m)
+  assert.match(prompt, /^- superagent-project-memory \(author: memory\)$/m)
   assert.match(prompt, /^- shared-review \(author: memory\)$/m)
-  assert.match(prompt, /3 of at most 10 project skills/)
+  assert.match(prompt, /4 of at most 10 project skills/)
   assert.match(prompt, /Never add an 11th project skill/)
   assert.match(prompt, /reuse the name of an existing memory-managed project skill/)
   // Only names and authors are repeated: no path, description, body or root.
@@ -316,10 +322,12 @@ test('the memory trigger lists each skill name and author without paths, descrip
   assert.doesNotMatch(prompt, /Review habits\./)
   assert.doesNotMatch(prompt, /Shared review habits\./)
   assert.doesNotMatch(prompt, /Manual habit\./)
+  assert.doesNotMatch(prompt, /Legacy project habit\./)
   assert.doesNotMatch(prompt, /Run npm test before reporting\./)
   assert.doesNotMatch(prompt, /Read the diff before judging it\./)
   assert.doesNotMatch(prompt, /Check the author field\./)
   assert.doesNotMatch(prompt, /Manual body\./)
+  assert.doesNotMatch(prompt, /Legacy body\./)
   assert.doesNotMatch(prompt, /\.dsh\/skills|\.agents\/skills/)
   assert.doesNotMatch(prompt, /author: memory, path:/)
   assert.doesNotMatch(prompt, /"content":/)

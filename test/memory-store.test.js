@@ -235,6 +235,12 @@ test('a legacy skill without an author is managed until memory rewrites it', asy
   assert.deepEqual(await store.readSkills(project).then(value => value.project.map(skill => skill.name)), [
     'superagent-project-memory',
   ])
+  // The legacy fixed name is still managed by memory, so the prompt listing
+  // marks it reusable even before the first rewrite adds the author.
+  assert.deepEqual(await store.readSkillAuthors(project), {
+    global: [{ name: 'superagent-shared-memory', author: 'memory' }],
+    project: [{ name: 'superagent-project-memory', author: 'memory' }],
+  })
   assert.deepEqual([...(await store.memoryAuthoredSkillNames(project))], ['superagent-shared-memory'])
   await store.writeSkill('project', project, { description: 'Legacy skill.', content: 'New body.' })
   assert.match(await readFile(file, 'utf8'), /author: memory/)
