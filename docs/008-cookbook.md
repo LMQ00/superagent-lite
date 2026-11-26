@@ -93,7 +93,7 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 | 导出 | 不需要新增 `package.json` export；这是 bundle 内部模块 |
 | 捆绑配置 | `cordis.patch.yml` 不改；没有新的工具行或预设 |
 | 重启 | 重载 bundle 或重启 DSH Web；运行中的 Worker 不会自动获得新工具 |
-| Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:23`） |
+| Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:25`） |
 
 ## 4. 测试
 

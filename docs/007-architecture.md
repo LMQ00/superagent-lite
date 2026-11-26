@@ -53,7 +53,7 @@ Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `
 
 ### `src/memory.js`
 
-定义记忆字段、注入文本、memory 角色提示词、多个命名 skill 的提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 触发时先把 Worker 的完整会话写成 `task/archive/sessions/<sha256(Session ID)>.md`，触发消息只带记录路径和任务、角色、分支等元信息，memory 自己按路径读取；最终报告工具的参数不进入记录。提示词要求项目 skill 最多 10 个、达到上限只复用已有名字更新，并写明知识、事实、经验、结论进全局知识库而 skill 只放可复用固定流程。提取结果先按项目、再按全局批量写 skill，项目 skill 超限会在写任何字段前失败，不产生半写入。知识库通过 `knowledge_query` / `knowledge_get` 读取、通过 `knowledge_write` 写入，只有 memory 角色能写；面板的删除视图从这里清空记忆字段、删除 memory 管理的 skill 和知识条目（`src/memory.js`）。
+定义记忆字段、注入文本、memory 角色提示词、多个命名 skill 的提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档。Worker 和 Reviewer 读取项目 + 全局记忆；Router 只读取全局记忆。memory 触发时先把 Worker 的完整会话写成 `task/archive/sessions/<sha256(Session ID)>.md`，触发消息只带记录路径和任务、角色、分支等元信息，memory 自己按路径读取；最终报告工具的参数不进入记录。skill 只通过会话里的 skill catalog 获知，需要正文时按名调用 `skill` 工具，触发消息不含 skill 正文或逐条清单，也不给 skill 根目录。提示词要求项目 skill 最多 10 个、达到上限只复用已有名字更新，并写明知识、事实、经验、结论进全局知识库而 skill 只放可复用固定流程。提取结果先按项目、再按全局批量写 skill，项目 skill 超限会在写任何字段前失败，不产生半写入。知识库通过 `knowledge_query` / `knowledge_get` 读取、通过 `knowledge_write` 写入，只有 memory 角色能写；面板的删除视图从这里清空记忆字段、删除 memory 管理的 skill 和知识条目（`src/memory.js`）。
 
 ### `src/memory-store.js`
 
@@ -103,7 +103,7 @@ Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_
 
 ### `src/helper-guard.js`
 
-维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-23`、`src/helper-guard.js:76-117`）。
+维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`skill`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`skill` 只读取 catalog 中按名加载的 skill 正文，不写文件。`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-20`、`src/helper-guard.js:75-119`）。
 
 ### `src/delivery.js`
 
@@ -210,7 +210,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/message-images.js` | 把工具参数里的本地图片保存为 Host 附件引用，并生成消息图片块；校验格式、数量和字节上限。 |
 | `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）、分支删除，以及标签页使用的只删干净 Worktree、只删无 Worktree 检出分支两个动作。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
-| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、多 skill 提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档；提示词写明项目 skill 10 个上限和「知识进知识库、skill 只放固定流程」的分工；触发 memory 时写会话记录并只把路径与元信息交给 memory；提取时先批量写项目 skill，超限在写任何字段前失败，再写全局 skill 和记忆字段；提供 `memoryAuthoredSkillNames` 按 frontmatter 作者汇总 memory skill，并提供字段、skill 和知识删除视图。 |
+| `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、多 skill 提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档；提示词写明项目 skill 10 个上限和「知识进知识库、skill 只放固定流程」的分工；触发 memory 时写会话记录并只把路径与元信息交给 memory，skill 正文和逐条清单都不注入，需要时用 `skill` 工具按名加载；提取时先批量写项目 skill，超限在写任何字段前失败，再写全局 skill 和记忆字段；提供 `memoryAuthoredSkillNames` 按 frontmatter 作者汇总 memory skill，并提供字段、skill 和知识删除视图。 |
 | `src/memory-store.js` | 保存全局/项目记忆、全局知识库、全局/项目 skill 文件、原始归档和 memory 读取的会话记录，并执行字段校验与原子写入；每个 skill 以名字独立成目录并写 `author: memory`，冲突不覆盖，按作者扫描 memory skill；`writeSkills` 在锁内整批校验并写入，项目 skill 超过 `MAX_PROJECT_SKILLS = 10` 时拒绝且不产生部分文件，`projectSkillCount` 供提示词报告当前用量；支持清空记忆字段和按名字删除 skill。 |
 | `src/memory-panel.js` | 提供 owner-only 记忆端点：GET 返回全局记忆、所请求项目的记忆、全局/项目 skill 和全局知识库条目；DELETE 校验删除目标并删除单个记忆字段、memory 管理的 skill 或知识条目。 |
 | `src/branches-panel.js` | 提供 owner-only 分支 / Worktree 端点：GET 返回本插件创建的 Worktree 与 `sl-*` 分支；DELETE 按 `kind` 分开删除 Worktree（保留分支）或分支（要求没有 Worktree 检出）。 |
@@ -241,9 +241,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并、任意分支删除与运行中/脏工作树/被占用工作树拒绝、remote 选择、面板审查、PR 状态同步，以及只列 `.agents/worktrees` 与 `sl-*` 对象和分开删除 Worktree / 分支。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
-| `test/helper-guard.test.js` | helper 认领、记忆只读工具（含联网检索/网页读取）与 shell 限制、Reviewer 只禁写改工具且放行只读检索。 |
+| `test/helper-guard.test.js` | helper 认领、记忆只读工具（含联网检索/网页读取与 `skill`）与 shell 限制、Reviewer 只禁写改工具且放行只读检索。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
-| `test/memory.test.js` | memory 角色提示词（含项目 skill 10 个上限和知识/skill 分工）、只传记录路径与元信息、Git/非 Git 会话记录可读、全局 + 项目提取、多个命名 skill 写入、项目 skill 超限拒绝且不写字段、批量超限不产生部分 skill、达到上限仍可更新、纠正覆盖与旧 skill 迁移、同名/重复名校验、空结果、transcript 上限、知识工具、注入文本、provider、归档和 schema。 |
+| `test/memory.test.js` | memory 角色提示词（含项目 skill 10 个上限和知识/skill 分工）、只传记录路径与元信息、依赖 skill catalog 并用 `skill` 工具按名加载且不列 skill 正文/清单、Git/非 Git 会话记录可读、全局 + 项目提取、多个命名 skill 写入、项目 skill 超限拒绝且不写字段、批量超限不产生部分 skill、达到上限仍可更新、纠正覆盖与旧 skill 迁移、同名/重复名校验、空结果、transcript 上限、知识工具、注入文本、provider、归档和 schema。 |
 | `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、字段清空、全局知识库去重/片段/纠正/删除、多 skill 目录与作者、项目 skill 10 个上限与超限拒绝、批量超限不写任何新 skill、达到上限仍可更新和写全局 skill、同名冲突不覆盖、旧 skill 迁移、删除、归档和损坏文件拒绝。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写多个 skill 或删除某个 memory skill 后已结束 Worker 不再收到 catalog 更新、非 memory 管理的 skill 变化仍正常送达。 |
 | `test/memory-panel.test.js` | 记忆端点的 owner 准入、项目根校验、全局/项目记忆、全局/项目 skill 与全局知识库返回、字段/skill/知识删除、skill 删除参数校验和存储失败，以及删除后查询不再返回。 |

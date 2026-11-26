@@ -60,6 +60,7 @@ test('installed tool, scope and sandbox services enforce the helper boundary', {
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'read' }), undefined)
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'glob' }), undefined)
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'grep' }), undefined)
+  assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'skill' }), undefined)
   assert.equal(ctx.tools.checkGuards({ agent: helperKey, name: 'bash' }), undefined)
   assert.match(ctx.tools.checkGuards({ agent: helperKey, name: 'bash', arguments: { command: 'pwd', sandbox_permissions: 'danger-full-access' } }).reason, /widen the sandbox/)
   assert.match(ctx.tools.checkGuards({ agent: helperKey, name: 'write' }).reason, /Read-only helpers cannot use/)

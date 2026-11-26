@@ -33,3 +33,9 @@ test('the router preset keeps skill discovery to global roots while the worker k
   assert.match(worker, /- id: skill-filesystem\n +name: '@deepseek-ai\/dsh-skill-filesystem'/)
   assert.doesNotMatch(worker, /includeDefaultRoots: false/)
 })
+
+test('the worker preset mounts the skill tool and catalog that the memory helper inherits', () => {
+  const worker = presetBlock('preset-superagent-lite-worker')
+  assert.match(worker, /- id: tool-skill\n +name: '@deepseek-ai\/dsh-tool-skill'/)
+  assert.match(worker, /- id: skill-filesystem\n +name: '@deepseek-ai\/dsh-skill-filesystem'/)
+})

@@ -7,6 +7,7 @@ const READ_ONLY_TOOLS = new Set([
   'read_image',
   'glob',
   'grep',
+  'skill',
   'read_page',
   'web_fetch',
   'web_search',
@@ -95,7 +96,7 @@ export function registerReadOnlyGuard(agent) {
       }
       return undefined
     }
-    return `Read-only helpers cannot use "${name}"; inspect the evidence with read, glob, and grep instead.`
+    return `Read-only helpers cannot use "${name}"; inspect the evidence with read, glob, and grep, or load a skill with the skill tool.`
   })
 }
 

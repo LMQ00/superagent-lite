@@ -44,7 +44,7 @@ flowchart TB
 | Skills | Stored as normal skill files; only their descriptions enter the skill catalog, and the full body loads only through the `skill` tool. A skill holds a reusable fixed procedure or method only; knowledge, facts, experience, and conclusions go to the knowledge base. A project keeps at most 10 skills; at the cap memory may only update an existing memory-managed name, and a rejected batch writes no field or skill. |
 | Knowledge base | Global and reached only through the query, read, and write tools; only the memory role may use the write tool, and its content is never injected. It stores knowledge, facts, experience, conclusions, and observations, not procedures. |
 | Raw conversation | The worker's original conversation is retained and archived. |
-| Memory role | The `memory` role receives the readable session-record path plus task, role, and branch metadata, the current project skill count (out of 10), reads the record itself, summarizes it, and writes the project layer, global memory, and global knowledge base. |
+| Memory role | The `memory` role receives the readable session-record path plus task, role, and branch metadata and the current project skill count (out of 10), reads the record itself, summarizes it, and writes the project layer, global memory, and global knowledge base. It learns skills only from the session skill catalog and loads one by name with the `skill` tool when it needs the body; the trigger carries no skill body, per-skill list, or skill root. |
 
 ## Implementation mapping
 
@@ -59,7 +59,7 @@ flowchart TB
 | Worker injection | `registerMemoryContext` reads project + global memory at Worker creation (`src/memory.js`, `index.js`) |
 | Reviewer injection | `memoryPromptForProject` is added to the review prompt on every review (`src/memory.js`, `src/review.js`) |
 | Raw conversation | `workerConversation` builds the transcript, `writeSessionRecord` writes it to `task/archive/sessions/<sha256(Session ID)>.md` (`src/memory.js`, `src/memory-store.js`) |
-| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper with the knowledge query, read, and write tools; the prompt carries the record path and task, role, and branch metadata but not the conversation body (`src/memory.js`, `index.js`) |
+| Memory role | `memoryRole` / `memoryPrompt`, label `Distill memory`, depth 2, read-only helper with the knowledge query, read, and write tools plus the inherited `skill` loader; the prompt carries the record path and task, role, and branch metadata but not the conversation body, skill body, per-skill list, or skill root (`src/memory.js`, `src/helper-guard.js`, `index.js`) |
 | Summary write | `runMemoryExtraction` writes only non-empty changed fields and changed skills, in bulk per scope; project skills are written first so an over-cap batch rejects before any field or shared skill is written (`src/memory.js`, `src/memory-store.js`) |
 | Archive | `archiveWorkerTurn` writes each turn under `task/archive/`; `runMemoryExtraction` writes the session record under `task/archive/sessions/` (`src/memory.js`, `src/memory-store.js`) |
 
