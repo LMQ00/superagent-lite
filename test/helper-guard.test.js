@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import test from 'node:test'
 import { pathToFileURL } from 'node:url'
-import { claimHelper, clearHelperExpectation, expectHelper, registerReadOnlyGuard, registerReviewGuard } from '../src/helper-guard.js'
+import { claimHelper, clearHelperExpectation, expectHelper, forgetHelper, registerReadOnlyGuard, registerReviewGuard } from '../src/helper-guard.js'
 
 const anchor = process.env.DSH_INSTALL_DIR
 
@@ -61,6 +61,15 @@ test('only an expected child is claimed as a helper', () => {
   expectHelper('parent')
   assert.deepEqual(claimHelper('parent'), { scope: undefined, kind: 'memory' })
   assert.equal(claimHelper('parent'), false)
+})
+
+test('a claimed helper stays recognizable for the same agent only', () => {
+  expectHelper('parent', undefined, 'memory', { projectRoot: '/project' })
+  assert.deepEqual(claimHelper('parent', 'helper-a'), { scope: undefined, kind: 'memory', projectRoot: '/project' })
+  assert.deepEqual(claimHelper('parent', 'helper-a'), { scope: undefined, kind: 'memory', projectRoot: '/project' })
+  assert.equal(claimHelper('parent', 'helper-b'), false)
+  forgetHelper('helper-a')
+  assert.equal(claimHelper('parent', 'helper-a'), false)
 })
 
 test('nested expectations survive one claim and clear together', () => {

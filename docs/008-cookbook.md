@@ -79,10 +79,10 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 })
 ```
 
-把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:233-236`）。
+把 `readTask` 加进 `workers.set` 的 dispose 列表，与现有工具一起释放（`index.js:280-283`）。
 
-- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker、未冻结、工作目录在 Worktree（`index.js:206`）。因此工具在 `create_worktree` 前不可用，冻结后也不可用。
-- **注册位置在 `agent/created` 内。** 该回调已经完成 Task 归属核对；不要把工具注册到 `router.js`。
+- **`when` 用 `activeWorker`。** 它要求调用者就是该 Worker 且未冻结（`index.js:253`），不再检查 Worktree；参考现有的 `review_worker_commit` / `message_router`，工具可以提前可见，由 execute 校验 Worktree 和状态。冻结后不可用。
+- **注册位置在 `activate` 内。** `agent/created`、重载后的存活 agent 扫描和 `session/event` 兜底都走同一条路径，该路径已经完成 Task 归属核对；不要把工具注册到 `router.js`。
 - **不要另建全局工具。** 工具只能看到闭包绑定的那个 Task，避免 `read_task` 变成跨 Task 读取入口。
 
 ## 3. 注册与构建入口
@@ -93,7 +93,7 @@ const readTask = agent.ctx.tools.register(createReadTaskTool(agent, task.id), {
 | 导出 | 不需要新增 `package.json` export；这是 bundle 内部模块 |
 | 捆绑配置 | `cordis.patch.yml` 不改；没有新的工具行或预设 |
 | 重启 | 重载 bundle 或重启 DSH Web；运行中的 Worker 不会自动获得新工具 |
-| Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:25`） |
+| Reviewer | 不改 helper 白名单；Reviewer 仍只能用 `structured_output`、`read`、`read_image`、`glob`、`grep`、`bash`、`pwsh`（`src/helper-guard.js:26`） |
 
 ## 4. 测试
 
@@ -172,7 +172,7 @@ review_worker_commit({ images: ['artifacts/before.png', 'artifacts/after.png'] }
 ## 5. 检查清单
 
 1. `src/read-task.js` 只读 Task，不写记录。
-2. `index.js` 在 `agent/created` 内注册，`when` 使用 `activeWorker`。
+2. `index.js` 在 `activate` 内注册（`agent/created` 与重载后的重放共用），`when` 使用 `activeWorker`。
 3. `readTask` 已加入 dispose 列表。
 4. 没有新增包导出、bundle 配置或 helper 白名单。
 5. 测试覆盖身份、状态、缺失 Task 和字段范围。

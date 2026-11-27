@@ -46,7 +46,7 @@ function harness() {
     inject() {},
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
-    agents: { get: id => agents.get(id) },
+    agents: { get: id => agents.get(id), list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
     subagents: { resolveMaxDepth: () => 1, async startActivation(spec) { return { childId: spec.childId } } },
     worktrees: { async create() { throw new Error('not used') } },

@@ -54,7 +54,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     inject() {},
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
-    agents: { get() {} },
+    agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
     workingDirectory: { get: () => projectRoot },
     worktrees: {
@@ -408,7 +408,7 @@ test('a memory helper gets the knowledge read and write tools while a reviewer g
     inject() {},
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
-    agents: { get() {} },
+    agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset() {} },
   }
   await apply(ctx)

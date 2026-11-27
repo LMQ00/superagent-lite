@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-321`、`router.js:1-9`）。
+Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-395`、`router.js:1-9`）。
 
 ```mermaid
 flowchart TB
@@ -43,7 +43,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。如果 Task 已被面板停止成 `cancelled`，它不会写回 `running`，而是直接中断新 agent。report worker 的守卫放行项目 checkout 内的只读检查工具和 checkout 之外的只读检索工具（网页搜索、网页读取、知识库和后台任务查询），继续拒绝写改文件、创建 Worktree、提交和改变 HEAD；其余 Worker 仍须先进入分配的 Worktree，但只读的 `knowledge_query` / `knowledge_get` 在 Worktree 之前就能用。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/worker-settings`、`/superagent-lite/memory` 和 `/superagent-lite/branches` 五个路由；新 Host 的 `connection.admit` 从调用方 fiber 读取 `connection.authentication`，所以这些路由只在注入了该服务的上下文注册，旧 Host 则靠自带的 `requestRejection` 判断走无需该服务的注册路径；两条路径分别在 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 的真实安装包上验证五个端点返回 `200`（`index.js:40-81`）。任务停止由 `stopWorker` 完成；删除任务时先停止并等待 worker 离开运行态。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。插件启动时扫描一次旧记录，之后启动队列在派发、Task 结束、停止任务、Worker 释放名额和保存并发设置时调用 `pumpWorkers`；启动扫描和每次 pump 都会回收失联超过 2 分钟且没有活着 Worker Session 的 `starting`、`running`、`resuming` Task：读 Review 记录、worker 分支与 Worktree HEAD，Review 通过且 HEAD 匹配时落为 `awaiting-merge`，否则落为 `failed` 并释放名额（`index.js:317-320`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`）。
+Host 生命周期入口。注册主体是幂等的 `activate`：`agent/created`、`apply` 末尾对 `ctx.agents.list()` 中存活 agent 的重放和 `session/event` 兜底都调用它，所以插件重载丢掉旧注册后能重建；reviewer/memory helper 的认领描述会被缓存，重载后仍按 helper 处理（`index.js:99-296`、`src/helper-guard.js:34-51`）。它为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。如果 Task 已被面板停止成 `cancelled`，它不会写回 `running`，而是直接中断新 agent。report worker 的守卫放行项目 checkout 内的只读检查工具和 checkout 之外的只读检索工具（网页搜索、网页读取、知识库和后台任务查询），继续拒绝写改文件、创建 Worktree、提交和改变 HEAD；其余 Worker 仍须先进入分配的 Worktree，但只读的 `knowledge_query` / `knowledge_get` 和用于上报 BLOCKED 的 `message_router` 在 Worktree 之前就能用；`review_worker_commit` 与 `merge_branch` 也在 Worker 活跃时提前可见，调用时因缺 Worktree 被明确拒绝。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/worker-settings`、`/superagent-lite/memory` 和 `/superagent-lite/branches` 五个路由；新 Host 的 `connection.admit` 从调用方 fiber 读取 `connection.authentication`，所以这些路由只在注入了该服务的上下文注册，旧 Host 则靠自带的 `requestRejection` 判断走无需该服务的注册路径；两条路径分别在 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 的真实安装包上验证五个端点返回 `200`（`index.js:47-88`）。任务停止由 `stopWorker` 完成；删除任务时先停止并等待 worker 离开运行态。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。插件启动时扫描一次旧记录，之后启动队列在派发、Task 结束、停止任务、Worker 释放名额和保存并发设置时调用 `pumpWorkers`；启动扫描和每次 pump 都会回收失联超过 2 分钟且没有活着 Worker Session 的 `starting`、`running`、`resuming` Task：读 Review 记录、worker 分支与 Worktree HEAD，Review 通过且 HEAD 匹配时落为 `awaiting-merge`，否则落为 `failed` 并释放名额（`index.js:390-394`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`）。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`。`session/event` 把事件交给派发守卫，并在 Worker 的 `turn/end` 触发原始归档。它不决定路由，也不编辑项目文件。
 
@@ -103,7 +103,7 @@ Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_
 
 ### `src/helper-guard.js`
 
-维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`skill`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`skill` 只读取 catalog 中按名加载的 skill 正文，不写文件。`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:4-20`、`src/helper-guard.js:75-119`）。
+维护待认领 helper 队列并安装 guard。记忆对话没有审查范围，保持只读：放行只读工具集（`structured_output`、`read`、`read_image`、`glob`、`grep`、`skill`、`read_page`、`web_fetch`、`web_search`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`）和受限 shell，并强制 Session 的 `read-only` 沙箱；`skill` 只读取 catalog 中按名加载的 skill 正文，不写文件。`knowledge_write` 只对 memory 角色放行。Reviewer 带审查范围时改用审查 guard：除写改工具外全部放行，shell 命令只交给 `review-scope` 检查 git 分支变更（`src/helper-guard.js:5-20`、`src/helper-guard.js:84-131`）。
 
 ### `src/delivery.js`
 
@@ -242,8 +242,10 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并、任意分支删除与运行中/脏工作树/被占用工作树拒绝、remote 选择、面板审查、PR 状态同步，以及只列 `.agents/worktrees` 与 `sl-*` 对象和分开删除 Worktree / 分支。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
-| `test/helper-guard.test.js` | helper 认领、记忆只读工具（含联网检索/网页读取与 `skill`）与 shell 限制、Reviewer 只禁写改工具且放行只读检索。 |
+| `test/helper-guard.test.js` | helper 认领、重载后按 agent 复用认领描述、记忆只读工具（含联网检索/网页读取与 `skill`）与 shell 限制、Reviewer 只禁写改工具且放行只读检索。 |
 | `test/helper-wiring.test.js` | `agent/created` 只为预期 helper 安装只读守卫。 |
+| `test/reactivate.test.js` | 插件重载后为存活 Worker 重建工具与记忆上下文、同一 context 上的重复 apply / 重复注册不叠加、fiber 卸载后同一 context 再 apply 能重建、清掉注册后由 `session/event` 兜底恢复，以及存活 helper 跨实例仍被识别。 |
+| `test/tool-visibility.test.js` | merge 任务首个 step（未建 Worktree）就能看到 `merge_branch`、`review_worker_commit`、`message_router`，误调用得到明确拒绝，`message_router` 可上报 BLOCKED。 |
 | `test/memory.test.js` | memory 角色提示词（含项目 skill 10 个上限与用量、知识/skill 分工，依赖 skill catalog 的 description、按名用 `skill` 工具加载正文，提示词只列 skill 名称和作者且不含路径/description/正文/根目录）、只传记录路径与元信息、Git/非 Git 会话记录可读、全局 + 项目提取、多个命名 skill 写入、项目 skill 超限拒绝且不写字段、批量超限不产生部分 skill、达到上限仍可更新、纠正覆盖与旧 skill 迁移、同名/重复名校验、空结果、transcript 上限、知识工具、注入文本、provider、归档和 schema。 |
 | `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、字段清空、全局知识库去重/片段/纠正/删除、多 skill 目录与作者、项目 skill 用量计数（含非 memory 管理的目录）、项目 skill 10 个上限与超限拒绝、批量超限不写任何新 skill、达到上限仍可更新和写全局 skill、同名冲突不覆盖、旧 skill 迁移、删除、归档和损坏文件拒绝。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写多个 skill 或删除某个 memory skill 后已结束 Worker 不再收到 catalog 更新、非 memory 管理的 skill 变化仍正常送达。 |

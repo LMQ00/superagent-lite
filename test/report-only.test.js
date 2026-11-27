@@ -41,7 +41,7 @@ function harness(repo) {
     inject() {},
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
-    agents: { get: id => agents.get(id) },
+    agents: { get: id => agents.get(id), list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
     subagents: {
       resolveMaxDepth: () => 1,

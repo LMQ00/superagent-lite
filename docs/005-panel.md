@@ -49,7 +49,7 @@
 | 部分 | 行为 |
 | --- | --- |
 | 选择 | Task 标题前的复选框；正在合并或发布的 Task 不可勾选（`client.js:1043-1111`） |
-| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，「排队中」表示正在等待并发名额，「已取消」表示用户停止，三者都不是第七个状态。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有 Worker Session 时，插件启动扫描和派发、Task 结束、停止任务、Worker 释放名额或保存设置触发的队列检查会读 Review、分支和 Worktree HEAD 后把它回收为「未合并」或失败；之后的读取显示回收后的状态而不是一直「未确认」（`client.js:655-662`、`client.js:1072-1074`、`src/launch-queue.js:52-119`、`index.js:317-320`） |
+| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，「排队中」表示正在等待并发名额，「已取消」表示用户停止，三者都不是第七个状态。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有 Worker Session 时，插件启动扫描和派发、Task 结束、停止任务、Worker 释放名额或保存设置触发的队列检查会读 Review、分支和 Worktree HEAD 后把它回收为「未合并」或失败；之后的读取显示回收后的状态而不是一直「未确认」（`client.js:655-662`、`client.js:1072-1074`、`src/launch-queue.js:52-119`、`index.js:390-394`） |
 | 标题 | 标题；没有标题时显示 Task ID |
 | 团队与项目 | Team 名和项目根 |
 | 更新时间 | 存储的 `updatedAt`，缺失时用 `createdAt`，按本地时间 |
