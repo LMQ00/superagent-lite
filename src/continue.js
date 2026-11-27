@@ -16,9 +16,13 @@ function hasCompactionCheckpoint(session) {
   return session.deriveMessages().some(message => message?.source?.kind === 'compact-checkpoint')
 }
 
+function hasObservedCheckpoint(observation) {
+  return observation.events.some(event => event?.data?.source?.kind === 'compact-checkpoint')
+}
+
 /**
  * A compacted worker session may no longer carry the original requirements.
- * Prefer the live session; a cold session is inspected without attaching it.
+ * Prefer the live session; a cold session is observed without attaching it.
  */
 async function requirementsMayBeLost(ctx, sessionId, worker, signal) {
   if (worker?.session) {
@@ -28,11 +32,20 @@ async function requirementsMayBeLost(ctx, sessionId, worker, signal) {
       // Fall through to the persisted-session read below.
     }
   }
-  if (!ctx.sessionQuery?.inspectSession) return false
+  const sessionQuery = ctx.get?.('sessionQuery')
+  if (typeof sessionQuery?.observeSession !== 'function') return false
+  let observation
   try {
-    return await ctx.sessionQuery.inspectSession(sessionId, hasCompactionCheckpoint, signal)
+    observation = await sessionQuery.observeSession(sessionId, { signal })
+    return hasObservedCheckpoint(observation)
   } catch {
     return false
+  } finally {
+    try {
+      observation?.[Symbol.dispose]?.()
+    } catch {
+      // A failed cleanup must not block the resume itself.
+    }
   }
 }
 
