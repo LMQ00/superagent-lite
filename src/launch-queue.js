@@ -3,6 +3,7 @@ import { buildWorkerPrompt } from './worker-prompt.js'
 import { forgetLanding } from './landing.js'
 import { notifyWorkerStatus } from './worker-status.js'
 import { readWorkerSettings, workerAgentOptions } from './worker-settings.js'
+import { activeChildCapacityShortfall, isActiveChildLimit } from './subagent-capacity.js'
 import { interruptWorker } from './worker-control.js'
 import { imageBlocksFromReferences } from './message-images.js'
 import { runCommand } from './process.js'
@@ -13,6 +14,7 @@ import { startActivation } from './subagent-start.js'
 const pumps = new Map()
 const parents = new Map()
 const lifetimes = new Map()
+const capacityWarnings = new Map()
 
 // A Task can stay in `starting`, `running` or `resuming` after its Session is
 // gone; a lost `subagent/end` never moves it to a terminal state. The active
@@ -175,6 +177,20 @@ async function launch(ctx, task) {
     return true
   } catch (error) {
     parents.delete(task.id)
+    // A full Host pool is queueing pressure, not a task failure: put the record
+    // back in the queue so dispatch reports "queued" and a later pump retries.
+    if (isActiveChildLimit(error)) {
+      try {
+        const requeued = await updateTask(task.id, current =>
+          current.status === 'starting' ? { status: 'queued' } : {})
+        if (requeued.status === 'queued') return 'queued'
+      } catch (saveError) {
+        if (saveError.code !== 'ENOENT') {
+          ctx.logger?.warn(`superagent-lite worker queue: ${saveError instanceof Error ? saveError.message : String(saveError)}`)
+        }
+      }
+      return true
+    }
     forgetLanding(task.id)
     const failure = error instanceof Error ? error.message : String(error)
     try {
@@ -193,6 +209,7 @@ async function run(ctx) {
     const now = Date.now()
     if (await reclaimStaleWorkers(ctx, tasks, now)) tasks = await listTasks()
     const settings = await readWorkerSettings()
+    warnCapacityShortfall(ctx, settings.maxWorkers)
     if (occupiedSlots(ctx, tasks, now) >= settings.maxWorkers) return
     const next = tasks
       .filter(task => task.status === 'queued')
@@ -206,8 +223,26 @@ async function run(ctx) {
       throw error
     }
     if (task.status !== 'starting') continue
-    await launch(ctx, task)
+    if (await launch(ctx, task) === 'queued') return
   }
+}
+
+// The Host pool is a separate ceiling from the configured worker limit; warn
+// once per ceiling value so a truncated setting is visible in the Host log.
+function warnCapacityShortfall(ctx, maxWorkers) {
+  const shortfall = activeChildCapacityShortfall(ctx, maxWorkers)
+  if (!shortfall) {
+    capacityWarnings.delete(dataRoot)
+    return
+  }
+  const key = `${shortfall.current}:${shortfall.required}`
+  if (capacityWarnings.get(dataRoot) === key) return
+  capacityWarnings.set(dataRoot, key)
+  ctx.logger?.warn(
+    `superagent-lite worker queue: the Host active-child limit is ${shortfall.current}, `
+    + `below the ${shortfall.required} implied by ${maxWorkers} configured workers; `
+    + 'the official limit stays in force and extra tasks wait as queued',
+  )
 }
 
 export async function pumpWorkers(ctx) {

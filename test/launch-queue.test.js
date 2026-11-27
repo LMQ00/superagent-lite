@@ -10,7 +10,7 @@ await mkdir(tmp, { recursive: true })
 const home = await mkdtemp(join(tmp, 'launch-queue-'))
 process.env.HOME = home
 
-const { createTask, listTasks, readTask, removeTask } = await import('../src/task-store.js')
+const { createTask, listTasks, readTask, removeTask, stopTask } = await import('../src/task-store.js')
 const { defaultWorkerSettings, saveWorkerSettings } = await import('../src/worker-settings.js')
 const { occupiedSlots, pumpWorkers, reclaimStaleWorkers, STALE_ACTIVE_MS } = await import('../src/launch-queue.js')
 
@@ -87,12 +87,13 @@ function task({ status = 'queued', updatedAt = new Date().toISOString(), parentS
   }
 }
 
-function context(activations) {
+function context(activations, { capacity, warnings = [] } = {}) {
   const parent = { id: 'router', session: { id: 'router' } }
   return {
-    logger: { warn() {} },
+    logger: { warn(message) { warnings.push(message) } },
     agents: { get: id => id === 'router' ? parent : undefined },
     subagents: {
+      ...(capacity === undefined ? {} : { config: { maxActiveSubagents: { get: () => capacity } } }),
       resolveMaxDepth: () => 1,
       async startActivation(spec) { activations.push(spec); return { childId: spec.childId } },
     },
@@ -243,4 +244,83 @@ test('a stale running record whose worker branch is gone is failed', async () =>
   const reclaimed = await readTask(stale.id)
   assert.equal(reclaimed.status, 'failed')
   assert.match(reclaimed.failure, /stale running record was reclaimed/)
+})
+
+test('a Host active-child-limit rejection requeues the task and stops the current pump', async () => {
+  await saveWorkerSettings({ workerModel: null, maxWorkers: 10 })
+  const first = task({ title: 'First queued' })
+  const second = task({ title: 'Second queued' })
+  for (const record of [first, second]) assert.equal(await createTask(record), true)
+  const limit = Object.assign(new Error('subagent limit reached (active child limit: 8)'), {
+    code: 'ACTIVATION_LIMIT_REACHED',
+  })
+  const activations = []
+  const ctx = context(activations)
+  let attempts = 0
+  ctx.subagents.startActivation = async () => {
+    attempts += 1
+    throw limit
+  }
+
+  await pumpWorkers(ctx)
+
+  assert.equal(attempts, 1)
+  for (const record of [first, second]) {
+    const requeued = await readTask(record.id)
+    assert.equal(requeued.status, 'queued')
+    assert.equal(requeued.failure, undefined)
+    assert.equal(requeued.finishedAt, undefined)
+  }
+
+  ctx.subagents.startActivation = async spec => {
+    activations.push(spec)
+    return { childId: spec.childId }
+  }
+  await pumpWorkers(ctx)
+  assert.equal((await readTask(first.id)).status, 'starting')
+  assert.equal((await readTask(second.id)).status, 'starting')
+  assert.equal(activations.length, 2)
+})
+
+test('a real activation failure still marks the task failed', async () => {
+  const record = task()
+  assert.equal(await createTask(record), true)
+  const ctx = context([])
+  ctx.subagents.startActivation = async () => { throw new Error('spawn failed') }
+
+  await pumpWorkers(ctx)
+
+  const failed = await readTask(record.id)
+  assert.equal(failed.status, 'failed')
+  assert.equal(failed.failure, 'spawn failed')
+  assert.equal(typeof failed.finishedAt, 'string')
+})
+
+test('failed and cancelled tasks reserve no slot for queued work', async () => {
+  await saveWorkerSettings({ workerModel: null, maxWorkers: 1 })
+  const failed = task({ status: 'failed' })
+  const cancelled = task()
+  const next = task()
+  for (const record of [failed, cancelled, next]) assert.equal(await createTask(record), true)
+  assert.equal((await stopTask(cancelled.id)).task.status, 'cancelled')
+  const activations = []
+  const ctx = context(activations)
+
+  assert.equal(occupiedSlots(ctx, await listTasks()), 0)
+  await pumpWorkers(ctx)
+  assert.equal((await readTask(next.id)).status, 'starting')
+  assert.equal(activations.length, 1)
+})
+
+test('a Host ceiling below the configured worker limit warns once', async () => {
+  await saveWorkerSettings({ workerModel: null, maxWorkers: 10 })
+  const warnings = []
+  const ctx = context([], { capacity: 8, warnings })
+
+  await pumpWorkers(ctx)
+  await pumpWorkers(ctx)
+
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /Host active-child limit is 8/)
+  assert.match(warnings[0], /20 implied by 10 configured workers/)
 })

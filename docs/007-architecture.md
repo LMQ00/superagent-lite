@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-395`、`router.js:1-9`）。
+Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-396`、`router.js:1-9`）。
 
 ```mermaid
 flowchart TB
@@ -43,7 +43,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。注册主体是幂等的 `activate`：`agent/created`、`apply` 末尾对 `ctx.agents.list()` 中存活 agent 的重放和 `session/event` 兜底都调用它，所以插件重载丢掉旧注册后能重建；reviewer/memory helper 的认领描述会被缓存，重载后仍按 helper 处理（`index.js:99-296`、`src/helper-guard.js:34-51`）。它为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。如果 Task 已被面板停止成 `cancelled`，它不会写回 `running`，而是直接中断新 agent。report worker 的守卫放行项目 checkout 内的只读检查工具和 checkout 之外的只读检索工具（网页搜索、网页读取、知识库和后台任务查询），继续拒绝写改文件、创建 Worktree、提交和改变 HEAD；其余 Worker 仍须先进入分配的 Worktree，但只读的 `knowledge_query` / `knowledge_get` 和用于上报 BLOCKED 的 `message_router` 在 Worktree 之前就能用；`review_worker_commit` 与 `merge_branch` 也在 Worker 活跃时提前可见，调用时因缺 Worktree 被明确拒绝。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/worker-settings`、`/superagent-lite/memory` 和 `/superagent-lite/branches` 五个路由；新 Host 的 `connection.admit` 从调用方 fiber 读取 `connection.authentication`，所以这些路由只在注入了该服务的上下文注册，旧 Host 则靠自带的 `requestRejection` 判断走无需该服务的注册路径；两条路径分别在 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 的真实安装包上验证五个端点返回 `200`（`index.js:47-88`）。任务停止由 `stopWorker` 完成；删除任务时先停止并等待 worker 离开运行态。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。插件启动时扫描一次旧记录，之后启动队列在派发、Task 结束、停止任务、Worker 释放名额和保存并发设置时调用 `pumpWorkers`；启动扫描和每次 pump 都会回收失联超过 2 分钟且没有活着 Worker Session 的 `starting`、`running`、`resuming` Task：读 Review 记录、worker 分支与 Worktree HEAD，Review 通过且 HEAD 匹配时落为 `awaiting-merge`，否则落为 `failed` 并释放名额（`index.js:390-394`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`）。
+Host 生命周期入口。注册主体是幂等的 `activate`：`agent/created`、`apply` 末尾对 `ctx.agents.list()` 中存活 agent 的重放和 `session/event` 兜底都调用它，所以插件重载丢掉旧注册后能重建；reviewer/memory helper 的认领描述会被缓存，重载后仍按 helper 处理（`index.js:100-297`、`src/helper-guard.js:34-51`）。它为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。如果 Task 已被面板停止成 `cancelled`，它不会写回 `running`，而是直接中断新 agent。report worker 的守卫放行项目 checkout 内的只读检查工具和 checkout 之外的只读检索工具（网页搜索、网页读取、知识库和后台任务查询），继续拒绝写改文件、创建 Worktree、提交和改变 HEAD；其余 Worker 仍须先进入分配的 Worktree，但只读的 `knowledge_query` / `knowledge_get` 和用于上报 BLOCKED 的 `message_router` 在 Worktree 之前就能用；`review_worker_commit` 与 `merge_branch` 也在 Worker 活跃时提前可见，调用时因缺 Worktree 被明确拒绝。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/worker-settings`、`/superagent-lite/memory` 和 `/superagent-lite/branches` 五个路由；新 Host 的 `connection.admit` 从调用方 fiber 读取 `connection.authentication`，所以这些路由只在注入了该服务的上下文注册，旧 Host 则靠自带的 `requestRejection` 判断走无需该服务的注册路径；两条路径分别在 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 的真实安装包上验证五个端点返回 `200`（`index.js:47-89`）。任务停止由 `stopWorker` 完成；删除任务时先停止并等待 worker 离开运行态。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。插件启动时扫描一次旧记录，之后启动队列在派发、Task 结束、停止任务、Worker 释放名额和保存并发设置时调用 `pumpWorkers`；启动扫描和每次 pump 都会回收失联超过 2 分钟且没有活着 Worker Session 的 `starting`、`running`、`resuming` Task：读 Review 记录、worker 分支与 Worktree HEAD，Review 通过且 HEAD 匹配时落为 `awaiting-merge`，否则落为 `failed` 并释放名额；Host 子代理池满时启动队列把 Task 退回 `queued`，不把这次限额当作失败（`index.js:391-395`、`src/launch-queue.js:54-120`、`src/launch-queue.js:206-228`、`src/subagent-capacity.js`）。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`。`session/event` 把事件交给派发守卫，并在 Worker 的 `turn/end` 触发原始归档。它不决定路由，也不编辑项目文件。
 
@@ -65,7 +65,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/dispatch.js`
 
-校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根和工作区状态：Git 项目要求基础 commit、基础分支和干净工作区；非 Git 目录把当前目录作为项目根并写入 `git: false`，不要求 commit、分支或干净工作区。随后写 `queued` 记录，建立 Session 映射，交给启动队列在名额内启动。启动失败把 Task 标为 `failed`。非 Git 项目拒绝 `mode=merge` 和 `land=true`。`mode=merge` 先按 Router 和 Project 串行，找到有活 Worker Session 的运行中 merge Task 时把目标追加到 `mergeBranches`、把请求记入 `followUps` 并发送 follow-up；没有才创建新 Task。派发时 `images` 指定的本地图片先保存为附件引用并写进 Task，worker 启动时附在首条消息后（`src/dispatch.js:147-283`、`src/launch-queue.js:148-161`）。
+校验参数；`mode=answer` 直接返回未委派，不建 Worktree、不建 Task、不写 Task 记录。其余模式从 Router agent 与 call ID 派生 Task ID，读取项目根和工作区状态：Git 项目要求基础 commit、基础分支和干净工作区；非 Git 目录把当前目录作为项目根并写入 `git: false`，不要求 commit、分支或干净工作区。随后写 `queued` 记录，建立 Session 映射，交给启动队列在插件名额内启动；Host 报 `ACTIVATION_LIMIT_REACHED` 时记录退回 `queued` 并返回排队结果，只有真正无法启动的异常才把 Task 标为 `failed`。非 Git 项目拒绝 `mode=merge` 和 `land=true`。`mode=merge` 先按 Router 和 Project 串行，找到有活 Worker Session 的运行中 merge Task 时把目标追加到 `mergeBranches`、把请求记入 `followUps` 并发送 follow-up；没有才创建新 Task。派发时 `images` 指定的本地图片先保存为附件引用并写进 Task，worker 启动时附在首条消息后（`src/dispatch.js:147-283`、`src/launch-queue.js:150-162`）。
 
 ### `src/worker-status.js`
 
@@ -73,9 +73,9 @@ Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_
 
 ### `src/continue.js`
 
-把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲或已结束时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），report 任务用只读和 `report_task` 规则，仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming`，保留旧 Review 记录；同样的入口也用于 `resuming` 的再次追加和 BLOCKED 后没有 Worktree 的恢复；`queued`/`starting` 返回稍后再试而不投递。已经合并、worker 分支被删除或记录的 Worktree 已不存在的 Task 拒绝恢复。follow-up 先记录，发送失败回滚；`images` 指定的本地图片附在跟进消息文本之后（`src/continue.js:46-68`、`src/continue.js:197-214`、`src/continue.js:262-293`）。
+把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲或已结束时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），report 任务用只读和 `report_task` 规则，仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming`，保留旧 Review 记录；同样的入口也用于 `resuming` 的再次追加和 BLOCKED 后没有 Worktree 的恢复；`queued`/`starting` 返回稍后再试而不投递。已经合并、worker 分支被删除或记录的 Worktree 已不存在的 Task 拒绝恢复。follow-up 先记录，发送失败回滚；`images` 指定的本地图片附在跟进消息文本之后（`src/continue.js:59-81`、`src/continue.js:210-227`、`src/continue.js:275-306`）。
 
-压缩检测读取 Worker Session 的推导消息，找 `compact-checkpoint` 来源；活着的 Worker 直接读 Session，未加载的 Worker 通过 `ctx.sessionQuery.inspectSession` 读取持久化会话，不重新挂载。两个入口都不可用时保守地不回放原需求。
+压缩检测读取 Worker Session 的推导消息，找 `compact-checkpoint` 来源；活着的 Worker 直接读 Session，未加载的 Worker 通过 `ctx.get('sessionQuery')` 取可选服务，用 `observeSession(sessionId, { signal })` 读取持久化会话的 `events`，不重新挂载，返回的租约在 `finally` 里 dispose。取不到服务或 `observeSession` 不可用时保守地不回放原需求（`src/continue.js:15-50`）。
 
 ### `src/worker-prompt.js`
 
@@ -115,15 +115,15 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/message-images.js`
 
-把工具参数里的本地图片路径变成 Host 消息图片块。它从文件签名识别 PNG/JPEG/WebP/GIF，按会话工作目录解析路径，按 Host 的 `imageLimits` 检查单条消息的图片数量和总字节数，再调用 `ctx.attachments.saveImage` 保存并返回 `{ type: 'image', attachment }`（`src/message-images.js:23-96`）。`imagesParameter` 是 `dispatch_worker`、`continue_worker`、`message_router`、`report_task` 和 `review_worker_commit` 共享的参数 schema；`imageBlocksFromReferences` 供启动队列把 Task 记录的附件引用还原成首条消息的图片块（`src/launch-queue.js:148-161`）。工具参数只能传本地路径，不接受 URL、base64 或 GUI 上传的附件。
+把工具参数里的本地图片路径变成 Host 消息图片块。它从文件签名识别 PNG/JPEG/WebP/GIF，按会话工作目录解析路径，按 Host 的 `imageLimits` 检查单条消息的图片数量和总字节数，再调用 `ctx.attachments.saveImage` 保存并返回 `{ type: 'image', attachment }`（`src/message-images.js:23-96`）。`imagesParameter` 是 `dispatch_worker`、`continue_worker`、`message_router`、`report_task` 和 `review_worker_commit` 共享的参数 schema；`imageBlocksFromReferences` 供启动队列把 Task 记录的附件引用还原成首条消息的图片块（`src/launch-queue.js:150-162`）。工具参数只能传本地路径，不接受 URL、base64 或 GUI 上传的附件。
 
 ### `src/merge.js`
 
-实现本地合并和分支删除。`mergeWorkerBranch` 先用共用的 `deliverableHead` 校验交付前提，再检查目标分支、干净 checkout 和 `merge-tree` 预检，切到所选目标，执行 `git merge --no-ff --log -m "Merge branch '<worker branch>'" -m '<task title>'`，让 base branch 历史保留分支的功能性 commit 及其摘要，复核目标后切回，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:31-110`）。同一 Project 根的合并和删除在此排队，共享 checkout 不会被两个合并同时切换；`deleteWorkerBranch` 对仍有 worker 分支的 Task 先移除登记且干净的工作树，再删除分支，运行中、工作树脏、被其他工作树检出或移除后仍存在时拒绝（`src/merge.js:14-27`、`src/merge.js:112-170`）。用户直接指示的合并由 router 派发 `mode=merge` 的 worker，不续派原任务。
+实现本地合并和分支删除。`mergeWorkerBranch` 先用共用的 `deliverableHead` 校验交付前提，再检查目标分支、干净 checkout 和 `merge-tree` 预检，切到所选目标，执行 `git merge --no-ff --log -m "Merge branch '<worker branch>'" -m '<task title>'`，让 base branch 历史保留分支的功能性 commit 及其摘要，复核目标后切回，记录 `merging`、`merged` 或 `delivery-blocked`（`src/merge.js:31-110`）。同一 Project 根的合并和删除在此排队，共享 checkout 不会被两个合并同时切换；`deleteWorkerBranch` 对仍有 worker 分支的 Task 先移除登记且干净的工作树，再删除分支，运行中、工作树脏、被其他工作树检出或移除后仍存在时拒绝；标签页另外提供只删 Worktree、只删分支，以及在同一队列里先删干净 Worktree 再删分支的一步删除，一步删除在分支删除失败时报告 Worktree 已移除而分支仍存在的残留状态（`src/merge.js:14-27`、`src/merge.js:112-170`、`src/merge.js:175-257`）。用户直接指示的合并由 router 派发 `mode=merge` 的 worker，不续派原任务。
 
 ### `src/git-actions.js`
 
-推导每个 Task 的六个面板状态，采纳同一 commit 由另一个 Task 记录的通过审查，读取本地分支、remote 和 `gh` 账号，并执行面板的 `merge`、`publish`、`review` 和 `delete-branch`。非 Git 任务没有分支，读取时不调用 git/gh，也没有这些交付动作；`delete-branch` 不要求分支已合并，运行中的 Task 禁用；删除后返回与重新读取一致的行视图，供面板就地更新。它缓存 PR 事实 30 秒，把精确 PR 状态同步进 Task，用共用的 `deliverableHead` 检查状态、审查和 HEAD，再检查目标或 remote，按 Task 串行化动作；发送 PR 额外检查 `gh` 账号；状态推导和审查索引在 `src/status.js`（`src/git-actions.js:68-702`）。
+推导每个 Task 的六个面板状态，采纳同一 commit 由另一个 Task 记录的通过审查，读取本地分支、remote 和 `gh` 账号，并执行面板的 `merge`、`publish`、`review` 和 `delete-branch`。非 Git 任务没有分支，读取时不调用 git/gh，也没有这些交付动作；`delete-branch` 不要求分支已合并，运行中的 Task 禁用；删除后返回与重新读取一致的行视图，供面板就地更新。它缓存 PR 事实 30 秒，把精确 PR 状态同步进 Task，用共用的 `deliverableHead` 检查状态、审查和 HEAD，再检查目标或 remote，按 Task 串行化动作；发送 PR 额外检查 `gh` 账号；状态推导和审查索引在 `src/status.js`（`src/git-actions.js:68-729`）。
 
 ### `src/github.js`
 
@@ -147,7 +147,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，也可单独筛出「排队中」的 Task，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 stop、merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。停止对运行中或排队中的行出现，成功后按 Host 返回的 `cancelled` 状态就地更新该行并显示「已取消」标签，不弹窗、不重新加载列表；删除任务先停止再移除记录，弹窗写明运行中的 worker 会被先停止。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；凡是还有 worker 分支的行都有删除分支按钮，运行中禁用，确认后按 Host 返回的视图就地更新该行并隐藏按钮。记忆系统标签页展示全局/项目记忆、全局/项目 skill 和全局知识库，顶部搜索框按关键词本地过滤已加载的记忆字段、skill 名字/description/正文和知识条目，不发新请求；分组使用带标题、说明和计数的卡片，长字段和知识条目默认截断，skill 默认折叠摘要、点击展开正文；并支持确认后删除记忆字段、memory 管理的 skill 或知识条目；分支 / worktree 标签页在选中时读取本插件创建的 Worktree 和 `sl-*` 分支，展示分支、路径、任务和状态，提供分开的删除 Worktree / 删除分支确认弹窗，成功后就地更新该行；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。只读桌面运行时会显示「桌面版内置运行时只读，任务卡补丁不可用」和诊断路径。面板不显示设置分组（`client.js:1-1604`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，也可单独筛出「排队中」的 Task，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 stop、merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。停止对运行中或排队中的行出现，成功后按 Host 返回的 `cancelled` 状态就地更新该行并显示「已取消」标签，不弹窗、不重新加载列表；删除任务先停止再移除记录，弹窗写明运行中的 worker 会被先停止。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；凡是还有 worker 分支的行都有删除分支按钮，运行中禁用，确认后按 Host 返回的视图就地更新该行并隐藏按钮。记忆系统标签页展示全局/项目记忆、全局/项目 skill 和全局知识库，顶部搜索框按关键词本地过滤已加载的记忆字段、skill 名字/description/正文和知识条目，不发新请求；分组使用带标题、说明和计数的卡片，长字段和知识条目默认截断，skill 默认折叠摘要、点击展开正文；并支持确认后删除记忆字段、memory 管理的 skill 或知识条目；分支 / worktree 标签页在选中时读取本插件创建的 Worktree 和 `sl-*` 分支，展示分支、路径、任务和状态，提供分开的删除 Worktree / 删除分支确认弹窗，成功后就地更新该行；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。只读桌面运行时会显示「桌面版内置运行时只读，任务卡补丁不可用」和诊断路径。面板不显示设置分组（`client.js:1-1621`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
@@ -167,7 +167,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 | 转换 | 写者 |
 | --- | --- |
-| → `starting` | `src/dispatch.js` |
+| → `queued`，创建记录 | `src/dispatch.js` |
+| → `queued`，Host 子代理池满 | `src/launch-queue.js` |
+| → `starting` | `src/launch-queue.js` |
 | → `running`，agent 创建后 | `index.js` |
 | → `running`，Worktree 保存后 | `src/worktree-tool.js` |
 | → `resuming` | `src/continue.js` |
@@ -201,19 +203,19 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/continue.js` | 把 follow-up 送给运行中或空闲 Worker，处理恢复记录和发送失败回滚。 |
 | `src/delivery.js` | 合并与发送 PR 共用的状态、审查和 HEAD 前置校验。 |
 | `src/dispatch.js` | 校验派发并识别 Git/非 Git 项目；`mode=answer` 直接返回，`change`/`report` 创建 Task 记录并启动 Worker Session；非 Git 项目拒绝 `merge`/`land`；`mode=merge` 把新请求追加给运行中的 merge worker，没有才新派发。 |
-| `src/git-actions.js` | 构建面板视图（非 Git 任务不调用 git/gh），执行合并、发送 PR、审查和删除分支动作；为「分支 / worktree」标签页推导本插件创建的 Worktree 与 `sl-*` 分支，并执行只删 Worktree 或只删分支的动作。 |
+| `src/git-actions.js` | 构建面板视图（非 Git 任务不调用 git/gh），执行合并、发送 PR、审查和删除分支动作；为「分支 / worktree」标签页推导本插件创建的 Worktree 与 `sl-*` 分支，并执行只删 Worktree、一步删除 Worktree 和分支或只删分支的动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper；记忆对话保持只读，Reviewer 只禁写改工具与改变分支的 git 命令。 |
 | `src/host-patch.js` | 插件启动时从运行入口解析已安装的 `@deepseek-ai/dsh`，对 `0.2.2-rc.1` 到 `0.2.3-alpha.1` 的 npm Host 自动补打客户端任务卡补丁与子代理 `promptSource` 补丁；子代理补丁按版本目标在进程内逐条比对片段后一次性写入，不调用外部 `patch`，片段缺失或命中不唯一时不改任何文件；rc.1 使用仅 bundle 的目标，`0.2.3-alpha.1` 只补客户端并报告 `native`；已打过时不动；检测到 dsh 目录位于只读 `.asar` 时不写入并返回 `readonly` 给面板；版本/布局不匹配或片段失败只写告警，不阻断启动；DSH-go 不自动修改。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
-| `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型，启动前重读 Task 避免停止后仍启动，并向 Router 通知排队任务已开始；启动扫描和每次 pump 回收失联超过 2 分钟且没有活 Session 的 `starting`/`running`/`resuming` Task，按 Review、分支和 Worktree HEAD 落为 `awaiting-merge` 或 `failed`。 |
+| `src/launch-queue.js` | 按插件 worker 上限启动或排队 Worker；Host 子代理池满（`ACTIVATION_LIMIT_REACHED`）时把 Task 退回 `queued` 而不是记失败，并结束本轮 pump；新启动的 Worker 使用保存的模型，启动前重读 Task 避免停止后仍启动，并向 Router 通知排队任务已开始；启动扫描和每次 pump 回收失联超过 2 分钟且没有活 Session 的 `starting`/`running`/`resuming` Task，按 Review、分支和 Worktree HEAD 落为 `awaiting-merge` 或 `failed`。 |
 | `src/message-images.js` | 把工具参数里的本地图片保存为 Host 附件引用，并生成消息图片块；校验格式、数量和字节上限。 |
-| `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）、分支删除，以及标签页使用的只删干净 Worktree、只删无 Worktree 检出分支两个动作。 |
+| `src/merge.js` | 实现本地 `--no-ff --log` 合并（保留分支提交摘要）、分支删除，以及标签页使用的只删干净 Worktree、只删无 Worktree 检出分支、在同一队列里先删干净 Worktree 再删分支三个动作。 |
 | `src/merge-tool.js` | merge worker 的 `merge_branch` 工具：把记录的目标分支合入自己的 worktree 分支，冲突留给 Worker 解决。 |
 | `src/memory.js` | 定义记忆字段、注入文本、memory 角色提示词、多 skill 提取流程、面板读取/删除视图、全局知识库查询/读取/写入工具和轮次归档；提示词写明项目 skill 10 个上限和「知识进知识库、skill 只放固定流程」的分工；触发 memory 时写会话记录并把路径、元信息、项目 skill 已用数量与 10 个上限以及逐条 skill 名称和作者交给 memory，路径、description、正文和 skill 根目录都不注入，需要时用 `skill` 工具按名加载；提取时先批量写项目 skill，超限在写任何字段前失败，再写全局 skill 和记忆字段；提供 `memoryAuthoredSkillNames` 按 frontmatter 作者汇总 memory skill，并提供字段、skill 和知识删除视图。 |
 | `src/memory-store.js` | 保存全局/项目记忆、全局知识库、全局/项目 skill 文件、原始归档和 memory 读取的会话记录，并执行字段校验与原子写入；每个 skill 以名字独立成目录并写 `author: memory`，冲突不覆盖，按作者扫描 memory skill；`writeSkills` 在锁内整批校验并写入，项目 skill 超过 `MAX_PROJECT_SKILLS = 10` 时拒绝且不产生部分文件，`projectSkillCount` 供提示词报告当前用量；支持清空记忆字段和按名字删除 skill。 |
 | `src/memory-panel.js` | 提供 owner-only 记忆端点：GET 返回全局记忆、所请求项目的记忆、全局/项目 skill 和全局知识库条目；DELETE 校验删除目标并删除单个记忆字段、memory 管理的 skill 或知识条目。 |
-| `src/branches-panel.js` | 提供 owner-only 分支 / Worktree 端点：GET 返回本插件创建的 Worktree 与 `sl-*` 分支；DELETE 按 `kind` 分开删除 Worktree（保留分支）或分支（要求没有 Worktree 检出）。 |
+| `src/branches-panel.js` | 提供 owner-only 分支 / Worktree 端点：GET 返回本插件创建的 Worktree 与 `sl-*` 分支；DELETE 按 `kind` 删除 Worktree（保留分支）、一步删除 Worktree 和分支，或删除没有 Worktree 检出的分支。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务；Git 项目校验 HEAD 和 checkout，非 Git 项目直接交付。 |
@@ -222,6 +224,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射，按锁把运行中或排队中的 Task 写成 `cancelled` 终态并保留记录；旧取消墓碑仍可读取。 |
 | `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/skill-catalog.js` | 稳定已运行 Worker/Reviewer 会话的 skill catalog，按 skill 文件的 `author: memory` 拦截由 memory skill 新增、修改或删除构成的 catalog 更新；以 `prepend` 注册在预设 catalog 监听器外层，才能看到并过滤它们在 `next()` 之后追加的 catalog；作者缺失按普通 skill 处理。 |
+| `src/subagent-capacity.js` | 读取 Host 的 `maxActiveSubagents`，与面板 worker 上限比较并只做容量缺口告警；提供 Host 限额错误判别，不改写官方设置。 |
 | `src/subagent-start.js` | 按已安装 subagent 服务选择启动请求形状：`0.2.2-rc.1` 把任务嵌套在 `request` 下，`0.2.2-rc.2` 到 `0.2.3-alpha.1` 使用平铺 spec。 |
 | `src/turn-guard.js` | 要求 Router 每个输入一个派发、续派或状态查询决定，并发送提醒。 |
 | `src/validation.js` | 校验派发参数。 |
@@ -237,9 +240,9 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | 测试 | 覆盖什么 |
 | --- | --- |
 | `test/board.test.js` | owner 准入、公开字段投影、只读桌面运行时的 `host` 诊断与普通安装的隐藏、排队/停止/取消标记、推导面板状态、停止动作、先停止再删除、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、只读桌面运行时提示与诊断路径、排队标记与名额释放后的就地更新、会话导航、停止运行中/排队中任务、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、设置标签页、记忆标签页的搜索过滤/空状态/折叠展开/长文本截断、多 skill 展示/删除和错误，以及分支 / worktree 标签页的只读列表、两类删除确认、就地更新和拒绝提示。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、只读桌面运行时提示与诊断路径、排队标记与名额释放后的就地更新、会话导航、停止运行中/排队中任务、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、设置标签页、记忆标签页的搜索过滤/空状态/折叠展开/长文本截断、多 skill 展示/删除和错误，以及分支 / worktree 标签页的只读列表、删除 Worktree、一步删除 Worktree 和分支、删除分支的确认、就地更新和拒绝提示。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
-| `test/git-actions.test.js` | 推导状态、审查采纳、本地合并、任意分支删除与运行中/脏工作树/被占用工作树拒绝、remote 选择、面板审查、PR 状态同步，以及只列 `.agents/worktrees` 与 `sl-*` 对象和分开删除 Worktree / 分支。 |
+| `test/git-actions.test.js` | 推导状态、审查采纳、本地合并、任意分支删除与运行中/脏工作树/被占用工作树拒绝、remote 选择、面板审查、PR 状态同步，以及只列 `.agents/worktrees` 与 `sl-*` 对象、分别删除 Worktree / 分支和一步删除 Worktree 与分支（含孤儿对象与分支删除失败残留）。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
 | `test/helper-composition.test.js` | 已安装 DSH 服务下的 helper 边界和只读沙箱。 |
 | `test/helper-guard.test.js` | helper 认领、重载后按 agent 复用认领描述、记忆只读工具（含联网检索/网页读取与 `skill`）与 shell 限制、Reviewer 只禁写改工具且放行只读检索。 |
@@ -250,7 +253,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/memory-store.test.js` | 全局和项目记忆读写、按项目隔离、字段校验、字段清空、全局知识库去重/片段/纠正/删除、多 skill 目录与作者、项目 skill 用量计数（含非 memory 管理的目录）、项目 skill 10 个上限与超限拒绝、批量超限不写任何新 skill、达到上限仍可更新和写全局 skill、同名冲突不覆盖、旧 skill 迁移、删除、归档和损坏文件拒绝。 |
 | `test/memory-wiring.test.js` | 最终报告触发提取、Worker 注入项目 + 全局记忆、知识工具只读/写入边界、Router 只注入全局记忆、归档、提取失败不影响报告，以及 memory 写多个 skill 或删除某个 memory skill 后已结束 Worker 不再收到 catalog 更新、非 memory 管理的 skill 变化仍正常送达。 |
 | `test/memory-panel.test.js` | 记忆端点的 owner 准入、项目根校验、全局/项目记忆、全局/项目 skill 与全局知识库返回、字段/skill/知识删除、skill 删除参数校验和存储失败，以及删除后查询不再返回。 |
-| `test/branches-panel.test.js` | 分支 / Worktree 端点的 owner 准入、方法限制、删除目标校验（kind/projectRoot/branch/path）、两类删除成功和拒绝映射。 |
+| `test/branches-panel.test.js` | 分支 / Worktree 端点的 owner 准入、方法限制、删除目标校验（kind/projectRoot/branch/path）、删除 Worktree、一步删除 Worktree 和分支、删除分支的成功和拒绝映射。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话按作者拦截多个 memory skill 的新增、修改和删除，其他 skill 变化和 Router 会话不受影响。 |
 | `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁在 `0.2.2-rc.2` 到 `0.2.2-rc.5`、`0.2.3-alpha.1`、`0.2.2-rc.1` 和 DSH-go 形态下的检查、旧补丁升级、应用、重复应用、回滚，以及版本/布局/片段不匹配和区间外版本的拒绝；真实安装用例从 `DSH_INSTALL_DIR` 解析，rc.2 到 rc.5 与 alpha.1 共用同一源码补丁。 |
 | `test/host-patch-auto.test.js` | 插件启动时自动补打：从入口或 `DSH_INSTALL_DIR` 解析 Host、客户端与子代理补丁的应用/重复应用、rc.1 的仅 bundle 子代理目标、`0.2.3-alpha.1` 子代理的 `native` 跳过、版本不支持或片段缺失/重复时只告警不写入、只读 `app.asar` 返回 `readonly` 且不尝试写入、无法解析时不动、测试进程不碰已安装 Host，以及真实 subagent 包（嵌套或提升布局）副本上的补丁与幂等。 |
@@ -276,7 +279,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射、停止为 `cancelled` 终态与幂等、路径形 ID 拒绝。 |
 | `test/turn-guard.test.js` | 每个输入一个决定、状态查询决定、状态通知不算输入、提醒预算、idle 投递和中止处理。 |
 | `test/validation.test.js` | `mode` 必填、`answer` 直接返回，以及 change/report/merge 的参数规则和 `worktreeName` 校验。 |
-| `test/launch-queue.test.js` | 失联 `starting`/`running`/`resuming` 的回收条件、`awaiting-merge`/基于交付事实的失败判定、幂等、活或新鲜的 Worker 不动、名额释放与 pump 启动排队任务。 |
+| `test/launch-queue.test.js` | 失联 `starting`/`running`/`resuming` 的回收条件、`awaiting-merge`/基于交付事实的失败判定、幂等、活或新鲜的 Worker 不动、名额释放与 pump 启动排队任务、Host 限额时回排队而非失败、真实启动异常仍失败、失败/取消任务不占名额和容量缺口告警。 |
 | `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒；catalog 守卫注册在最外层，能过滤预设监听器在 `next()` 之后追加的 memory skill 更新；启动时扫描失联记录。 |
 | `test/worker-prompt.test.js` | change、report 与非 Git change 任务消息、段顺序和范围限制。 |
 | `test/worker-status.test.js` | 状态分类、`worker_status` 按 Router 隔离和单任务查询、停止通知、旧取消墓碑隐藏和通知来源。 |
@@ -328,7 +331,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `/superagent-lite/git` | `POST` | 执行 `merge`、`publish`、`review` 或 `delete-branch` |
 | `/superagent-lite/worker-settings` | `GET`、`POST` | 读取 worker 设置和模型目录，或保存 worker 模型与并发上限 |
 | `/superagent-lite/memory` | `GET`、`DELETE` | GET 返回全局记忆、所选项目的项目记忆、全局/项目 skill 和全局知识库条目；DELETE 按 `kind`（memory/skill/knowledge）、`scope`、`field`/`name` 或知识 `id` 删除单个内容（项目作用域另需 `projectRoot`） |
-| `/superagent-lite/branches` | `GET`、`DELETE` | GET 返回本插件在 `.agents/worktrees/` 下创建的 Worktree 和 `sl-*` 分支；DELETE 用 `kind=worktree`（带绝对 `path`）只移除 Worktree、保留分支，或用 `kind=branch` 删除没有 Worktree 检出的 `sl-*` 分支 |
+| `/superagent-lite/branches` | `GET`、`DELETE` | GET 返回本插件在 `.agents/worktrees/` 下创建的 Worktree 和 `sl-*` 分支；DELETE 用 `kind=worktree`（带绝对 `path`）只移除 Worktree、保留分支，用 `kind=worktree-and-branch` 一步移除 Worktree 并删除其分支，或用 `kind=branch` 删除没有 Worktree 检出的 `sl-*` 分支 |
 
 | 接口 | 值 |
 | --- | --- |
