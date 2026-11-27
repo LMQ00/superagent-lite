@@ -41,6 +41,25 @@ test('board refuses unauthenticated and non-owner readers without reading disk',
   }
 })
 
+test('board exposes the read-only desktop runtime diagnostic to the owner', async () => {
+  const dshDir = '/Applications/DSH.app/Contents/Resources/app.asar/node_modules/@deepseek-ai/dsh'
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {}, () => [],
+    undefined, undefined, undefined, { dshDir, readonly: true, subagent: { state: 'readonly' }, chat: { state: 'readonly' } },
+  )
+  const value = JSON.parse((await request(handler)).body)
+  assert.deepEqual(value.host, { readonly: true, dshDir })
+  assert.deepEqual(value.tasks, [])
+})
+
+test('board hides the host diagnostic on a writable npm install', async () => {
+  const handler = createBoardHandler(
+    { admit: () => ({ peer: { principal: { kind: 'owner' } } }) }, {}, () => [],
+    undefined, undefined, undefined, { dshDir: '/usr/lib/node_modules/@deepseek-ai/dsh', subagent: { state: 'already' }, chat: { state: 'already' } },
+  )
+  assert.equal(JSON.parse((await request(handler)).body).host, undefined)
+})
+
 test('board lists only its public view fields to the owner and flags unrecovered tasks', async () => {
   const rows = [
     { id: 'a', task: 'private details', mode: 'report', teamId: 'a', status: 'running', workerSessionId: 'w1', land: true, landAuthorizedAt: '2026-01-01T00:00:00.000Z' },

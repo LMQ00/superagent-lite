@@ -166,7 +166,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 | 审查 | `review.approved === true`，且 worker 分支当前 HEAD 等于 `review.head`（`src/delivery.js:7-13`） |
 | 文件策略 | 动作执行时解析出的 Session 文件策略必须是 `danger-full-access`（`src/git-actions.js:112-116`） |
 | 任务模式 | report 任务没有 Git 操作（`src/git-actions.js:570`） |
-| Task 记录 | 面板 Git 动作端点只接受 16 位任务 ID 和 `merge`、`publish`、`review`、`delete-branch`；分支 / worktree 标签页另有 `GET`/`DELETE /superagent-lite/branches`（`kind=worktree|branch`）；停止任务走 `/superagent-lite/tasks` 的 `POST`（`action=stop`），任务删除走同一路径的 `DELETE`（`src/board.js:23-120`、`src/board.js:173-232`、`src/branches-panel.js`） |
+| Task 记录 | 面板 Git 动作端点只接受 16 位任务 ID 和 `merge`、`publish`、`review`、`delete-branch`；分支 / worktree 标签页另有 `GET`/`DELETE /superagent-lite/branches`（`kind=worktree|branch`）；停止任务走 `/superagent-lite/tasks` 的 `POST`（`action=stop`），任务删除走同一路径的 `DELETE`（`src/board.js:23-120`、`src/board.js:175-234`、`src/branches-panel.js`） |
 
 合并与发送 PR 共用 `deliverableHead`：状态、Worktree、审查和 HEAD 按同一套判定；执行前再用 `assertStillDeliverable` 复核状态与 Review。发送 PR 只额外要求 `gh auth status --hostname github.com` 成功，且所选 remote 指向 GitHub 仓库；写权限由 push 本身验证（`src/delivery.js:7-19`、`src/git-actions.js:429-441`）。
 
@@ -190,7 +190,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 - Task 已结束 Worker 工作（`awaiting-merge` 或 `awaiting-ci`）、有 worker 分支和 Worktree、`review.approved === true`、当前 HEAD 等于 `review.head`、文件策略为 full access。
 - 唯一额外条件是 GitHub：`gh auth status --hostname github.com` 必须成功，所选 remote 的 fetch 与 push URL 必须指向同一 GitHub 仓库；写权限由 push 本身验证（`src/git-actions.js:429-441`）。
-- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:246-254`、`client.js:968-999`）。
+- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:246-254`、`client.js:980-1011`）。
 - 已有精确匹配且打开的 PR 时复用；已有精确匹配且已合并的 PR 时记为 `merged`；已关闭时拒绝（`src/git-actions.js:442-452`）。
 - 准备阶段用 `assertStillDeliverable` 复核状态与 Review 后把 Task 标为 `publishing`，把 reviewed HEAD 推送到所选 remote 的 push URL 和 `refs/heads/<worker branch>`，再创建 base 为 `task.baseBranch` 的 PR（`src/git-actions.js:453-459`、`src/github.js:64-99`）。
 - PR 打开后 Task 标为 `awaiting-ci`；发送命令失败时标为 `delivery-blocked`。GitHub 写入不自动重试（`src/git-actions.js:471-474`）。
@@ -210,7 +210,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 - 面板的 merge、publish、review 和 delete-branch 按 Task ID 串行；同一 Task 的重复动作不会并行执行（`src/git-actions.js:87-96`、`src/git-actions.js:564-579`）。
 - 删除 Task 与同一 Task 的状态写入在 `src/task-store.js` 中按记录串行，先停止、等待再删；第二次删除返回未找到。停止与启动队列也共用同一 Task 锁，停止写入 `cancelled` 后队列不会再把该 Task 改为 `starting`（`src/task-store.js:95-146`）。
-- 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:207`、`src/board.js:226`）。
+- 面板一次 Git 动作的 HTTP 超时为 15 分钟，请求体上限 4 KB（`src/board.js:209`、`src/board.js:228`）。
 
 ## 版本
 
