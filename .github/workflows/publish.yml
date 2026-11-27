@@ -1,0 +1,119 @@
+# 发布 @lmq00/superagent-lite 到 npm（维护者说明只保留在本文件）。
+#
+# 触发：
+#   GitHub → Actions → Publish npm → Run workflow，分支选 master，输入版本号。
+#   工作流只接受 master；concurrency 保证同一时间只有一个发布在跑。
+#
+# 版本号：
+#   输入不带 v 前缀的 semver。常规递增：修复 1.0.0→1.0.1，功能 1.1.0，破坏性 2.0.0；
+#   预发布 1.1.0-rc.1。npm 上已存在的版本不能重复发布。如果 package.json 已经是目标版本，
+#   工作流不会产生空的版本提交，只打 tag；这种用法只适合该版本还没发布成功的时候。
+#   流程：npm version 写入 package.json → node --test test/*.test.js → 提交并打 v<版本> tag
+#   → npm publish → 原子推送提交和 tag 到 master。
+#
+# GitHub 配置：
+#   Secret：Settings → Secrets and variables → Actions → New repository secret，
+#   名称 NPM_TOKEN，值是 npm granular access token。
+#   npm 发布要求账号开启 2FA；CI 无法输入 OTP，token 必须勾选 Bypass two-factor authentication，
+#   scope 选 @lmq00，权限选 Read and write packages；否则 publish 会因 401/2FA 失败。
+#   提交和 tag 用 Actions 自动的 GITHUB_TOKEN（permissions: contents: write），不需要额外 Secret。
+#   Settings → Actions → General 的 Workflow permissions 需允许读写；master 若有分支保护，
+#   需允许 GitHub Actions 推送，否则最后一步会失败（此时 npm 上可能已有该版本）。
+#
+# 本地等价手动发布：
+#   git checkout master && git pull --ff-only
+#   VERSION=1.0.1
+#   npm version "$VERSION" --no-git-tag-version --allow-same-version
+#   node --test test/*.test.js
+#   npm login   # 输入 2FA；也可用 NODE_AUTH_TOKEN=<granular token> npm publish
+#   npm publish --access public
+#   git add package.json
+#   git commit -m "chore(release): v$VERSION"   # package.json 没变时跳过
+#   git tag -a "v$VERSION" -m "v$VERSION"
+#   git push origin master --follow-tags
+#
+# 测试必须用 node --test test/*.test.js，不要裸跑 npm test 或 node --test，
+# 它们会扫描 tmp/ 下的遗留测试并失败。不要把 NPM_TOKEN 写进仓库、.npmrc 或日志。
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（不带 v 的 semver，如 1.0.1；不能是 npm 上已存在的版本）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require master branch
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "master" ]; then
+            echo "::error::Publish must be triggered from master, got ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Set version
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Version must be a semver without the v prefix, for example 1.0.1"
+            exit 1
+          fi
+          npm version "${VERSION}" --no-git-tag-version --allow-same-version
+          echo "version=$(node -p "require('./package.json').version")" >> "${GITHUB_OUTPUT}"
+
+      - name: Run tests
+        run: node --test test/*.test.js
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            echo "::error::Tag v${VERSION} already exists; choose another version"
+            exit 1
+          fi
+          if git diff --quiet -- package.json; then
+            echo "package.json is already at ${VERSION}; skipping the version commit"
+          else
+            git add package.json
+            git commit -m "chore(release): v${VERSION}"
+          fi
+          git tag -a "v${VERSION}" -m "v${VERSION}"
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+      - name: Push commit and tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "refs/tags/v${VERSION}"
