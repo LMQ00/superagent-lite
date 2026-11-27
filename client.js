@@ -78,6 +78,9 @@ window.__ModuleLoader__.load({
         deleteWorktreeHint: 'Removes this worktree and keeps its worker branch. This cannot be undone.',
         deleteBranchHint: 'Deletes this worker branch. Its worktree is already removed; the branch cannot be restored.',
         branchesDeleted: 'Done.', branchesDeleteFailed: 'Could not delete it.',
+        hostReadonlyTitle: 'Desktop runtime is read-only; task card patch unavailable',
+        hostReadonlyBody: 'This DSH runs from a read-only app.asar, so the plugin cannot patch its bundled Chat client or subagent package. Dispatch, review and report messages will appear as plain text; tasks, reviews and delivery still work.',
+        hostReadonlyDiagnostic: 'Diagnostic: runtime directory {dir}',
       },
       zh: {
         title: '项目任务', refresh: '刷新', loading: '正在加载任务…',
@@ -153,6 +156,9 @@ window.__ModuleLoader__.load({
         deleteWorktreeHint: '会移除这个 worktree，保留对应的 worker 分支；此操作无法恢复。',
         deleteBranchHint: '会删除这个 worker 分支；对应 worktree 已移除，分支删除后无法恢复。',
         branchesDeleted: '操作已完成。', branchesDeleteFailed: '无法删除，请重试。',
+        hostReadonlyTitle: '桌面版内置运行时只读，任务卡补丁不可用',
+        hostReadonlyBody: '当前 DSH 从只读的 app.asar 运行，插件无法改写内置的 Chat 客户端和子代理包，派发、审查和报告消息会显示为普通文本；任务执行、审查和交付不受影响。',
+        hostReadonlyDiagnostic: '诊断：运行时目录 {dir}',
       },
     }
     // Page, rows and controls use only `--dsw-alias-*` theme tokens.
@@ -189,6 +195,10 @@ window.__ModuleLoader__.load({
       .sl-hint{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary)}
       .sl-error{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
       .sl-notice{margin:0;padding:8px 12px;border-radius:10px;font-size:13px;line-height:20px;color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);overflow-wrap:anywhere}
+      .sl-alert{display:flex;flex-direction:column;gap:2px;margin:0;padding:10px 12px;border:0.5px solid color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,transparent);border-radius:10px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 10%,transparent);overflow-wrap:anywhere}
+      .sl-alert strong{font-weight:600;color:var(--dsw-alias-state-warn-primary)}
+      .sl-alert p{margin:0;color:var(--dsw-alias-label-secondary)}
+      .sl-alert .sl-alert__diagnostic{margin-top:2px;font-family:var(--dsw-font-mono,monospace);font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
       .sl-groups{display:flex;flex-direction:column;gap:24px;min-width:0}
       .sl-group{display:flex;flex-direction:column;gap:8px;min-width:0}
       .sl-group__title{display:flex;align-items:baseline;gap:8px;margin:0;font-size:13px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-secondary)}
@@ -416,6 +426,7 @@ window.__ModuleLoader__.load({
       const [batch, setBatch] = useState('')
       const [batchPending, setBatchPending] = useState(false)
       const [batchError, setBatchError] = useState('')
+      const [host, setHost] = useState(undefined)
       const active = useRef(null)
       const headingId = useId()
       const queuedPending = phase === 'ready' && tasks.some(task => task.queued === true)
@@ -435,6 +446,7 @@ window.__ModuleLoader__.load({
             if (controller.signal.aborted) return
             const rows = value.tasks.filter(task => typeof task?.id === 'string')
             setTasks(rows)
+            setHost(value.host?.readonly === true ? value.host : undefined)
             setTeam(current => rows.some(task => task.teamId === current) ? current : '')
             setProject(current => rows.some(task => task.projectRoot === current) ? current : '')
             setMemoryProject(current => rows.some(task => task.projectRoot === current)
@@ -1540,6 +1552,11 @@ window.__ModuleLoader__.load({
             }, t('branchesTab'))),
           taskView
             ? h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': tasksTabId },
+              host?.readonly === true && h('div', { className: 'sl-alert', role: 'status' },
+                h('strong', null, t('hostReadonlyTitle')),
+                h('p', null, t('hostReadonlyBody')),
+                typeof host.dshDir === 'string' && host.dshDir &&
+                  h('p', { className: 'sl-alert__diagnostic' }, t('hostReadonlyDiagnostic', { dir: host.dshDir }))),
               filters,
               selection,
               phase === 'loading' && h('p', { className: 'sl-hint', role: 'status' }, t('loading')),

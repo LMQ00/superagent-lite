@@ -13,7 +13,7 @@ function jsonError(res, status, message) {
   res.writeHead(status, JSON_HEADERS).end(JSON.stringify({ error: message }))
 }
 
-export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask, stop) {
+export function createBoardHandler(connection, agents, tasks = listTasks, git, remove = removeTask, stop, host) {
   return async (req, res) => {
     const admission = connection.admit(req)
     if ('rejection' in admission || admission.peer.principal.kind !== 'owner') {
@@ -125,6 +125,7 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git, r
     }
     const records = await tasks()
     const views = git ? await git.list(records, AbortSignal.timeout(30_000)).catch(() => undefined) : undefined
+    const hostPatch = typeof host === 'function' ? host() : host
     const rows = records.map(record => {
       const { id, title, teamId, projectRoot, mode, status, workerSessionId, parentSessionId, updatedAt, createdAt, prUrl, failure, land, landAuthorizedAt } = record
       const view = views?.get(id)
@@ -145,7 +146,10 @@ export function createBoardHandler(connection, agents, tasks = listTasks, git, r
       return view?.git ? { ...row, git: view.git } : row
     })
     res.writeHead(200, JSON_HEADERS)
-    res.end(JSON.stringify({ tasks: rows }))
+    res.end(JSON.stringify({
+      tasks: rows,
+      ...(hostPatch?.readonly === true ? { host: { readonly: true, dshDir: hostPatch.dshDir } } : {}),
+    }))
   }
 }
 

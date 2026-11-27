@@ -1,6 +1,6 @@
 # 006 部署
 
-使用这份文档安装、配置、升级和排障 Superagent 轻量版 bundle。它建立在 [001 领域模型](001-domain.md) 到 [005 界面](005-panel.md) 之上。
+使用这份文档安装、配置、发布、升级和排障 Superagent 轻量版 bundle。它建立在 [001 领域模型](001-domain.md) 到 [005 界面](005-panel.md) 之上。
 
 ## 运行什么
 
@@ -37,13 +37,13 @@ Bundle 的 `engines.dsh` 是 `>=0.2.2-rc.1 <=0.2.3-alpha.1`，Host 版本不满�
 | --- | --- | --- |
 | Bundle | `>=0.2.2-rc.1 <=0.2.3-alpha.1` | `dsh --version`；`package.json` 的 `engines.dsh` |
 | 客户端任务卡补丁 | npm `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5` / `0.2.3-alpha.1`（源码 + bundle，共用一个 target）、`0.2.2-rc.1`（仅 bundle）、DSH-go 的 `0.2.2-rc.1` Host | `node scripts/dsh-client-ui-chat-agent-message-card.mjs --check` 输出匹配的版本、布局和待改文件；版本或片段不匹配时退出码 1 且不写入 |
-| 子代理 promptSource 补丁 | `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle，单独的 diff）、`0.2.3-alpha.1` 不需要补丁 | 对 `0.2.2-rc.2` 到 `0.2.2-rc.5` 运行 `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch`（rc.1 用 `scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch`）成功；rc.2 到 rc.5 补丁后 `src/manager.ts` 与 `lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }`，rc.1 的 `lib/index.js` 与 `lib/types/manager.js` 有一处 `request.promptSource ?? { kind: 'user' }`；`0.2.3-alpha.1` 的 `src/manager.ts` 已用 `createAgentMessage` 记录初始任务，插件只读检测并报告 `native` |
+| 子代理 promptSource 补丁 | `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle，单独的 diff）、`0.2.3-alpha.1` 不需要补丁 | 插件启动时在进程内按已安装 `dsh-subagent` 的版本读取源码和 bundle，先逐条比对目标片段再一次性写入；片段缺失、命中多次或文件读不到时报告 `failed` 且不改任何文件。手工核对仍可运行 `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch`（rc.1 用 `scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch`）；rc.2 到 rc.5 补丁后 `src/manager.ts` 与 `lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }`，rc.1 的 `lib/index.js` 与 `lib/types/manager.js` 有一处 `request.promptSource ?? { kind: 'user' }`；`0.2.3-alpha.1` 的 `src/manager.ts` 已用 `createAgentMessage` 记录初始任务，插件只读检测并报告 `native` |
 
 面板路由按 Host 的认证契约分流：`0.2.2-rc.1` 到 `0.2.2-rc.5` 的 `connection` 暴露 `requestRejection`，`admit` 在内部完成认证，插件用这个函数判断并走不需要 `connection.authentication` 的注册路径；`0.2.3-alpha.1` 移除了 `requestRejection`，`admit` 从调用方 fiber 读取 `connection.authentication`，所以五个面板路由只在注入了该服务的上下文注册（`index.js:73-81`）。两条路径都在隔离目录安装各版本真实 npm Host 启动验证：`GET /superagent-lite/tasks`、`/branches`、`/memory`、`/worker-settings` 和带 `taskId` 的 `/git` 全部返回 `200` 和 JSON，不能用单元测试模拟替代。对任意已安装版本还可以用 `DSH_INSTALL_DIR=<dsh 包目录> node --test test/host-connection.test.js` 核对它只暴露一种认证契约。
 
 按实际内容归并：`0.2.2-rc.2` 到 `0.2.2-rc.5` 的 `@deepseek-ai/dsh-client-ui-chat` 除 `package.json` 外逐字节相同，因此共用同一个 source-and-bundle 目标；`0.2.3-alpha.1` 的 Chat 包有变化，但被补丁修改的两个源码文件和所有 bundle 片段与 rc.2–rc.5 相同，所以也归入该目标。`0.2.2-rc.1` 的 Chat 包没有 `src/`，单独走 bundle-only 目标。子代理包 `0.2.2-rc.2` 到 `0.2.2-rc.5` 除 `package.json` 外相同，共用一个源码 + bundle 补丁；`0.2.2-rc.1` 没有 `src/` 且初始请求嵌套在 `request` 下，使用单独的 bundle-only 补丁和 `src/subagent-start.js` 的 rc.1 请求形状；`0.2.3-alpha.1` 原生记录 agent 消息。区间内 `dsh-base` 的 `cordis.patch.yml` 差异只在账号、web provider、agent-team 等基础行，未触及本 bundle 挂载的 `worktrees` 服务或补丁目标，因此不调整本仓库的 `cordis.patch.yml`。
 
-`npm install -g @deepseek-ai/dsh` 会整包替换 `dsh-subagent` 和 `dsh-client-ui-chat`，上表中的补丁随之丢失。Bundle 启动时由 `src/host-patch.js` 从运行入口解析已安装的 `@deepseek-ai/dsh`，对区间内的 npm Host 自动执行同样的检测和应用，并写入 Host 日志 `superagent-lite host patch: applied ...; restart DSH to load it`。`0.2.2` Host 的 subagent 补丁要下次启动才生效，客户端补丁也要重启后才加载，所以看到该日志后要再重启一次 DSH，卡片才会恢复；`0.2.3-alpha.1` 只需补客户端卡片补丁，子代理初始任务已由 Host 原生记录。DSH-go 的 rootfs 保持只读，不自动修补，仍按上面两个 Host 补丁文档手动运行。
+`npm install -g @deepseek-ai/dsh` 会整包替换 `dsh-subagent` 和 `dsh-client-ui-chat`，上表中的补丁随之丢失。Bundle 启动时由 `src/host-patch.js` 从运行入口解析已安装的 `@deepseek-ai/dsh`，对区间内的 npm Host 自动执行同样的检测和应用：客户端补丁仍调用自带的版本检查脚本，子代理 `promptSource` 补丁改为进程内片段比对和写入，Windows 也不需要 `patch.exe`。应用后写入 Host 日志 `superagent-lite host patch: applied ...; restart DSH to load it`。`0.2.2` Host 的 subagent 补丁要下次启动才生效，客户端补丁也要重启后才加载，所以看到该日志后再重启一次 DSH，卡片才会恢复；`0.2.3-alpha.1` 只需补客户端卡片补丁，子代理初始任务已由 Host 原生记录。只有 npm 安装会走这条自动补丁路径，也才会出现这条日志：桌面版和只读安装无法写入，插件改为在「项目任务」面板显示只读提示，见下文「桌面版与只读布局」。DSH-go 的 rootfs 保持只读，不自动修补，仍按上面两个 Host 补丁文档手动运行。
 
 Bundle 自带 worktree 服务，不要与另一个挂载 worktree 服务的 bundle 同时启用。
 
@@ -68,6 +68,65 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 
 安装成功的判据：预设列表出现两个预设，侧栏出现「项目任务」。Bundle 会插入自己的 worktree 服务，目录 `.agents/worktrees`，`retainOnArchive: true`；新任务的 Worktree 和分支名由 `sl-<worktreeName>-<Task ID 前 12 位>` 组成（`cordis.patch.yml:1-7`、`src/worktree-tool.js:42-46`）。
 
+## 发布
+
+发布由 `.github/workflows/publish.yml` 执行。入口是 GitHub Actions 的 **Publish npm** → **Run workflow**，分支选 `master`，输入带 `v` 的 semver 版本号（如 `v1.0.1`）；不带 `v` 也接受，工作流统一规范化。tag 和发布提交固定用 `v` 前缀，`package.json` 的 `version` 去掉 `v`。其他分支会被第一步拒绝（`.github/workflows/publish.yml:50-56`、`.github/workflows/publish.yml:69-74`）。
+
+| 阶段 | 行为 |
+| --- | --- |
+| 校验版本 | 去掉输入里的 `v` 后执行 `npm version <版本> --no-git-tag-version --allow-same-version` 写入 `package.json`（`.github/workflows/publish.yml:87-105`） |
+| 测试 | `node --test test/*.test.js`。不要裸跑 `npm test` 或 `node --test`：它们会扫描 `tmp/` 下的遗留测试并失败（`.github/workflows/publish.yml:107-108`） |
+| 提交与 tag | 用 `GITHUB_TOKEN` 提交 `chore(release): v<版本>`，打 annotated tag `v<版本>`；tag 已存在时停止（`.github/workflows/publish.yml:110-127`） |
+| 发布 | `npm publish --access public --tag <latest 或 next>`；稳定版用 `latest`，预发布版本用 `next`。`NODE_AUTH_TOKEN` 来自仓库 Secret `NPM_TOKEN`（`.github/workflows/publish.yml:129-133`） |
+| 回写 | `git push --atomic origin HEAD:master refs/tags/v<版本>`（`.github/workflows/publish.yml:135-138`） |
+
+### 版本号
+
+- 输入带 `v` 的 semver，例如 `v1.0.1`、`v1.1.0-rc.1`；不带 `v` 也接受。
+- 常规递增：修复 `v1.0.0`→`v1.0.1`，功能 `v1.1.0`，破坏性 `v2.0.0`，预发布 `v1.1.0-rc.1`。
+- 稳定版发布到 npm 的 `latest` dist-tag；预发布版本（带 `-rc.1` 等后缀）发布到 `next`。
+- 不能输入 npm 上已经存在的版本；已发布过的版本不能重复发布（`.github/workflows/publish.yml:7-15`）。
+- `package.json` 的 `version` 不能带 `v`；工作流写入前会剥掉，tag 和提交文案保留 `v`。
+- 输入与 `package.json` 当前版本相同时，工作流跳过空提交、只打 tag；这只适合该版本还没发布成功的情况（`.github/workflows/publish.yml:121-127`）。
+
+### GitHub 配置
+
+| 项 | 要求 |
+| --- | --- |
+| Secret 名称 | `NPM_TOKEN`。位置：仓库 Settings → Secrets and variables → Actions → New repository secret（`.github/workflows/publish.yml:18-19`） |
+| token 类型 | npm granular access token，scope 选 `@lmq00`，权限 `Read and write packages`，勾选 `Bypass two-factor authentication` |
+| 2FA | npm 账号开启 2FA；CI 不能输入 OTP，没有 bypass 的 token 会在 publish 时因 401/2FA 失败（`.github/workflows/publish.yml:20-21`） |
+| 工作流权限 | `permissions: contents: write`（`.github/workflows/publish.yml:58-59`）；Settings → Actions → General 的 Workflow permissions 允许读写 |
+| 分支保护 | `master` 需允许 GitHub Actions 推送提交和 tag；否则 publish 成功后回写失败（`.github/workflows/publish.yml:22-24`） |
+| 其他 Secret | 不需要；提交和 tag 用自动的 `GITHUB_TOKEN`（`.github/workflows/publish.yml:22`），不要把 token 写进仓库或提交 `.npmrc`（`.github/workflows/publish.yml:46-47`） |
+
+### 失败语义
+
+1. 测试失败时工作流停止，不提交、不发布。
+2. publish 失败时提交和 tag 只留在 runner，不回写远端。
+3. publish 成功但最后的推送被分支保护拒绝时，npm 上已有该版本；需要手动补提交/tag，或换新版本号重跑。
+
+### 本地手动发布
+
+```bash
+git checkout master
+git pull --ff-only
+TAG=v1.0.1
+VERSION="${TAG#v}"
+npm version "$VERSION" --no-git-tag-version --allow-same-version
+node --test test/*.test.js
+npm login   # 浏览器或 OTP 完成 2FA
+DIST_TAG=latest
+[[ "$VERSION" == *-* ]] && DIST_TAG=next
+npm publish --access public --tag "$DIST_TAG"
+git add package.json
+git commit -m "chore(release): $TAG"   # package.json 没变时跳过
+git tag -a "$TAG" -m "$TAG"
+git push origin master --follow-tags
+```
+
+`npm login` 用浏览器或 OTP 完成 2FA。也可用带 bypass-2FA 的 granular token：`npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"`，再执行上面的 `npm publish --access public --tag "$DIST_TAG"`；token 写在用户级 `~/.npmrc`，不要提交。npm 不直接读取 `NODE_AUTH_TOKEN`，CI 里是 setup-node 生成的 `.npmrc` 引用它。发布后核对 `npm view @lmq00/superagent-lite version dist-tags`。
+
 ## 配置
 
 Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板「设置」保存 worker 模型和并发上限。
@@ -91,7 +150,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | GitHub remote | 发送 PR | `git remote -v` 显示一个 remote，fetch 与 push URL 指向同一个 GitHub 仓库；面板列出 remote 供选择 |
 | `gh` 登录 | 发送 PR | `gh auth status --hostname github.com` |
 | GitHub 分支保护与必需检查 | 在 GitHub 上合并 PR | 在 GitHub 仓库设置；插件不预检检查状态 |
-| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | npm Host 由插件启动时自动检测并补打；也可按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用。客户端卡片补丁覆盖 `0.2.2-rc.2` 到 `0.2.2-rc.5` 及 `0.2.3-alpha.1`（源码 + bundle）和 `0.2.2-rc.1`（仅 bundle）与 DSH-go 的 `0.2.2-rc.1` Host；子代理 promptSource 补丁覆盖 `0.2.2-rc.1` 到 `0.2.2-rc.5`，`0.2.3-alpha.1` 由 Host 原生记录初始任务；DSH-go 不自动补；不打补丁也能运行 |
+| Host 补丁 | 角色消息、子代理状态通知和系统提醒的任务卡片 | npm Host 由插件启动时自动检测并补打；客户端补丁调用版本检查脚本，子代理补丁在进程内做片段替换，不需要外部 `patch` 命令。也可按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用。客户端卡片补丁覆盖 `0.2.2-rc.2` 到 `0.2.2-rc.5` 及 `0.2.3-alpha.1`（源码 + bundle）和 `0.2.2-rc.1`（仅 bundle）与 DSH-go 的 `0.2.2-rc.1` Host；子代理 promptSource 补丁覆盖 `0.2.2-rc.1` 到 `0.2.2-rc.5`，`0.2.3-alpha.1` 由 Host 原生记录初始任务；DSH-go 不自动补；不打补丁也能运行 |
 
 ## 启停与状态
 
@@ -107,7 +166,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 停止变化 | 任务被停止时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。停止把 Task 写成 `cancelled` 终态并保留记录，面板显示「已取消」标签；worker 被中断，并发名额立即释放，排队任务可以启动 |
 | 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；旧版本 `tasks/cancelled/` 的排队取消墓碑仍可被 `worker_status` 查询；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/`；Worktree 在 `<项目根>/.agents/worktrees/`，由面板「分支 / worktree」标签页单独管理 |
 | 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；skill 只放固定流程，知识、事实、经验、结论写知识库，项目 skill 同时最多 10 个，达到上限后 memory 拒绝新建并整次不写字段和 skill；skill 正文不注入，memory 角色通过会话里的 catalog 按名调用 `skill` 工具读取，提示词给项目 skill 已用数量与 10 个上限，并逐条列出 skill 名称和作者（`author: memory` 或 `none`），不写路径、description 或根目录；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
-| 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段 |
+| 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段。桌面版和只读布局不保证落盘日志，Host 补丁的只读状态改由项目任务面板显示 |
 
 面板 HTTP 端点的状态码：
 
@@ -139,19 +198,29 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 2. 等运行中的 Worker 结束。
 3. 在仓库执行 `git pull --ff-only`。
 4. 运行 `npm test`，确认 `fail 0`。
-5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。
+5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。这条日志只属于 npm 安装；桌面版和只读安装不会写补丁，而是在「项目任务」面板显示只读提示。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:128-145`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:314-317`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:129-146`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:314-317`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
+
+## 桌面版与只读布局
+
+桌面版 DSH 把 dsh 运行时和内置 npm 包放进只读的 `resources\app.asar`。插件启动时仍能解析到 `@deepseek-ai/dsh` 和 `dsh-client-ui-chat`，`--check` 也可能报告补丁可用，但写文件会被 `EACCES` 拒绝；子代理补丁以前还依赖外部 `patch`，Windows 默认没有 `patch.exe`，即使有也无法对 asar 内的文件 `chdir`。这些失败不会阻断桌面版启动，也不保证写进用户能看到的日志，所以插件现在把只读布局当作已知状态处理：
+
+- 启动检测到解析出的 dsh 目录含 `.asar` 路径段时，不再尝试任何补丁。`/superagent-lite/tasks` 的响应带 `host: { readonly: true, dshDir }`，项目任务面板在任务列表上方显示「桌面版内置运行时只读，任务卡补丁不可用」、说明和「诊断：运行时目录 ...」。其他面板行为不变。
+- 客户端任务卡补丁和子代理 `promptSource` 补丁都不会写入；派发、审查、报告和状态消息退回普通文本。任务执行、审查、合并和 PR 交付不依赖补丁，仍然可用。
+- 子代理 `promptSource` 补丁在 npm 安装上已改为进程内片段替换，不再需要 `patch` 或 `patch.exe`；这一改动修好 Windows npm 安装的同类失效，但不改变桌面版 asar 只读的限制。
+- 桌面版不会因为补丁失败产生可依赖的日志，因此不要按「看到日志再重启」排查；面板的只读提示和运行时目录就是诊断入口。也可以直接查看桌面版安装目录下是否存在 `resources\app.asar`，或看面板提示的路径是否包含 `app.asar`。
+- 不要解包或重打 `app.asar`，也不要把改过的 Chat 包塞进 desktop profile。要让桌面版显示任务卡，需要由桌面版发行方在打包前把补丁打进内置运行时；日常使用可以改用 npm 安装的 DSH CLI/Web Host，它会走上面的自动补丁路径。
 
 ## 排障
 
 | 现象 | 原因与修法 |
 | --- | --- |
 | 「项目任务」标签页只显示「无法加载任务，请重试。」，`/superagent-lite/tasks` 返回 `400` 空响应 | 正在运行的 DSH 进程仍加载修复前的插件代码：`0.2.3-alpha.1` 的 `connection.admit` 在未注入 `connection.authentication` 的请求 fiber 上抛出 `cannot get property "connection.authentication" without inject`，Host 兜底返回空 body。重启 DSH Web，让面板路由从注入了该服务的上下文注册。`0.2.2-rc.1` 到 `0.2.2-rc.5` 的 `admit` 自带认证，不需要这个服务，修复前后都应正常；这些旧版本仍报 400 时先检查插件是否升级到当前修复版本，再重启 DSH Web |
-| 派发消息显示为普通对话，不是「收到任务消息」卡片 | DSH 升级覆盖了 npm 包，客户端任务卡补丁（或 `0.2.2` Host 的子代理 `promptSource` 补丁）丢失。插件启动时会自动补打并在日志提示重启；看到提示后再重启一次 DSH。`0.2.3-alpha.1` 的子代理初始任务由 Host 原生记录，不需要该补丁。DSH-go 按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用 |
+| 派发消息显示为普通对话，不是「收到任务消息」卡片 | 先看「项目任务」面板顶部是否显示「桌面版内置运行时只读」。有该提示时，DSH 从只读的 `app.asar` 运行，插件无法写入客户端任务卡补丁或子代理 `promptSource` 补丁，消息会一直是普通文本；这是桌面版的已知限制，不必反复重启，也无法通过 `patch.exe` 或手工改文件解决。没有该提示时，npm 安装通常是 DSH 升级覆盖了补丁：插件启动时会自动补打并在日志提示重启；看到提示后再重启一次 DSH。`0.2.3-alpha.1` 的子代理初始任务由 Host 原生记录，不需要该补丁。DSH-go 按 [HOST-PATCH](HOST-PATCH.md) 和 [HOST-PATCH-AGENT-MESSAGE](HOST-PATCH-AGENT-MESSAGE.md) 手动应用 |
 | `Project checkout has uncommitted changes; commit or stash them before dispatching workers` | 提交或 stash Git 项目的 checkout；唯一允许的脏行是 `?? .agents/worktrees/.gitignore`。非 Git 目录不会报这条 |
 | `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |
 | `Landing requires a git repository; this project is not under git` | 非 Git 项目不能推送、开 PR 或合并；去掉 `land` 后按 change 流程交付 |

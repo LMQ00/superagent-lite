@@ -103,15 +103,20 @@ patch -p1 -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch
 pass an absolute path to the patch file. Restart DSH (`dsh web ...`) and the
 plugin; the running Host has already imported `lib/index.js`.
 
-An installed bundle also runs this same dry-run/apply from `src/host-patch.js`
-when it loads. It resolves the current `@deepseek-ai/dsh` from the running entry,
-selects the diff by the installed `dsh-subagent` version, patches `0.2.2-rc.1`
-through `0.2.2-rc.5` when the bundle does not already carry `promptSource`,
-reports `native` and writes nothing on `0.2.3-alpha.1`, and logs
+An installed bundle also applies this patch on startup from `src/host-patch.js`,
+without invoking `patch`. It resolves the current `@deepseek-ai/dsh` from the
+running entry, selects the snippet target by the installed `dsh-subagent`
+version, compares every snippet first, refuses a snippet that is missing or not
+unique, and writes all five (rc.2–rc.5) or three (rc.1) files only after every
+comparison succeeded. It patches `0.2.2-rc.1` through `0.2.2-rc.5` when the
+bundle does not already carry `promptSource`, reports `native` and writes
+nothing on `0.2.3-alpha.1`, and logs
 `superagent-lite host patch: applied ...; restart DSH to load it`. Because the
 first start has already imported the old manager, that log means one more DSH
-start is needed. The manual commands above remain the fallback, and they are the
-only path for DSH-go, a version outside the range, or a read-only install.
+start is needed. Desktop DSH keeps its runtime in a read-only `app.asar`; the
+plugin detects that layout, writes nothing, and shows the read-only runtime
+notice in the project task panel instead. The manual commands above remain the
+fallback, and they are the only path for DSH-go or a version outside the range.
 
 For example, in this installation:
 
@@ -151,10 +156,12 @@ the `收到任务消息` card.
 
 - An npm upgrade replaces the whole package, including `lib/index.js`, so the patch
   is lost. When the bundle starts from this repository it re-applies the matching
-  diff to the installed Host and logs a pending restart; the next DSH start
-  imports the patched manager. If that automatic pass is unavailable (DSH-go, a
-  version outside the range, read-only install), run the manual steps above
-  against the new version after a `--dry-run`.
+  target in process and logs a pending restart; the next DSH start imports the
+  patched manager. If that automatic pass is unavailable (DSH-go, a version
+  outside the range, a desktop `app.asar` runtime, or another read-only install),
+  run the manual steps above against the new version after a `--dry-run`; a
+  desktop or otherwise read-only install cannot be patched and shows the panel
+  notice instead.
 - Without the patch, the plugin still works: `promptSource` is an extra field on the
   call, the Host ignores it, and creation falls back to the ordinary user row.
 - Reverse the patch with
