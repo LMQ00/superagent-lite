@@ -21,8 +21,8 @@
 - 非 Git 项目支持 `change` 和 `report`：worker 直接在工作区执行，没有 Worktree、提交、合并或推送；`mode=merge` 与 `land=true` 需要 Git 仓库，派发时直接拒绝（`src/dispatch.js`）。
 - `mode=merge` 还要求 `land=true` 和非空 `branches`；每项是分支名或 16 位 Task ID，最多 20 项。Task ID 会按本 Router Session 和 Project 解析成 worker 分支，目标分支必须存在且不能是 base branch（`src/validation.js:7-54`、`src/dispatch.js:14-44`）。
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:74-79`）。
-- 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占额外名额。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:317-320`、`src/worker-stop.js`）。
-- `images` 可选，是本地 PNG/JPEG/WebP/GIF 路径数组，按 Router 当前目录解析；插件交给 Host 附件存储后把附件引用写进 Task，worker 启动时附在首条消息文本之后。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`、`src/dispatch.js:216-228`、`src/launch-queue.js:148-161`、`src/message-images.js:54-90`）。
+- 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占 worker 名额，但和 worker 一起计入 DSH Host 的 `maxActiveSubagents`（默认 8）。Host 报 `ACTIVATION_LIMIT_REACHED` 时把记录写回 `queued` 并结束本轮启动，下一次 `pumpWorkers` 再试，不把 Task 记为失败。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:54-120`、`src/launch-queue.js:206-228`、`src/subagent-capacity.js`、`index.js:317-320`、`src/worker-stop.js`）。
+- `images` 可选，是本地 PNG/JPEG/WebP/GIF 路径数组，按 Router 当前目录解析；插件交给 Host 附件存储后把附件引用写进 Task，worker 启动时附在首条消息文本之后。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`、`src/dispatch.js:216-228`、`src/launch-queue.js:150-162`、`src/message-images.js:54-90`）。
 - 只询问 worker 或任务状态时，Router 用 `worker_status` 查询本会话派发的任务，不新建 Task；任务被停止或排队 worker 开始执行时，Router 收到后台状态通知。
 
 ### 已有工作
@@ -220,6 +220,6 @@ Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变�
 
 ## 不完成时
 
-无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；用户主动停止的 Task 记录 `cancelled`，worker 被中断且名额释放。面板显示对应状态，由用户决定下一步（`index.js:262-308`、`src/worker-stop.js`）。失联的 `starting`、`running` 或 `resuming` 不需要人工清理：超过 2 分钟没有活着的 Worker Session 后，插件启动和下一次 `pumpWorkers` 会读 Review、分支与 Worktree HEAD 后落为 `awaiting-merge` 或 `failed`，并释放并发名额（`src/launch-queue.js:52-119`、`index.js:317-320`）。
+无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；用户主动停止的 Task 记录 `cancelled`，worker 被中断且名额释放。面板显示对应状态，由用户决定下一步（`index.js:262-308`、`src/worker-stop.js`）。失联的 `starting`、`running` 或 `resuming` 不需要人工清理：超过 2 分钟没有活着的 Worker Session 后，插件启动和下一次 `pumpWorkers` 会读 Review、分支与 Worktree HEAD 后落为 `awaiting-merge` 或 `failed`，并释放并发名额（`src/launch-queue.js:54-120`、`index.js:317-320`）。
 
 无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE` 并说明剩下什么（`src/worker-prompt.js:61-73`）。
