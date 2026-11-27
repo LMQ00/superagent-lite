@@ -114,7 +114,7 @@
 | 项 | 行为 |
 | --- | --- |
 | 只列本插件对象 | 对象来自任务记录里出现的 Git 项目根：只取 `<项目根>/.agents/worktrees/` 下的 Worktree（且分支名以 `sl-` 开头）和本地 `refs/heads/` 中的 `sl-*` 工作分支；你自己的分支、其他 Worktree 和 master 不进入清单，也无法通过该端点删除。项目根下没有任务记录时，该项目的对象不会被发现（`src/git-actions.js:600-729`） |
-| 每行内容 | 分支名、Worktree 路径（没有时显示「无 worktree」）、项目根、对应任务标题和 16 位 ID，以及任务在六个面板状态中的状态；找不到任务记录时显示「无任务记录」（`client.js:1453-1482`） |
+| 每行内容 | 分支名、Worktree 路径（没有时显示「无 worktree」）、项目根、对应任务标题和 16 位 ID，以及任务在六个面板状态中的状态；找不到任务记录时显示「无任务记录」（`client.js:1453-1493`） |
 | 删除 worktree | 只移除该 Worktree 的检出，保留 `sl-*` 分支；确认弹窗写明 Worktree 路径和不可恢复。删除后该行保留，路径变为「无 worktree」，「删除分支」随之可用。有未提交改动、移除失败或移除后仍存在的 Worktree 会被拒绝（`src/merge.js:175-197`） |
 | 删除 worktree 和分支 | 带 Worktree 的行可以一步删除检出和分支，等价于任务页的「删除分支」。Host 在同一个按项目根串行的上下文里先移除干净 Worktree，复核没有 Worktree 持有该分支后执行 `git branch -D`，并清空任务记录的 `worktree`、记录 `branchDeletedAt`；没有任务记录的孤儿对象同样可删。确认弹窗写明会同时删除检出与分支、未合并的提交会丢失且无法恢复。Worktree 有未提交改动时用既有措辞拒绝且不 `--force`；Worktree 已删除但分支删除失败时返回错误，说明分支仍在的残留状态（`src/merge.js:205-238`、`src/git-actions.js:705-726`） |
 | 删除分支 | 只在没有 Worktree 的行显示（分支被任何 Worktree 检出时不可用）；确认弹窗写明分支名和不可恢复。删除成功后该行移除，任务记录清空 `worktree` 并记录 `branchDeletedAt`，任务标签页把非失败任务显示为已完成（`src/merge.js:240-257`、`src/git-actions.js:686-703`） |
