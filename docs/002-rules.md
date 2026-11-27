@@ -21,7 +21,7 @@
 - 非 Git 项目支持 `change` 和 `report`：worker 直接在工作区执行，没有 Worktree、提交、合并或推送；`mode=merge` 与 `land=true` 需要 Git 仓库，派发时直接拒绝（`src/dispatch.js`）。
 - `mode=merge` 还要求 `land=true` 和非空 `branches`；每项是分支名或 16 位 Task ID，最多 20 项。Task ID 会按本 Router Session 和 Project 解析成 worker 分支，目标分支必须存在且不能是 base branch（`src/validation.js:7-54`、`src/dispatch.js:14-44`）。
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:74-79`）。
-- 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占额外名额。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:314-317`、`src/worker-stop.js`）。
+- 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占额外名额。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:317-320`、`src/worker-stop.js`）。
 - `images` 可选，是本地 PNG/JPEG/WebP/GIF 路径数组，按 Router 当前目录解析；插件交给 Host 附件存储后把附件引用写进 Task，worker 启动时附在首条消息文本之后。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`、`src/dispatch.js:216-228`、`src/launch-queue.js:148-161`、`src/message-images.js:54-90`）。
 - 只询问 worker 或任务状态时，Router 用 `worker_status` 查询本会话派发的任务，不新建 Task；任务被停止或排队 worker 开始执行时，Router 收到后台状态通知。
 
@@ -29,14 +29,14 @@
 
 `continue_worker` 把追加要求送给已经存在且未发布的 Task。`dispatch_worker` 的 `mode=merge` 在已有运行中的 merge worker 时，把新请求追加到同一个 Task。
 
-- 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:230-236`）。
-- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:216`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。合并请求也是新任务：即使点名已有任务，也走 `dispatch_worker mode=merge`，不续派该任务；没有运行中的 merge worker 时新建 worker，已有则追加。
-- Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:241-259`）。
-- Task 处于 `queued` 或 `starting` 时还没有 Worker 回合可唤醒：`continue_worker` 不投递、不记录 follow-up、不授予 `land`，返回明确的「稍后再试」，Router 应在 Worker 启动后重试（`src/continue.js:260-262`）。
-- Worker 空闲或已结束时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。非 Git 项目改为项目目录、非 Git 说明、直接修改和再次审查的规则；report 任务改为只读检查、允许联网检索和以 `report_task` 结束的规则。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required`、`failed` 或 `resuming` 时先标为 `resuming`；不再要求 Task 已有 Worktree，BLOCKED 在创建 Worktree 前就结束的 Git Task 也能恢复，续派发消息会要求 Worker 先创建 Worktree。已经合并、已删除 worker 分支、记录的 Worktree 已不存在，或处于交付中的 Task 仍拒绝恢复（`src/continue.js:46-68`、`src/continue.js:70-175`、`src/continue.js:263-274`）。
-- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败时，只有本次把已结束 Task 重新打开的才标为 `failed`；运行中的保持 `running`，恢复中的保持 `resuming`（`src/continue.js:195-212`、`src/continue.js:263-291`）。
-- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；在 `continue_worker` 里它只授权推送和 PR，不授权合并；非 Git 项目拒绝 `land=true`；发送失败时回滚这次新增的授权（`src/continue.js:236-240`、`src/continue.js:263-291`）。
-- `images` 可选，按 Router 当前目录解析成本地图片并附在续派消息文本之后；运行中的更新和空闲恢复都支持。附件读取或保存失败时整次续派失败，不发送半条消息（`src/continue.js:240`、`src/continue.js:242-259`、`src/continue.js:279-283`）。
+- 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:232-238`）。
+- 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:218`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。合并请求也是新任务：即使点名已有任务，也走 `dispatch_worker mode=merge`，不续派该任务；没有运行中的 merge worker 时新建 worker，已有则追加。
+- Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:243-261`）。
+- Task 处于 `queued` 或 `starting` 时还没有 Worker 回合可唤醒：`continue_worker` 不投递、不记录 follow-up、不授予 `land`，返回明确的「稍后再试」，Router 应在 Worker 启动后重试（`src/continue.js:262-264`）。
+- Worker 空闲或已结束时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。change 续派发先要求用 `knowledge_query` 查知识库；非 Git 项目改为项目目录、非 Git 说明、直接修改和再次审查的规则；report 任务改为只读检查、允许联网检索和以 `report_task` 结束的规则。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required`、`failed` 或 `resuming` 时先标为 `resuming`；不再要求 Task 已有 Worktree，BLOCKED 在创建 Worktree 前就结束的 Git Task 也能恢复，续派发消息会要求 Worker 先创建 Worktree。已经合并、已删除 worker 分支、记录的 Worktree 已不存在，或处于交付中的 Task 仍拒绝恢复（`src/continue.js:46-68`、`src/continue.js:70-177`、`src/continue.js:265-276`）。
+- follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败时，只有本次把已结束 Task 重新打开的才标为 `failed`；运行中的保持 `running`，恢复中的保持 `resuming`（`src/continue.js:197-214`、`src/continue.js:265-293`）。
+- `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；在 `continue_worker` 里它只授权推送和 PR，不授权合并；非 Git 项目拒绝 `land=true`；发送失败时回滚这次新增的授权（`src/continue.js:238-242`、`src/continue.js:265-293`）。
+- `images` 可选，按 Router 当前目录解析成本地图片并附在续派消息文本之后；运行中的更新和空闲恢复都支持。附件读取或保存失败时整次续派失败，不发送半条消息（`src/continue.js:242`、`src/continue.js:244-261`、`src/continue.js:281-285`）。
 - 已发布的 Task 不继续；发布后的下一个输入是新工作。
 
 ### 不交叉
@@ -51,7 +51,7 @@
 | --- | --- | --- | --- |
 | 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker` 和 `continue_worker`；只问状态时调用 `worker_status` | 每个输入 |
 | 委派 | `dispatch_worker` 且 `mode=change`、`mode=report` 或 `mode=merge` | 创建一个 Task 和一个 Worker Session，或把 merge 请求追加给运行中的 merge worker | 否；需要决定 |
-| 编辑 | change 任务中调用 `create_worktree`（仅 Git 项目） | Git 项目在分配的 Worktree 工作，未进入前其他工具被拦；非 Git 项目直接使用项目根 | 否；Git 项目 Worker 必须先进入 Worktree，非 Git 项目无需进入 |
+| 编辑 | change 任务中调用 `create_worktree`（仅 Git 项目） | Git 项目在分配的 Worktree 工作，未进入前除只读的 `knowledge_query` / `knowledge_get` 外其他工具被拦；非 Git 项目直接使用项目根 | 否；Git 项目 Worker 必须先进入 Worktree（只读知识库查询除外），非 Git 项目无需进入 |
 | 审查 | 完成后调用 `review_worker_commit` | Git 项目读取已提交 diff，非 Git 项目读取当前项目文件和工作区内容，并启动一个独立 reviewer；reviewer 不能写改文件或改变分支 | 否；Git 项目需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
 | 落地 | change/report 派发或续派发时携带 `land=true` | change worker 可推送指派分支、开 PR；只限指派分支与 reviewed HEAD | 否；未携带时不推送、不开 PR、不合并 |
@@ -87,13 +87,13 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 
 ## Worker 规则
 
-- Git 项目的 change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 外，工作目录不在分配的 Worktree 时所有工具被拦。非 Git 项目不注册可用的 `create_worktree`，工作目录从一开始就是项目根（`index.js:92-233`、`src/dispatch.js`）。
+- Git 项目的 change worker 必须先调用一次 `create_worktree`；除 `create_worktree` 和只读的 `knowledge_query` / `knowledge_get` 外，工作目录不在分配的 Worktree 时所有工具被拦。非 Git 项目不注册可用的 `create_worktree`，工作目录从一开始就是项目根（`index.js:92-236`、`src/dispatch.js`）。
 - Git 项目的 `create_worktree` 向 worktree 服务请求名字 `sl-<worktreeName>-<taskId 前 12 位>` 的 Worktree，目录和分支同名，例如 `sl-fix-plan-color-0123456789ab`（`src/worktree-tool.js:42-46`）。旧 Task 没有 `worktreeName` 时沿用原命名 `sl-<team slug>-<taskId>`。实际分支名取服务返回值，写入 `task.worktree.branch`（`src/worktree-tool.js:48-55`）。非 Git 项目调用 `create_worktree` 会被拒绝。
 - 已存在 Worktree 时再次调用只重新进入，不创建第二个（`src/worktree-tool.js:27-37`）。
-- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:230-233`、`index.js:142`）。
-- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:174-193`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
-- `review_worker_commit` 和 `message_router` 只在 Worker 活跃且工作目录在分配的工作区时可用；非 Git 项目的工作区就是项目根。`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:194-233`）。
-- report worker 在项目 checkout 中可使用 `read`、`glob`、`grep`、`read_image`、`bash`、`pwsh`、`todo_write`、`skill`，在 checkout 之外可使用只读检索工具 `web_search`、`web_fetch`、`read_page`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`，并以 `report_task` 结束；写改文件、创建 Worktree 等其他工具被拒绝（`index.js:174-193`）。
+- Worker 的 subagent 结束时冻结，之后不能用任何工具，包括消息工具（`index.js:233-236`、`index.js:142`）。
+- Worker 的 `bash`/`pwsh` 在工具守卫里检查落地命令：未授权时 `git push`、`gh pr create`、`gh pr merge`、`git merge` 被拒；change worker 授权后仍只允许指派分支、reviewed HEAD 和本任务记录的 PR。`git merge` 只对 `mode=merge` 的 Task 开放，且只允许把本任务的 reviewed commit 从项目 checkout 合入 base branch；merge worker 用 `merge_branch` 把目标分支合入自己的 worktree 分支，不经过 shell 合并（`index.js:177-196`、`src/landing.js:374-388`、`src/merge-tool.js:13-64`）。
+- `review_worker_commit` 和 `message_router` 只在 Worker 活跃且工作目录在分配的工作区时可用；非 Git 项目的工作区就是项目根。`merge_branch` 只对活跃的 merge 任务开放，目标必须来自 `task.mergeBranches`；`report_task` 只对活跃的 report 任务可用（`index.js:197-236`）。
+- report worker 在项目 checkout 中可使用 `read`、`glob`、`grep`、`read_image`、`bash`、`pwsh`、`todo_write`、`skill`，在 checkout 之外可使用只读检索工具 `web_search`、`web_fetch`、`read_page`、`x_search`、`job_output`、`job_list`、`knowledge_query`、`knowledge_get`，并以 `report_task` 结束；写改文件、创建 Worktree 等其他工具被拒绝（`index.js:177-196`）。
 - report worker 的任务消息要求按仓库 `AGENTS.md` 的约定执行，但该约定不能扩大 report 的只读授权，也不能放宽不建 Worktree、不改文件、不提交和不审查的边界（`src/worker-prompt.js:37-63`）。
 - Git 项目的 `report_task` 要求 HEAD 仍等于基础 commit，且 checkout 除 `?? .agents/worktrees/.gitignore` 外没有改动（`src/report-tool.js:23-33`）。非 Git 项目没有 HEAD 和工作区状态可校验，`report_task` 直接交付结论。
 - `report_task.images` 可选，是 worker 当前目录下的本地图片路径；插件保存附件后把它们附在结论文本之后发给 Router（`src/report-tool.js:11-17`、`src/report-tool.js:37-38`）。
@@ -111,7 +111,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:151-166`、`src/review.js:182-184`）。
 - 面板的 `review` 动作对 `unreviewed` 的 Git Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`。非 Git Task 没有分支，面板不提供该动作（`src/git-actions.js:403-425`）。
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:259-276`、`src/git-actions.js:293-305`）。
-- 审查没有通过不直接改 Task 状态；Worker 修完再提交（非 Git 项目则继续改文件）、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`；非 Git 项目审查通过后结束时落到 `completed`（`index.js:287-295`）。
+- 审查没有通过不直接改 Task 状态；Worker 修完再提交（非 Git 项目则继续改文件）、再次请求审查。Worker 结束时仍未通过，Task 才落到 `review-required`；非 Git 项目审查通过后结束时落到 `completed`（`index.js:290-298`）。
 
 ## 记忆规则
 
@@ -128,13 +128,13 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - 项目 skill 同时最多 10 个：达到上限后 memory 只能复用已有 memory 管理的项目 skill 名字更新，不能新建；写入路径拒绝并返回明确的超限错误，整次提取在写字段和 skill 前失败，不产生半写入。skill 只放可复用的固定流程或方法步骤，知识、事实、经验、结论和观察写全局知识库（`src/memory-store.js`、`src/memory.js`）。
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；项目 skill 最多 10 个；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-- 职责和定位直接注入；skill 只把 description 放进 skill catalog，Worker、Reviewer 和 memory 角色需要完整内容时用 `skill` 工具按名加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`src/helper-guard.js`、`cordis.patch.yml`）。
+- 职责和定位直接注入；skill 只把 description 放进 skill catalog，Worker、Reviewer 和 memory 角色需要完整内容时用 `skill` 工具按名加载；知识库内容不注入角色上下文，只通过 `knowledge_query`（关键词查询，英文按单词、中文按相邻两字切分，多词按命中关键词数排序，单个关键词按子串匹配并返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`src/helper-guard.js`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动。拦截按会话（agent）的 catalog 基线和 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
 - memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径、任务/角色/分支等元信息、项目 skill 已用数量与 10 个上限以及每条 skill 的名称和作者（`author: memory` 或 `none`），不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；skill 的 description 只通过会话里的 catalog 获知，触发消息不写 skill 路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/helper-guard.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
-- 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
+- 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果按命中的关键词数量排序，带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 对 Worker、Reviewer 和 memory 角色开放（`src/memory.js`、`src/helper-guard.js`）。
 - 面板的「记忆系统」标签页经 owner-only `/superagent-lite/memory` 读取与删除全局记忆、所选项目的项目记忆、memory 管理的全局/项目 skill 和全局知识库：GET 读取；DELETE 按 `kind`（memory/skill/knowledge）、`scope`、`field`/`name` 或知识 `id` 只删除用户确认的单条内容，skill 需要 `name`，项目作用域需要绝对 `projectRoot`；没有新增或编辑接口，写入仍只由 memory 角色完成。删除知识后 `knowledge_query` 不再返回该条目，删除 skill 后之后新派发的会话不再看到它（`src/memory-panel.js`、`src/memory-store.js`、`src/memory.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
 - 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；memory 触发时另写一份 `task/archive/sessions/<sha256(Session ID)>.md` 完整会话记录并把路径交给 memory；两者都只由 Host 写入，Git 与非 Git 项目走同一位置，其他模型工具没有专用读取入口（`src/memory.js`、`src/memory-store.js`）。
@@ -156,7 +156,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 ## Git 操作规则
 
-合并只在用户明确授权后执行：直接指示或面板任务行的合并操作。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit。直接指示的合并请求走 `mode=merge`：默认派发新 merge worker，已有运行中的 merge worker 时把目标追加给它；change worker 的 `land` 授权只覆盖推送和 PR。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:31-32`、`src/worker-prompt.js:64-106`、`src/landing.js:63-71`）。
+合并只在用户明确授权后执行：直接指示或面板任务行的合并操作。worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit。直接指示的合并请求走 `mode=merge`：默认派发新 merge worker，已有运行中的 merge worker 时把目标追加给它；change worker 的 `land` 授权只覆盖推送和 PR。未授权时 Router 和 Worker 都不合并，Worker 停在审查过的 commit（`cordis.patch.yml:31-32`、`src/worker-prompt.js:64-107`、`src/landing.js:63-71`）。
 
 ### 合并与发送 PR 的共同前提
 
@@ -214,12 +214,12 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 ## 版本
 
-Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:70-88`、`src/review.js:58-73`、`src/continue.js:70-175`）。
+Task 在创建和审查时固定自己的条件：保存的需求、父 Session、Team、Project、基础 commit 和 reviewed HEAD。改提示词或规则不会重写运行中的 Task；之后的回合和新派发使用新文本（`src/dispatch.js:70-88`、`src/review.js:58-73`、`src/continue.js:70-177`）。
 
 Git 动作执行时会重新检查 Task 和 checkout；HEAD 移动、分支变化、目标脏或有新提交时停止动作，不使用过期审查（`src/git-actions.js:564-579`、`src/merge.js:24-44`）。
 
 ## 不完成时
 
-无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；用户主动停止的 Task 记录 `cancelled`，worker 被中断且名额释放。面板显示对应状态，由用户决定下一步（`index.js:259-305`、`src/worker-stop.js`）。失联的 `starting`、`running` 或 `resuming` 不需要人工清理：超过 2 分钟没有活着的 Worker Session 后，插件启动和下一次 `pumpWorkers` 会读 Review、分支与 Worktree HEAD 后落为 `awaiting-merge` 或 `failed`，并释放并发名额（`src/launch-queue.js:52-119`、`index.js:314-317`）。
+无法完成的 Task 记录 `failed`、`review-required` 或 `delivery-blocked`；用户主动停止的 Task 记录 `cancelled`，worker 被中断且名额释放。面板显示对应状态，由用户决定下一步（`index.js:262-308`、`src/worker-stop.js`）。失联的 `starting`、`running` 或 `resuming` 不需要人工清理：超过 2 分钟没有活着的 Worker Session 后，插件启动和下一次 `pumpWorkers` 会读 Review、分支与 Worktree HEAD 后落为 `awaiting-merge` 或 `failed`，并释放并发名额（`src/launch-queue.js:52-119`、`index.js:317-320`）。
 
 无法继续的 Worker 报告 `BLOCKED`：具体阻塞、已经尝试的内容、需要人提供的一个决定或资源。工作未完成但可继续的报告 `INCOMPLETE` 并说明剩下什么（`src/worker-prompt.js:61-73`）。

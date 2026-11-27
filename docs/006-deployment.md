@@ -165,7 +165,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；运行中或排队中提供停止；每行提供删除任务（运行中或排队中会先停止再删除，合并或发布中禁用）。任务行可勾选后批量删除。「分支 / worktree」标签页只列本插件创建的 Worktree 和 `sl-*` 分支，分别提供删除 Worktree 与删除分支（运行中禁用）；删除成功后就地更新该标签页。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 停止变化 | 任务被停止时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。停止把 Task 写成 `cancelled` 终态并保留记录，面板显示「已取消」标签；worker 被中断，并发名额立即释放，排队任务可以启动 |
 | 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；旧版本 `tasks/cancelled/` 的排队取消墓碑仍可被 `worker_status` 查询；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/`；Worktree 在 `<项目根>/.agents/worktrees/`，由面板「分支 / worktree」标签页单独管理 |
-| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query` / `knowledge_get` 查询全局知识；只有 memory 角色能写知识；skill 只放固定流程，知识、事实、经验、结论写知识库，项目 skill 同时最多 10 个，达到上限后 memory 拒绝新建并整次不写字段和 skill；skill 正文不注入，memory 角色通过会话里的 catalog 按名调用 `skill` 工具读取，提示词给项目 skill 已用数量与 10 个上限，并逐条列出 skill 名称和作者（`author: memory` 或 `none`），不写路径、description 或根目录；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
+| 记忆 | Worker 和 Reviewer 自动注入项目 + 全局记忆；Router 只注入全局记忆；Worker、Reviewer 和 memory 角色用 `knowledge_query`（中英文分词，多词按命中关键词数排序）/ `knowledge_get` 查询全局知识；只有 memory 角色能写知识；skill 只放固定流程，知识、事实、经验、结论写知识库，项目 skill 同时最多 10 个，达到上限后 memory 拒绝新建并整次不写字段和 skill；skill 正文不注入，memory 角色通过会话里的 catalog 按名调用 `skill` 工具读取，提示词给项目 skill 已用数量与 10 个上限，并逐条列出 skill 名称和作者（`author: memory` 或 `none`），不写路径、description 或根目录；面板的「记忆系统」标签页显示记忆、全局/项目 skill 和全局知识库，并允许安装 owner 逐条删除记忆字段、memory 管理的 skill 或知识条目。项目 skill 目录会加入 `.git/info/exclude`，不弄脏项目 checkout |
 | 日志 | 不写独立日志文件；插件警告进 DSH Host 日志，Task 错误还写入 `failure` 字段。桌面版和只读布局不保证落盘日志，Host 补丁的只读状态改由项目任务面板显示 |
 
 面板 HTTP 端点的状态码：
@@ -201,7 +201,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。这条日志只属于 npm 安装；桌面版和只读安装不会写补丁，而是在「项目任务」面板显示只读提示。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:129-146`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:314-317`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:129-146`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:317-320`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -225,7 +225,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `Merge tasks require a git repository` | 当前目录不属于任何 Git 仓库；merge 只能对 Git 项目派发 |
 | `Landing requires a git repository; this project is not under git` | 非 Git 项目不能推送、开 PR 或合并；去掉 `land` 后按 change 流程交付 |
 | `This project is not a git repository; work directly in the project folder` | 非 Git 任务调用了 `create_worktree`；直接在工作区修改并调用 `review_worker_commit` |
-| `Create the assigned project worktree before using any other tool.` | Git 项目的 Worker 在 `create_worktree` 前用了别的工具；让它先创建或进入 Worktree |
+| `Create the assigned project worktree before using any other tool.` | Git 项目的 Worker 在 `create_worktree` 前用了别的工具；只读的 `knowledge_query` / `knowledge_get` 除外，让它先创建或进入 Worktree |
 | `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
 | `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
 | `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发；`queued` 的同名 Task 会直接返回 |

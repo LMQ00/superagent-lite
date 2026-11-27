@@ -323,6 +323,7 @@ test('a BLOCKED task that settled before creating its worktree can be continued'
   assert.match(sends[0].text, /Branch: not created yet/)
   assert.match(sends[0].text, /Worktree: not created yet/)
   assert.match(sends[0].text, /if you have not created it yet, call create_worktree once/)
+  assert.match(sends[0].text, /Query the knowledge base with knowledge_query before changing anything/)
   assert.match(sends[0].text, /Follow-up \(the only authoritative instruction for this turn\):\nUse the decision below/)
   assert.equal((await readTask(id)).status, 'resuming')
   assert.deepEqual(await followUpTexts(id), ['Use the decision below'])
