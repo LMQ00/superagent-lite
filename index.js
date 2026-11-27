@@ -16,7 +16,7 @@ import { createMemoryPanelHandler } from './src/memory-panel.js'
 import { createBranchesPanelHandler } from './src/branches-panel.js'
 import { createWorkerSkillCatalogGuard } from './src/skill-catalog.js'
 import { pumpWorkers, reclaimStaleTasks } from './src/launch-queue.js'
-import { claimHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
+import { claimHelper, forgetHelper, registerReadOnlyGuard, registerReviewGuard } from './src/helper-guard.js'
 import { reconcileHostPatches } from './src/host-patch.js'
 import {
   archiveWorkerTurn, createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool,
@@ -25,7 +25,14 @@ import {
 
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
+// Cordis reuses one context when it reloads a fiber (a config update), so a
+// context counts as applied only until the previous instance tears down.
+// Re-applying a still-active context must not install a second copy.
+const applied = new WeakSet()
+
 export async function apply(ctx) {
+  if (applied.has(ctx)) return
+  applied.add(ctx)
   const hostPatch = await reconcileHostPatches(ctx)
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
     authoredSkills: async agent => {
@@ -89,10 +96,42 @@ export async function apply(ctx) {
   }
   const lifetime = new AbortController()
 
-  ctx.on('agent/created', async ({ agent }) => {
-    if (agent.session.header.origin !== 'subagent') return
-    const helper = claimHelper(agent.session.header.parentSession)
-    if (helper) {
+  // A plugin reload disposes the previous instance's registrations but leaves
+  // its agents alive, so activation must be replayable: `apply` activates every
+  // live agent, a session event recovers one it missed, and an agent whose
+  // marker tool is still installed is not registered twice.
+  const activating = new Map()
+  const markers = new Map()
+  const skipped = new Set()
+  const visible = (agent, name) => typeof agent.ctx?.tools?.get === 'function' &&
+    agent.ctx.tools.get(name, agent) !== undefined
+  const registered = agent => {
+    if (skipped.has(agent.id)) return true
+    const marker = markers.get(agent.id)
+    if (marker === undefined) return false
+    // A registration can disappear without this instance seeing agent/disposed,
+    // so confirm the marker tool is still installed.
+    return typeof agent.ctx?.tools?.get !== 'function' || visible(agent, marker)
+  }
+
+  const activateAgent = async agent => {
+    const parentSession = agent.session.header.parentSession
+    // A worker has a Task linked to its Session; a helper does not, and its
+    // one-shot expectation was claimed at creation, so the descriptor cached
+    // by claimHelper keeps it recognized after a reload.
+    const task = await taskForSession(undefined, agent.id)
+    if (!task || task.parentSessionId !== parentSession) {
+      const helper = claimHelper(parentSession, agent.id)
+      if (!helper) {
+        skipped.add(agent.id)
+        return
+      }
+      const marker = helper.kind === 'memory' ? 'knowledge_write' : 'submit_review'
+      // A live helper from the previous plugin instance keeps its tools.
+      if (visible(agent, marker)) {
+        markers.set(agent.id, marker)
+        return
+      }
       if (helper.scope) {
         registerReviewGuard(agent, helper.scope)
         agent.ctx.tools.register(createReviewResultTool(agent), { when: () => true })
@@ -101,7 +140,7 @@ export async function apply(ctx) {
       }
       if (agent.ctx.tools.register) {
         const projectRoot = helper.projectRoot
-          ?? (await taskForSession(undefined, agent.session.header.parentSession))?.projectRoot
+          ?? (await taskForSession(undefined, parentSession))?.projectRoot
         agent.ctx.tools.register(createKnowledgeQueryTool(), { when: () => true })
         agent.ctx.tools.register(createKnowledgeGetTool(), { when: () => true })
         if (helper.kind === 'memory') {
@@ -115,10 +154,13 @@ export async function apply(ctx) {
           }
         }
       }
+      markers.set(agent.id, marker)
       return
     }
-    const task = await taskForSession(undefined, agent.id)
-    if (!task || task.parentSessionId !== agent.session.header.parentSession) return
+    // Re-registering a worker whose tools were dropped starts from a clean
+    // slate instead of leaving stale disposers in the tracked entry.
+    workers.get(agent.id)?.dispose()
+    workers.delete(agent.id)
     let current = task
     if (task.status === 'starting' || task.status === 'resuming') {
       // A stop can win the race against this event; never resurrect it to running.
@@ -127,11 +169,13 @@ export async function apply(ctx) {
           latest.status === 'starting' || latest.status === 'resuming' ? { status: 'running' } : {})
       } catch (error) {
         if (error.code !== 'ENOENT') throw error
+        skipped.add(agent.id)
         interruptWorker(ctx, agent.id)
         return
       }
     }
     if (current.status === 'cancelled') {
+      skipped.add(agent.id)
       interruptWorker(ctx, agent.id)
       return
     }
@@ -159,7 +203,10 @@ export async function apply(ctx) {
     const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'pwsh', 'todo_write', 'skill'])
     // Knowledge reads touch nothing in the checkout, so a worker may query them
     // before create_worktree; knowledge_write stays behind the normal boundary.
+    // message_router is also allowed there so a worker can report BLOCKED when
+    // creating its worktree fails.
     const knowledgeReadTools = new Set(['knowledge_query', 'knowledge_get'])
+    const preWorktreeTools = new Set([...knowledgeReadTools, 'message_router'])
     // External lookup reads nothing in the checkout, so a report-only task may
     // use it from anywhere while the project writes stay refused.
     const externalReadTools = new Set([
@@ -185,7 +232,7 @@ export async function apply(ctx) {
             (inspectingProject() && inspectionTools.has(name))) return
         return 'Report-only tasks inspect the checkout and external sources read-only and end with report_task.'
       }
-      if (name !== 'create_worktree' && !knowledgeReadTools.has(name) && !inCheckout()) {
+      if (name !== 'create_worktree' && !preWorktreeTools.has(name) && !inCheckout()) {
         return 'Create the assigned project worktree before using any other tool.'
       }
       if (name === 'bash' || name === 'pwsh') {
@@ -198,12 +245,12 @@ export async function apply(ctx) {
       when: () => !state.frozen && !reportOnly && task.git !== false,
     })
     const merge = agent.ctx.tools.register(createMergeTool(ctx, agent, task.id), {
-      when: ({ agent: candidate }) => candidate === agent && !state.frozen && mergeMode && inCheckout(),
+      when: ({ agent: candidate }) => candidate === agent && !state.frozen && mergeMode,
     })
     const review = agent.ctx.tools.register(createReviewTool(ctx, agent, task.id), {
-      when: () => !state.frozen && !reportOnly && inCheckout(),
+      when: () => !state.frozen && !reportOnly,
     })
-    const activeWorker = candidate => candidate === agent && !state.frozen && inCheckout()
+    const activeWorker = candidate => candidate === agent && !state.frozen
     const knowledge = agent.ctx.tools.register(createKnowledgeQueryTool(), {
       when: ({ agent: candidate }) => candidate === agent,
     })
@@ -234,12 +281,27 @@ export async function apply(ctx) {
       taskId: task.id, state, session: agent.session,
       dispose: () => { memory?.(); projectSkill?.(); knowledge(); knowledgeGet(); report(); message(); review(); merge(); checkout(); guard() },
     })
-  })
+    markers.set(agent.id, 'message_router')
+  }
+
+  const activate = agent => {
+    if (agent.session.header.origin !== 'subagent' || registered(agent)) return
+    const running = activating.get(agent.id)
+    if (running) return running
+    const pending = activateAgent(agent).finally(() => activating.delete(agent.id))
+    activating.set(agent.id, pending)
+    return pending
+  }
+
+  ctx.on('agent/created', ({ agent }) => activate(agent))
 
   ctx.on('agent/disposed', ({ agent }) => {
     const worker = workers.get(agent.id)
     worker?.dispose()
     workers.delete(agent.id)
+    markers.delete(agent.id)
+    skipped.delete(agent.id)
+    forgetHelper(agent.id)
     catalogGuard.forget(agent.id)
     if (worker) forgetLanding(worker.taskId)
     dispatchGuard.dispose(agent.session.id)
@@ -254,6 +316,12 @@ export async function apply(ctx) {
 
   ctx.on('session/event', (session, event) => {
     dispatchGuard.onEvent(session, event)
+    // An agent created before this plugin instance attached its listener never
+    // receives agent/created here; recover it on its next event.
+    const agent = ctx.agents.get?.(session.id)
+    if (!lifetime.signal.aborted && agent?.session?.header?.origin === 'subagent' && !registered(agent)) {
+      track(activate(agent))
+    }
     if (event.type === 'turn/end' && !lifetime.signal.aborted && workers.get(session.id)?.session === session) {
       track(archiveWorkerTurn(session, event))
     }
@@ -308,11 +376,17 @@ export async function apply(ctx) {
   })
 
   ctx.effect(() => async () => {
+    applied.delete(ctx)
     lifetime.abort()
     for (const worker of workers.values()) worker.dispose()
     workers.clear()
     await Promise.allSettled(jobs)
   }, 'superagent-lite: worker lifecycle and delivery')
+
+  // A reload keeps the agents alive but builds a fresh instance with no
+  // per-agent state, so reattach them instead of waiting for another creation
+  // event.
+  for (const agent of ctx.agents.list()) await activate(agent)
 
   // A Host restart or a plugin reload can dispose worker Sessions without a
   // `subagent/end`, so scan the persisted records once instead of leaving them

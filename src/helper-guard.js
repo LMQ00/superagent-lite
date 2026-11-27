@@ -1,5 +1,6 @@
 const pending = new Map()
 const helpers = new Map()
+const claimed = new Map()
 
 const READ_ONLY_TOOLS = new Set([
   'structured_output',
@@ -30,12 +31,23 @@ export function expectHelper(parentSessionId, reviewScope, kind = reviewScope ? 
   pending.set(parentSessionId, queue)
 }
 
-export function claimHelper(parentSessionId) {
+export function claimHelper(parentSessionId, agentId) {
+  // The expectation is one-shot, but replaying activation for the same helper
+  // (a plugin reload keeps its agent alive) must keep identifying it.
+  if (agentId !== undefined) {
+    const cached = claimed.get(agentId)
+    if (cached !== undefined) return cached
+  }
   const queue = pending.get(parentSessionId)
   if (!queue || queue.length === 0) return false
   const helper = queue.shift()
   if (queue.length === 0) pending.delete(parentSessionId)
+  if (agentId !== undefined) claimed.set(agentId, helper)
   return helper
+}
+
+export function forgetHelper(agentId) {
+  claimed.delete(agentId)
 }
 
 export function clearHelperExpectation(parentSessionId) {

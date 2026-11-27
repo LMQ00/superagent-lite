@@ -32,7 +32,7 @@ test('apply wires turn/end into a reminder delivered on agent idle', async () =>
     inject() {},
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
-    agents: { get: id => id === agent.id ? agent : undefined },
+    agents: { get: id => id === agent.id ? agent : undefined, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite' },
   }
   await apply(ctx)
@@ -82,7 +82,7 @@ test('the catalog guard wraps preset listeners that add the catalog after next()
       if (options?.prepend) chain.unshift(handler)
       else chain.push(handler)
     },
-    agents: { get() {} },
+    agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
   }
   // The worker preset's tool-skill listener is mounted before this plugin and
@@ -152,7 +152,7 @@ test('web panels register on both the legacy requestRejection and the newer conn
         },
         effect() { return () => {} },
         on() {},
-        agents: { get: () => undefined },
+        agents: { get: () => undefined, list: () => [] },
         agentPresets: { composedPreset: () => 'superagent-lite' },
       }
       await apply(ctx)
@@ -210,7 +210,7 @@ test('apply reclaims a stale running record without a live worker', async () => 
     inject() {},
     effect() { return () => {} },
     on(name, handler) { listeners.set(name, handler) },
-    agents: { get: () => undefined },
+    agents: { get: () => undefined, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite' },
   }
 

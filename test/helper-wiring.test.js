@@ -23,7 +23,7 @@ function context() {
       inject() {},
       effect() { return () => {} },
       on(name, handler) { listeners.set(name, handler) },
-      agents: { get() {} },
+      agents: { get() {}, list: () => [] },
       agentPresets: { composedPreset() {} },
     },
   }
