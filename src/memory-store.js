@@ -165,31 +165,41 @@ const KNOWLEDGE_TERM = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+|[a-z0-9]+/g
 const LATIN_TERM = /^[a-z0-9]+$/
 
 // Latin words stay whole; a Chinese run becomes overlapping bigrams so a
-// multi-word query can match entries keyword by keyword.
+// multi-word query can match entries keyword by keyword. Single Chinese
+// characters are only used alone so common function words cannot match
+// everything in a multi-keyword query.
 function knowledgeTerms(text) {
   const terms = new Set()
+  const characters = new Set()
   for (const [run] of text.toLowerCase().matchAll(KNOWLEDGE_TERM)) {
-    if (!LATIN_TERM.test(run)) {
-      if (run.length === 1) terms.add(run)
-      else for (let index = 0; index < run.length - 1; index += 1) terms.add(run.slice(index, index + 2))
-    } else {
+    if (LATIN_TERM.test(run)) {
       terms.add(run)
+    } else if (run.length === 1) {
+      terms.add(run)
+      characters.add(run)
+    } else {
+      for (let index = 0; index < run.length - 1; index += 1) terms.add(run.slice(index, index + 2))
     }
+  }
+  if (terms.size > 1) {
+    const withoutCharacters = [...terms].filter(term => !characters.has(term))
+    if (withoutCharacters.length > 0) return withoutCharacters
   }
   return [...terms]
 }
 
-function knowledgeTermIndex(text, term) {
+function knowledgeTermIndex(text, term, substring = false) {
   const lower = text.toLowerCase()
   if (!LATIN_TERM.test(term)) return lower.indexOf(term)
   const match = new RegExp(`(^|[^a-z0-9])${term}(?![a-z0-9])`).exec(lower)
-  return match ? match.index + match[1].length : -1
+  if (match) return match.index + match[1].length
+  return substring ? lower.indexOf(term) : -1
 }
 
-function knowledgeSnippet(text, term) {
+function knowledgeSnippet(text, term, substring = false) {
   const limit = KNOWLEDGE_SNIPPET_CONTEXT * 2
   if (!term) return text.length > limit ? `${text.slice(0, limit)}…` : text
-  const index = knowledgeTermIndex(text, term)
+  const index = knowledgeTermIndex(text, term, substring)
   if (index < 0) return text
   const start = Math.max(0, index - KNOWLEDGE_SNIPPET_CONTEXT)
   const end = Math.min(text.length, index + term.length + KNOWLEDGE_SNIPPET_CONTEXT)
@@ -447,14 +457,17 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
       throw new TypeError(`Knowledge query limit must be an integer from 1 to ${KNOWLEDGE_QUERY_LIMIT}`)
     }
     const terms = knowledgeTerms(query)
+    // A lone keyword keeps the old substring behavior, including English
+    // compounds; multi-keyword queries match whole words to avoid noise.
+    const substring = terms.length === 1
     const entries = await readKnowledge()
     return entries
-      .map(entry => ({ entry, matched: terms.filter(term => knowledgeTermIndex(entry.text, term) >= 0) }))
+      .map(entry => ({ entry, matched: terms.filter(term => knowledgeTermIndex(entry.text, term, substring) >= 0) }))
       .filter(result => terms.length === 0 || result.matched.length > 0)
       .sort((a, b) => b.matched.length - a.matched.length ||
         b.entry.updatedAt.localeCompare(a.entry.updatedAt))
       .slice(0, limit)
-      .map(({ entry, matched }) => ({ ...entry, snippet: knowledgeSnippet(entry.text, matched[0]) }))
+      .map(({ entry, matched }) => ({ ...entry, snippet: knowledgeSnippet(entry.text, matched[0], substring) }))
   }
 
   async function getKnowledge(ids) {

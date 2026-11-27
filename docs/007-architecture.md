@@ -313,7 +313,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
 | `message_router` | Worker | 把最终结论发给 Router；送达后触发 change 任务的 memory 提取 |
-| `knowledge_query` | Worker、Reviewer、memory 角色 | 按关键词查询全局知识库（英文按单词、中文按相邻两字切分，多词按命中关键词数排序），返回编号和匹配关键词前后的上下文片段；只读 |
+| `knowledge_query` | Worker、Reviewer、memory 角色 | 按关键词查询全局知识库（英文按单词、中文按相邻两字切分，多词按命中关键词数排序，单个关键词按子串匹配），返回编号和匹配关键词前后的上下文片段；只读 |
 | `knowledge_get` | Worker、Reviewer、memory 角色 | 按 `knowledge_query` 返回的编号读取完整知识条目；只读 |
 | `knowledge_write` | memory 角色 | 新增、纠正或删除全局知识；只有 memory 角色可见 |
 
