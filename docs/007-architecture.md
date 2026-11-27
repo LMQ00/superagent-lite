@@ -257,6 +257,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |
 | `test/dispatch-merge.test.js` | `mode=merge` 的分支/Task ID 解析、授权与目标校验、追加到运行中的 merge worker、并发排队和发送失败回滚。 |
 | `test/merge-tool.test.js` | merge worker 的目标分支合并、冲突保留和 worktree 状态限制。 |
+| `test/message-images.test.js` | 四种图片格式识别、按目录解析路径并保存附件、缺文件/不支持格式/缺附件服务/保存失败、单条消息数量和字节上限、路径校验，以及派发、报告和续派发的图片传递。 |
 | `test/non-git.test.js` | 非 Git 目录的 change/report 派发、直接工作区执行、`merge`/`land` 拒绝、工作区审查与证据、report 完成、无 Worktree 续派发、Worker 记忆/上下文注入与 memory 角色、面板无 Git 动作和任务完成状态。 |
 | `test/land-all.test.js` | 双方纯新增时保留两边、同一行改写与 add/add 冲突时停下、按计划顺序合并和测试失败即停。 |
 | `test/landing.test.js` | 未授权与授权后的 push/PR/merge 检查、分支与 reviewed HEAD 范围、跨任务授权和伪造授权。 |
