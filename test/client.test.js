@@ -71,7 +71,8 @@ function setup({ fetch, openSession, language = 'en', timers = {} }) {
         dictionary = value[language]
         return () => { localeDisposed = true }
       },
-      bind: () => key => dictionary[key],
+      bind: () => (key, params) => dictionary[key]?.replace(/\{(\w+)\}/g,
+        (placeholder, name) => params?.[name] ?? placeholder),
     },
   }
   plugin.apply(ctx)
@@ -1589,4 +1590,23 @@ test('the branches tab lists only plugin objects and deletes each kind in place'
   assert.equal(requests.filter(request => request.path === '/superagent-lite/branches').length, 1)
   board.dispose()
   assert.ok(requests.filter(request => request.options.signal).every(request => request.options.signal.aborted))
+})
+
+test('shows the read-only desktop runtime diagnostic in the task panel', async () => {
+  const dshDir = 'C:\\Program Files\\DSH\\resources\\app.asar\\node_modules\\@deepseek-ai\\dsh'
+  const board = setup({
+    fetch: async () => ({ ok: true, json: async () => ({ tasks: [], host: { readonly: true, dshDir } }) }),
+    language: 'zh',
+  })
+  try {
+    assert.match(text(board.render()), /正在加载任务/)
+    await flush()
+    const tree = board.render()
+    assert.match(text(tree), /桌面版内置运行时只读，任务卡补丁不可用/)
+    assert.match(text(tree), /app\.asar/)
+    assert.equal(byClass(tree, 'sl-alert').length, 1)
+    assert.equal(byClass(tree, 'sl-notice').length, 0)
+  } finally {
+    board.dispose()
+  }
 })

@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { TARGETS } from '../scripts/dsh-client-ui-chat-agent-message-card.mjs'
-import { reconcileHostPatches, reconcileSubagentPromptSource, resolveDshDirectory } from '../src/host-patch.js'
+import {
+  reconcileHostPatches, reconcileSubagentPromptSource, resolveDshDirectory, SUBAGENT_TARGETS,
+} from '../src/host-patch.js'
 
 const anchor = process.env.DSH_INSTALL_DIR
 const tmp = fileURLToPath(new URL('../tmp/', import.meta.url))
@@ -35,16 +37,33 @@ async function writeChatPackage(packageDir, version) {
   }
 }
 
-async function writeSubagentPackage(packageDir, version) {
+async function writeSubagentPackage(packageDir, version, { omitLabel, duplicateLabel } = {}) {
   await writeManifest(packageDir, SUBAGENT, version)
-  for (const file of ['src/types.ts', 'src/manager.ts', 'lib/index.js', 'lib/types/manager.js', 'lib/types/types.d.ts']) {
-    const target = join(packageDir, file)
-    await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, `${file}\n\t\t\t\tsource: { kind: "user" },\n`)
+  const target = SUBAGENT_TARGETS.get(version)
+  if (target === undefined) {
+    await mkdir(join(packageDir, 'lib'), { recursive: true })
+    await writeFile(join(packageDir, 'lib', 'index.js'), 'source: { kind: "user" },\n')
+    return
+  }
+  const files = new Map()
+  for (const entry of target.patches) {
+    const parts = files.get(entry.file) ?? []
+    if (entry.label !== omitLabel) {
+      parts.push(`/* ${entry.label} */`, entry.old)
+      if (entry.label === duplicateLabel) parts.push(entry.old)
+    }
+    files.set(entry.file, parts)
+  }
+  for (const [file, parts] of files) {
+    const targetPath = join(packageDir, file)
+    await mkdir(dirname(targetPath), { recursive: true })
+    await writeFile(targetPath, `${parts.join('\n')}\n`)
   }
 }
 
-async function makeHost(t, { dshVersion = '0.2.2-rc.5', chatVersion = '0.2.2-rc.5', subagentVersion = '0.2.2-rc.5' } = {}) {
+async function makeHost(t, {
+  dshVersion = '0.2.2-rc.5', chatVersion = '0.2.2-rc.5', subagentVersion = '0.2.2-rc.5', subagentOptions = {},
+} = {}) {
   await mkdir(tmp, { recursive: true })
   const root = await mkdtemp(join(tmp, 'host-patch-auto-'))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -54,25 +73,8 @@ async function makeHost(t, { dshVersion = '0.2.2-rc.5', chatVersion = '0.2.2-rc.
   await writeFile(join(dshDir, 'lib', 'bin.js'), '// fake entry\n')
   await writeChatPackage(join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat'), chatVersion)
   const subagentDir = join(dshDir, 'node_modules', '@deepseek-ai', 'dsh-subagent')
-  await writeSubagentPackage(subagentDir, subagentVersion)
+  await writeSubagentPackage(subagentDir, subagentVersion, subagentOptions)
   return { root, dshDir, subagentDir, chatDir: join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat') }
-}
-
-function patchStub(calls, { failDryRun = false } = {}) {
-  return async (command, args) => {
-    calls.push([command, ...args])
-    if (args.includes('--dry-run')) {
-      if (failDryRun) throw new Error('patch: **** malformed patch')
-      return {}
-    }
-    if (args.includes('-d') && args.includes('-i')) {
-      const packageDir = args[args.indexOf('-d') + 1]
-      for (const file of ['src/types.ts', 'src/manager.ts', 'lib/index.js', 'lib/types/manager.js', 'lib/types/types.d.ts']) {
-        await writeFile(join(packageDir, file), `${file}\n\t\t\t\tsource: ${PROMPT_SOURCE},\n`)
-      }
-    }
-    return {}
-  }
 }
 
 test('resolveDshDirectory walks up from the installed entry and honours DSH_INSTALL_DIR', async (t) => {
@@ -84,47 +86,81 @@ test('resolveDshDirectory walks up from the installed entry and honours DSH_INST
 
 test('startup reconciliation applies the subagent and Chat patches once', async (t) => {
   const { dshDir, subagentDir, chatDir } = await makeHost(t)
-  const calls = []
   const warnings = []
   const logger = { warn: message => warnings.push(message) }
-  const result = await reconcileHostPatches({ logger }, {
-    dshDir, runPatch: patchStub(calls),
-  })
+  const result = await reconcileHostPatches({ logger }, { dshDir })
   assert.deepEqual(result.subagent, { state: 'applied', version: '0.2.2-rc.5' })
   assert.equal(result.chat.state, 'applied')
-  assert.equal(calls.length, 2)
   assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), new RegExp(PROMPT_SOURCE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   assert.match(await readFile(join(chatDir, 'lib/client.js'), 'utf8'), /const cardedNotice=context\.state\.kind===`context`/)
   assert.equal(warnings.length, 1)
   assert.match(warnings[0], /restart DSH/)
 
-  const again = await reconcileHostPatches({ logger }, { dshDir, runPatch: patchStub(calls) })
+  const again = await reconcileHostPatches({ logger }, { dshDir })
   assert.deepEqual(again.subagent, { state: 'already', version: '0.2.2-rc.5' })
   assert.equal(again.chat.state, 'already')
-  assert.equal(calls.length, 2)
   assert.equal(warnings.length, 1)
 })
 
 test('unsupported subagent versions and failed patches leave the package untouched', async (t) => {
   const unsupported = await makeHost(t, { dshVersion: '0.2.3-alpha.2', subagentVersion: '0.2.3-alpha.2' })
-  const calls = []
   assert.deepEqual(
-    await reconcileSubagentPromptSource({ dshDir: unsupported.dshDir, runPatch: patchStub(calls) }),
+    await reconcileSubagentPromptSource({ dshDir: unsupported.dshDir }),
     { state: 'unsupported', version: '0.2.3-alpha.2' },
   )
-  assert.equal(calls.length, 0)
 
-  const broken = await makeHost(t)
-  const failedCalls = []
+  const broken = await makeHost(t, {
+    subagentOptions: { omitLabel: 'forward promptSource in the runtime bundle' },
+  })
   const warnings = []
   const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, {
-    dshDir: broken.dshDir, runPatch: patchStub(failedCalls, { failDryRun: true }),
+    dshDir: broken.dshDir,
   })
   assert.equal(result.subagent.state, 'failed')
-  assert.match(result.subagent.reason, /malformed patch/)
-  assert.equal(failedCalls.length, 1)
-  assert.match(await readFile(join(broken.subagentDir, 'lib/index.js'), 'utf8'), /source: \{ kind: "user" \}/)
+  assert.match(result.subagent.reason, /does not contain "forward promptSource in the runtime bundle"/)
+  assert.doesNotMatch(await readFile(join(broken.subagentDir, 'lib/index.js'), 'utf8'), /promptSource/)
   assert.ok(warnings.some(message => /subagent promptSource patch was not applied/.test(message)))
+})
+
+test('a failed snippet leaves every subagent file untouched', async (t) => {
+  const { dshDir, subagentDir } = await makeHost(t, {
+    subagentOptions: { omitLabel: 'add promptSource beside the start prompt' },
+  })
+  const pristine = new Map()
+  for (const file of ['src/types.ts', 'src/manager.ts', 'lib/index.js', 'lib/types/manager.js', 'lib/types/types.d.ts']) {
+    pristine.set(file, await readFile(join(subagentDir, file), 'utf8'))
+  }
+  const result = await reconcileSubagentPromptSource({ dshDir })
+  assert.equal(result.state, 'failed')
+  assert.match(result.reason, /does not contain "add promptSource beside the start prompt"/)
+  for (const [file, content] of pristine) assert.equal(await readFile(join(subagentDir, file), 'utf8'), content)
+})
+
+test('duplicate subagent snippets fail closed', async (t) => {
+  const { dshDir, subagentDir } = await makeHost(t, {
+    subagentOptions: { duplicateLabel: 'forward promptSource in the runtime bundle' },
+  })
+  const pristine = await readFile(join(subagentDir, 'lib/index.js'), 'utf8')
+  const result = await reconcileSubagentPromptSource({ dshDir })
+  assert.equal(result.state, 'failed')
+  assert.match(result.reason, /contains "forward promptSource in the runtime bundle" 2 times/)
+  assert.match(result.reason, /refusing an ambiguous patch/)
+  assert.equal(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), pristine)
+})
+
+test('a desktop app.asar runtime is reported read-only and never patched', async () => {
+  const dshDir = join('/Applications/DSH.app/Contents/Resources/app.asar', 'node_modules', DSH)
+  const warnings = []
+  assert.deepEqual(await reconcileSubagentPromptSource({ dshDir }), { state: 'readonly' })
+  const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, { dshDir })
+  assert.deepEqual(result, {
+    dshDir,
+    readonly: true,
+    subagent: { state: 'readonly' },
+    chat: { state: 'readonly' },
+  })
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /read-only app archive/)
 })
 
 test('an unresolvable host is skipped without warnings or writes', async () => {
@@ -151,9 +187,7 @@ test('a DSH-go rootfs is never patched automatically', async (t) => {
   const dshDir = join(root, 'opt', 'dsh', 'node_modules', DSH)
   await writeManifest(dshDir, DSH, '0.2.2-rc.1')
   const warnings = []
-  const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, {
-    dshDir, runPatch: async () => assert.fail('DSH-go must not run patch'),
-  })
+  const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, { dshDir })
   assert.equal(result.subagent.state, 'dsh-go')
   assert.equal(result.chat.state, 'dsh-go')
   assert.deepEqual(warnings, [])
@@ -165,18 +199,26 @@ test('0.2.3-alpha.1 reconciles the Chat card patch and leaves its native subagen
     chatVersion: '0.2.3-alpha.1',
     subagentVersion: '0.2.3-alpha.1',
   })
-  const calls = []
   const warnings = []
-  const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, {
-    dshDir, runPatch: patchStub(calls),
-  })
+  const result = await reconcileHostPatches({ logger: { warn: message => warnings.push(message) } }, { dshDir })
   assert.deepEqual(result.subagent, { state: 'native', version: '0.2.3-alpha.1' })
   assert.equal(result.chat.state, 'applied')
-  assert.equal(calls.length, 0)
   assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), /source: \{ kind: "user" \}/)
   assert.equal(warnings.length, 1)
   assert.match(warnings[0], /restart DSH/)
   assert.doesNotMatch(warnings[0], /subagent/)
+})
+
+test('the subagent promptSource patch applies without a patch executable on PATH', async (t) => {
+  const { dshDir, subagentDir } = await makeHost(t)
+  const path = process.env.PATH
+  process.env.PATH = ''
+  try {
+    assert.deepEqual(await reconcileSubagentPromptSource({ dshDir }), { state: 'applied', version: '0.2.2-rc.5' })
+  } finally {
+    process.env.PATH = path
+  }
+  assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), /spec\.promptSource/)
 })
 
 test('0.2.2-rc.1 applies the bundle-only promptSource diff', async (t) => {
@@ -185,23 +227,16 @@ test('0.2.2-rc.1 applies the bundle-only promptSource diff', async (t) => {
     chatVersion: '0.2.2-rc.1',
     subagentVersion: '0.2.2-rc.1',
   })
-  const calls = []
-  const runPatch = async (command, args) => {
-    calls.push([command, ...args])
-    if (!args.includes('--dry-run')) {
-      await writeFile(join(subagentDir, 'lib/index.js'), 'source: request.promptSource ?? { kind: "user" },\n')
-    }
-    return {}
-  }
   assert.deepEqual(
-    await reconcileSubagentPromptSource({ dshDir, runPatch }),
+    await reconcileSubagentPromptSource({ dshDir }),
     { state: 'applied', version: '0.2.2-rc.1' },
   )
-  assert.equal(calls.length, 2)
-  assert.match(calls[0].join(' '), /dsh-subagent-0\.2\.2-rc\.1-prompt-source\.patch/)
   assert.match(await readFile(join(subagentDir, 'lib/index.js'), 'utf8'), /request\.promptSource/)
+  assert.match(await readFile(join(subagentDir, 'lib/types/manager.js'), 'utf8'), /request\.promptSource/)
+  assert.match(await readFile(join(subagentDir, 'lib/types/types.d.ts'), 'utf8'), /readonly promptSource\?: MessageSource;/)
+  assert.equal(existsSync(join(subagentDir, 'src')), false)
   assert.deepEqual(
-    await reconcileSubagentPromptSource({ dshDir, runPatch }),
+    await reconcileSubagentPromptSource({ dshDir }),
     { state: 'already', version: '0.2.2-rc.1' },
   )
 })
@@ -215,11 +250,7 @@ test('the real subagent package is patched or reported native from nested or hoi
   }
   const version = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8')).version
   if (version === '0.2.3-alpha.1') {
-    const native = await reconcileSubagentPromptSource({
-      dshDir: anchor,
-      runPatch: async () => assert.fail('a native subagent version must not run patch'),
-    })
-    assert.deepEqual(native, { state: 'native', version })
+    assert.deepEqual(await reconcileSubagentPromptSource({ dshDir: anchor }), { state: 'native', version })
     return
   }
   if (!['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5'].includes(version)) {

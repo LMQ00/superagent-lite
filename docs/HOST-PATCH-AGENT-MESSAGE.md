@@ -179,7 +179,10 @@ it loads. It resolves the current `@deepseek-ai/dsh` from the running entry, cal
 the same script for the nested or hoisted Chat package, applies only a supported
 version that still reports `patch is applicable`, and writes
 `superagent-lite host patch: applied ...; restart DSH to load it` to the Host log.
-DSH-go rootfs is never modified automatically; use the `--dsh-go` commands above.
+Desktop DSH keeps its runtime inside a read-only `app.asar`; the plugin detects
+that layout, writes nothing, and shows the read-only runtime notice in the
+project task panel. DSH-go rootfs is never modified automatically; use the
+`--dsh-go` commands above.
 
 Without `--package`, `--dsh`, or `--dsh-go`, the script resolves the Chat package
 from the `dsh` executable on PATH. It accepts both npm layouts: a package nested
@@ -255,8 +258,10 @@ An already-patched or already-reverted tree exits 0 with `already patched` /
 
 - An npm upgrade or DSH-go engine update replaces the package/rootfs, including
   `lib/client.js`, so the patch is lost. For an npm Host the bundle re-applies it
-  from `src/host-patch.js` on startup and logs a pending restart; DSH-go still
-  needs the manual `--dsh-go` apply against the new engine after a `--check`.
+  from `src/host-patch.js` on startup and logs a pending restart; a desktop
+  `app.asar` runtime or another read-only install cannot be patched and shows the
+  panel notice instead. DSH-go still needs the manual `--dsh-go` apply against the
+  new engine after a `--check`.
 - Without the patch, the plugin still works: the affected messages are delivered
   exactly as before and render as the plain context row.
 - Roll back with the same target option:

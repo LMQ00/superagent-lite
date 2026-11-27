@@ -135,7 +135,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `src/board.js`
 
-提供 `GET /superagent-lite/tasks`、`POST /superagent-lite/tasks`（`action=stop`）、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`、`stoppable`、`cancelled` 和 `deletable`；`POST` 停止运行中或排队中的 Task 并返回 `cancelled` 状态，`DELETE` 先停止并等待 worker 离开运行态再删除记录与 worker 会话映射；合并或发布中的 Task 拒绝删除。限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；还提供 JSON body 读取工具（`src/board.js:1-232`）。
+提供 `GET /superagent-lite/tasks`、`POST /superagent-lite/tasks`（`action=stop`）、`DELETE /superagent-lite/tasks?taskId=`、`GET /superagent-lite/git?taskId=` 和 `POST /superagent-lite/git`。只允许 owner，投影公开 Task 字段，叠加推导出的面板状态，标记 `unconfirmed`、`stoppable`、`cancelled` 和 `deletable`；任务列表在只读桌面运行时额外返回 `host: { readonly: true, dshDir }`，供面板显示补丁不可用提示；`POST` 停止运行中或排队中的 Task 并返回 `cancelled` 状态，`DELETE` 先停止并等待 worker 离开运行态再删除记录与 worker 会话映射；合并或发布中的 Task 拒绝删除。限制 JSON body 4 KB，校验合并目标或 PR remote，并把动作拒绝映射为 `409`；还提供 JSON body 读取工具（`src/board.js:1-236`）。
 
 ### `src/report-tool.js`
 
@@ -147,7 +147,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 ### `client.js`
 
-浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，也可单独筛出「排队中」的 Task，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 stop、merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。停止对运行中或排队中的行出现，成功后按 Host 返回的 `cancelled` 状态就地更新该行并显示「已取消」标签，不弹窗、不重新加载列表；删除任务先停止再移除记录，弹窗写明运行中的 worker 会被先停止。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；凡是还有 worker 分支的行都有删除分支按钮，运行中禁用，确认后按 Host 返回的视图就地更新该行并隐藏按钮。记忆系统标签页展示全局/项目记忆、全局/项目 skill 和全局知识库，顶部搜索框按关键词本地过滤已加载的记忆字段、skill 名字/description/正文和知识条目，不发新请求；分组使用带标题、说明和计数的卡片，长字段和知识条目默认截断，skill 默认折叠摘要、点击展开正文；并支持确认后删除记忆字段、memory 管理的 skill 或知识条目；分支 / worktree 标签页在选中时读取本插件创建的 Worktree 和 `sl-*` 分支，展示分支、路径、任务和状态，提供分开的删除 Worktree / 删除分支确认弹窗，成功后就地更新该行；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。面板不显示设置分组（`client.js:1-1587`）。它不 import Node 模块，状态只在 React 内。
+浏览器面板。注册 `main` 和 `sidebar.panellist` 槽位与 `superagent-lite` 字典；加载任务，按六个面板状态分组和过滤，也可单独筛出「排队中」的 Task，按 Team/Project 缩小任务，渲染会话和 PR 链接，提交 stop、merge、publish、review、delete-branch 和 delete-task 动作，并支持勾选多条任务后批量删除。停止对运行中或排队中的行出现，成功后按 Host 返回的 `cancelled` 状态就地更新该行并显示「已取消」标签，不弹窗、不重新加载列表；删除任务先停止再移除记录，弹窗写明运行中的 worker 会被先停止。合并弹窗选择本地目标分支；提交 PR 弹窗检查 `gh` 账号并选择 remote；审查从 Worker Session 启动；凡是还有 worker 分支的行都有删除分支按钮，运行中禁用，确认后按 Host 返回的视图就地更新该行并隐藏按钮。记忆系统标签页展示全局/项目记忆、全局/项目 skill 和全局知识库，顶部搜索框按关键词本地过滤已加载的记忆字段、skill 名字/description/正文和知识条目，不发新请求；分组使用带标题、说明和计数的卡片，长字段和知识条目默认截断，skill 默认折叠摘要、点击展开正文；并支持确认后删除记忆字段、memory 管理的 skill 或知识条目；分支 / worktree 标签页在选中时读取本插件创建的 Worktree 和 `sl-*` 分支，展示分支、路径、任务和状态，提供分开的删除 Worktree / 删除分支确认弹窗，成功后就地更新该行；任务列表里还有排队中的 Task 时，面板每 3 秒静默轮询任务列表并就地更新，名额释放后该行转为运行中；其他时候不轮询。只读桌面运行时会显示「桌面版内置运行时只读，任务卡补丁不可用」和诊断路径。面板不显示设置分组（`client.js:1-1604`）。它不 import Node 模块，状态只在 React 内。
 
 ## 依赖规则
 
@@ -204,7 +204,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/git-actions.js` | 构建面板视图（非 Git 任务不调用 git/gh），执行合并、发送 PR、审查和删除分支动作；为「分支 / worktree」标签页推导本插件创建的 Worktree 与 `sl-*` 分支，并执行只删 Worktree 或只删分支的动作。 |
 | `src/github.js` | 把 reviewed commit 交付到所选 GitHub remote 的 Pull request。 |
 | `src/helper-guard.js` | 计数待认领 helper；记忆对话保持只读，Reviewer 只禁写改工具与改变分支的 git 命令。 |
-| `src/host-patch.js` | 插件启动时从运行入口解析已安装的 `@deepseek-ai/dsh`，对 `0.2.2-rc.1` 到 `0.2.3-alpha.1` 的 npm Host 自动补打客户端任务卡补丁与子代理 `promptSource` 补丁；rc.1 使用仅 bundle 的子代理 diff，`0.2.3-alpha.1` 只补客户端并报告 `native`；已打过时不动，版本/布局不匹配、片段失败或只读安装只写告警，不阻断启动；DSH-go 不自动修改。 |
+| `src/host-patch.js` | 插件启动时从运行入口解析已安装的 `@deepseek-ai/dsh`，对 `0.2.2-rc.1` 到 `0.2.3-alpha.1` 的 npm Host 自动补打客户端任务卡补丁与子代理 `promptSource` 补丁；子代理补丁按版本目标在进程内逐条比对片段后一次性写入，不调用外部 `patch`，片段缺失或命中不唯一时不改任何文件；rc.1 使用仅 bundle 的目标，`0.2.3-alpha.1` 只补客户端并报告 `native`；已打过时不动；检测到 dsh 目录位于只读 `.asar` 时不写入并返回 `readonly` 给面板；版本/布局不匹配或片段失败只写告警，不阻断启动；DSH-go 不自动修改。 |
 | `src/landing.js` | 持有 Task 的落地授权与 reviewed HEAD，检查 Worker shell 的 push、PR 与 merge 范围。 |
 | `src/launch-queue.js` | 按并发上限启动或排队 Worker；新启动的 Worker 使用保存的模型，启动前重读 Task 避免停止后仍启动，并向 Router 通知排队任务已开始；启动扫描和每次 pump 回收失联超过 2 分钟且没有活 Session 的 `starting`/`running`/`resuming` Task，按 Review、分支和 Worktree HEAD 落为 `awaiting-merge` 或 `failed`。 |
 | `src/message-images.js` | 把工具参数里的本地图片保存为 Host 附件引用，并生成消息图片块；校验格式、数量和字节上限。 |
@@ -236,8 +236,8 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 
 | 测试 | 覆盖什么 |
 | --- | --- |
-| `test/board.test.js` | owner 准入、公开字段投影、排队/停止/取消标记、推导面板状态、停止动作、先停止再删除、任务删除、动作校验和状态码。 |
-| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、排队标记与名额释放后的就地更新、会话导航、停止运行中/排队中任务、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、设置标签页、记忆标签页的搜索过滤/空状态/折叠展开/长文本截断、多 skill 展示/删除和错误，以及分支 / worktree 标签页的只读列表、两类删除确认、就地更新和拒绝提示。 |
+| `test/board.test.js` | owner 准入、公开字段投影、只读桌面运行时的 `host` 诊断与普通安装的隐藏、排队/停止/取消标记、推导面板状态、停止动作、先停止再删除、任务删除、动作校验和状态码。 |
+| `test/client.test.js` | 槽位注册、中英渲染、六状态分组与筛选、只读桌面运行时提示与诊断路径、排队标记与名额释放后的就地更新、会话导航、停止运行中/排队中任务、合并/提交 PR/审查/删除分支/删除任务弹窗、任务批量删除、设置标签页、记忆标签页的搜索过滤/空状态/折叠展开/长文本截断、多 skill 展示/删除和错误，以及分支 / worktree 标签页的只读列表、两类删除确认、就地更新和拒绝提示。 |
 | `test/continue.test.js` | 运行中、空闲和已结束 Task 的 follow-up 路径、精简续派发结构、压缩回放、记录顺序和发送失败回滚。 |
 | `test/git-actions.test.js` | 推导状态、审查采纳、本地合并、任意分支删除与运行中/脏工作树/被占用工作树拒绝、remote 选择、面板审查、PR 状态同步，以及只列 `.agents/worktrees` 与 `sl-*` 对象和分开删除 Worktree / 分支。 |
 | `test/github.test.js` | GitHub 仓库解析和 reviewed SHA 发送。 |
@@ -251,7 +251,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/branches-panel.test.js` | 分支 / Worktree 端点的 owner 准入、方法限制、删除目标校验（kind/projectRoot/branch/path）、两类删除成功和拒绝映射。 |
 | `test/skill-catalog.test.js` | 新会话获得 memory skill catalog，已运行 Worker 会话按作者拦截多个 memory skill 的新增、修改和删除，其他 skill 变化和 Router 会话不受影响。 |
 | `test/host-patch.test.js` | 角色消息 / 子代理状态通知 / 系统提醒任务卡 Host 补丁在 `0.2.2-rc.2` 到 `0.2.2-rc.5`、`0.2.3-alpha.1`、`0.2.2-rc.1` 和 DSH-go 形态下的检查、旧补丁升级、应用、重复应用、回滚，以及版本/布局/片段不匹配和区间外版本的拒绝；真实安装用例从 `DSH_INSTALL_DIR` 解析，rc.2 到 rc.5 与 alpha.1 共用同一源码补丁。 |
-| `test/host-patch-auto.test.js` | 插件启动时自动补打：从入口或 `DSH_INSTALL_DIR` 解析 Host、客户端与子代理补丁的应用/重复应用、rc.1 的仅 bundle 子代理 diff、`0.2.3-alpha.1` 子代理的 `native` 跳过、版本不支持或片段失败时只告警不写入、无法解析时不动、测试进程不碰已安装 Host，以及真实 subagent 包（嵌套或提升布局）副本上的补丁与幂等。 |
+| `test/host-patch-auto.test.js` | 插件启动时自动补打：从入口或 `DSH_INSTALL_DIR` 解析 Host、客户端与子代理补丁的应用/重复应用、rc.1 的仅 bundle 子代理目标、`0.2.3-alpha.1` 子代理的 `native` 跳过、版本不支持或片段缺失/重复时只告警不写入、只读 `app.asar` 返回 `readonly` 且不尝试写入、无法解析时不动、测试进程不碰已安装 Host，以及真实 subagent 包（嵌套或提升布局）副本上的补丁与幂等。 |
 | `test/host-connection.test.js` | 从 `DSH_INSTALL_DIR` 解析真实安装的 `@deepseek-ai/dsh-client-connection`，核对区间内每个版本只暴露一种认证契约：`0.2.2-rc.1` 到 `0.2.2-rc.5` 有 `requestRejection` 且不需要 `connection.authentication`，`0.2.3-alpha.1` 相反；两种或两种都没有时失败。 |
 | `test/subagent-start.test.js` | rc.2 及以后平铺 spec、rc.1 嵌套 `request` 的启动请求形状。 |
 | `test/host.test.js` | 已安装 DSH 集成：schema、Worktree、Review 和报告。 |

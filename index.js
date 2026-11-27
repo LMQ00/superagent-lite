@@ -26,7 +26,7 @@ import {
 export const inject = ['subagents', 'tools', 'worktrees', 'subprocess', 'agents', 'agentPresets', 'sandboxPolicy', 'workingDirectory', 'systemPrompt']
 
 export async function apply(ctx) {
-  await reconcileHostPatches(ctx)
+  const hostPatch = await reconcileHostPatches(ctx)
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
     authoredSkills: async agent => {
       const parent = agent.session?.header?.parentSession
@@ -42,7 +42,7 @@ export async function apply(ctx) {
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/tasks',
       handler: createBoardHandler(connection, ctx.agents, undefined, gitManager, undefined,
-        (taskId, options) => stopWorker(ctx, taskId, options)),
+        (taskId, options) => stopWorker(ctx, taskId, options), hostPatch),
     }))
     web.effect(() => web.webServer.register({
       kind: 'exact', path: '/superagent-lite/git',
