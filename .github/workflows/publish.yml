@@ -1,15 +1,17 @@
-# 发布 @lmq00/superagent-lite 到 npm（维护者说明只保留在本文件）。
+# 发布 @lmq00/superagent-lite 到 npm（维护者说明见本文件与 docs/006-deployment.md 的「发布」）。
 #
 # 触发：
 #   GitHub → Actions → Publish npm → Run workflow，分支选 master，输入版本号。
 #   工作流只接受 master；concurrency 保证同一时间只有一个发布在跑。
 #
 # 版本号：
-#   输入不带 v 前缀的 semver。常规递增：修复 1.0.0→1.0.1，功能 1.1.0，破坏性 2.0.0；
-#   预发布 1.1.0-rc.1。npm 上已存在的版本不能重复发布。如果 package.json 已经是目标版本，
-#   工作流不会产生空的版本提交，只打 tag；这种用法只适合该版本还没发布成功的时候。
-#   流程：npm version 写入 package.json → node --test test/*.test.js → 提交并打 v<版本> tag
-#   → npm publish → 原子推送提交和 tag 到 master。
+#   输入带 v 的 semver（如 v1.0.1、v1.1.0-rc.1）；不带 v 也接受，工作流统一规范化。
+#   常规递增：修复 v1.0.0→v1.0.1，功能 v1.1.0，破坏性 v2.0.0，预发布 v1.1.0-rc.1。
+#   npm 上已存在的版本不能重复发布。package.json 的 version 不能带 v，工作流写入前会剥掉。
+#   如果 package.json 已经是目标版本，工作流不会产生空的版本提交，只打 tag；这种用法只适合
+#   该版本还没发布成功的时候。
+#   流程：npm version（去 v）写入 package.json → node --test test/*.test.js → 提交
+#   chore(release): v<版本> 并打 v<版本> tag → npm publish → 原子推送提交和 tag 到 master。
 #
 # GitHub 配置：
 #   Secret：Settings → Secrets and variables → Actions → New repository secret，
@@ -22,25 +24,31 @@
 #
 # 本地等价手动发布：
 #   git checkout master && git pull --ff-only
-#   VERSION=1.0.1
+#   TAG=v1.0.1
+#   VERSION="${TAG#v}"
 #   npm version "$VERSION" --no-git-tag-version --allow-same-version
 #   node --test test/*.test.js
-#   npm login   # 输入 2FA；也可用 NODE_AUTH_TOKEN=<granular token> npm publish
+#   npm login   # 浏览器或 OTP 完成 2FA
 #   npm publish --access public
 #   git add package.json
-#   git commit -m "chore(release): v$VERSION"   # package.json 没变时跳过
-#   git tag -a "v$VERSION" -m "v$VERSION"
+#   git commit -m "chore(release): $TAG"   # package.json 没变时跳过
+#   git tag -a "$TAG" -m "$TAG"
 #   git push origin master --follow-tags
 #
+# 本地也可用带 bypass-2FA 的 granular token：
+#   npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+#   npm publish --access public
+# 这条命令把 token 写进用户级 ~/.npmrc，不要提交。npm 不直接读取 NODE_AUTH_TOKEN；
+# CI 里是 setup-node 生成的 .npmrc 引用它。
 # 测试必须用 node --test test/*.test.js，不要裸跑 npm test 或 node --test，
-# 它们会扫描 tmp/ 下的遗留测试并失败。不要把 NPM_TOKEN 写进仓库、.npmrc 或日志。
+# 它们会扫描 tmp/ 下的遗留测试并失败。不要把 NPM_TOKEN 写进仓库或提交 .npmrc。
 name: Publish npm
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: '要发布的版本号（不带 v 的 semver，如 1.0.1；不能是 npm 上已存在的版本）'
+        description: '要发布的版本号（带 v 的 semver，如 v1.0.1；也接受不带 v，写入 package.json 时会去掉 v）'
         required: true
         type: string
 
@@ -76,37 +84,39 @@ jobs:
       - name: Set version
         id: version
         env:
-          VERSION: ${{ inputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          VERSION="${INPUT_VERSION#v}"
           if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Version must be a semver without the v prefix, for example 1.0.1"
+            echo "::error::Version must be a semver with or without the v prefix, for example v1.0.1"
             exit 1
           fi
           npm version "${VERSION}" --no-git-tag-version --allow-same-version
-          echo "version=$(node -p "require('./package.json').version")" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Run tests
         run: node --test test/*.test.js
 
       - name: Commit and tag
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
-            echo "::error::Tag v${VERSION} already exists; choose another version"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} already exists; choose another version"
             exit 1
           fi
           if git diff --quiet -- package.json; then
-            echo "package.json is already at ${VERSION}; skipping the version commit"
+            echo "package.json is already at the requested version; skipping the version commit"
           else
             git add package.json
-            git commit -m "chore(release): v${VERSION}"
+            git commit -m "chore(release): ${TAG}"
           fi
-          git tag -a "v${VERSION}" -m "v${VERSION}"
+          git tag -a "${TAG}" -m "${TAG}"
 
       - name: Publish to npm
         env:
@@ -115,5 +125,5 @@ jobs:
 
       - name: Push commit and tag
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "refs/tags/v${VERSION}"
+          TAG: ${{ steps.version.outputs.tag }}
+        run: git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "refs/tags/${TAG}"
