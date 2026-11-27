@@ -70,7 +70,7 @@ npm i @lmq00/superagent-lite
 「设置」标签页保存两项 worker 默认值，只允许安装 owner 读写。
 
 - worker 模型：填写服务商、模型和可选的推理强度；三项都留空时跟随 DSH 默认模型。保存后用于新启动的 worker，已有 worker 保持原选择。
-- 并发 worker 上限：1–16，默认 3。超出上限的新任务停在「排队中」，有空闲名额后按创建顺序启动；排队中或运行中的任务可以停止，停止后不会再被派发，并立即释放名额；review 是 worker 的子代理，不占额外名额。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 worker 会话时，插件启动和后续队列检查会回收记录；失联的 `starting`/`resuming` 也不再占用名额，交付事实齐全的回收为「未合并」，其余回收为失败。
+- 并发 worker 上限：1–16，默认 3。超出上限的新任务停在「排队中」，有空闲名额后按创建顺序启动；排队中或运行中的任务可以停止，停止后不会再被派发，并立即释放名额；review 是 worker 的子代理，不占 worker 名额，但和 worker 一起计入 DSH Host 的 `maxActiveSubagents`（官方默认 8）；Host 名额满时任务同样留在「排队中」，等下一次队列检查再启动，不会记为失败。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 worker 会话时，插件启动和后续队列检查会回收记录；失联的 `starting`/`resuming` 也不再占用名额，交付事实齐全的回收为「未合并」，其余回收为失败。
 
 原始架构图按编号保存在 [docs/diagrams](docs/diagrams/)：001 术语与主流程、002 预设流程、003 记忆系统。
 
@@ -93,7 +93,7 @@ npm i @lmq00/superagent-lite
 - router 与 worker 默认不推送、不合并；只有任务记录里的 `land` 授权才允许推送、开 PR 或合并 reviewed commit，且必须由用户在派发或续派发时明确给出。用户明确授权合并时，默认由 merge worker 执行：没有正在运行的 merge worker 时新派发一个，已有则追加给它；change worker 的续派发只授权推送和 PR，不授权合并。面板合并动作仍是用户直接触发的本地合并入口。
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
-- 并发 worker 数有上限，默认 3，可在面板「设置」里调整；超出的任务按创建顺序排队，排队中的任务可以停止并立即释放名额，review 不占并发名额。Git 任务各自使用独立 Worktree 和检出；非 Git 目录没有 Worktree 隔离。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
+- 并发分两层：面板「设置」的 worker 上限（默认 3，范围 1–16）决定排队顺序；DSH Host 的 `maxActiveSubagents`（官方默认 8，插件不改写）是 worker 与 review/memory 子代理共用的硬上限。超出的任务按创建顺序排队，排队中的任务可以停止并立即释放名额；Host 名额满时任务保持「排队中」，下一次队列检查再启动，不记为失败。Git 任务各自使用独立 Worktree 和检出；非 Git 目录没有 Worktree 隔离。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
 - `worker_status` 只查询本 Router Session 派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。停止后的任务保留 `cancelled` 记录并显示在面板的「失败」分组（带「已取消」标签）；旧版本排队取消留下的墓碑记录仍可被查询，但不进入面板任务列表。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
 - 「分支 / worktree」标签页只从仍留有任务记录的项目根推导对象：项目根下没有任务记录时，该项目的 worktree 和 `sl-*` 分支不会出现在面板里；删除分支前必须先在该标签页移除它的 worktree。

@@ -27,7 +27,7 @@
 | 项 | 默认 | 约束 | 生效方式 |
 | --- | --- | --- | --- |
 | `workerModel` | `null`，跟随 DSH 默认模型 | `{ provider, model, reasoningEffort? }`；provider 和 model 必填，三项都留空保存 `null` | 启动新 worker 时作为 `agentOptions` 传给 `ctx.subagents.startActivation`；已有 worker 保持原选择 |
-| `maxWorkers` | 3 | 1–16 的整数 | 启动队列在名额内启动新 worker；超出的 Task 写为 `queued` 并等待；review 不占额外名额 |
+| `maxWorkers` | 3 | 1–16 的整数 | 启动队列在名额内启动新 worker；超出的 Task 写为 `queued` 并等待；review 不占 worker 名额，但和 worker 一起计入 Host 的 `maxActiveSubagents`，Host 报限额时 Task 退回 `queued` 而不是失败 |
 
 保存模型时会用 Host 的模型目录校验服务商和模型是否存在；目录暂时不可用时仍允许保存已知名称。改设置只影响之后启动的 worker，不重写运行中或已结束的 Task。
 
@@ -50,7 +50,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 
 | 链路 | 工具参数 | 消息构造 | 模型要求 |
 | --- | --- | --- | --- |
-| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:148-161`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
+| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:150-162`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
 | router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:255`、`src/dispatch.js:68-103`） | 目标 worker 模型声明图片输入 |
 | worker → router 报告 | `message_router.images` | 追加到报告文本之后（`src/message-router.js:23-24`） | router 模型声明图片输入 |
 | worker → router report 结论 | `report_task.images` | 追加到报告文本之后（`src/report-tool.js:37-38`） | router 模型声明图片输入 |

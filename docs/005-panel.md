@@ -49,7 +49,7 @@
 | 部分 | 行为 |
 | --- | --- |
 | 选择 | Task 标题前的复选框；正在合并或发布的 Task 不可勾选（`client.js:1043-1111`） |
-| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，「排队中」表示正在等待并发名额，「已取消」表示用户停止，三者都不是第七个状态。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有 Worker Session 时，插件启动扫描和派发、Task 结束、停止任务、Worker 释放名额或保存设置触发的队列检查会读 Review、分支和 Worktree HEAD 后把它回收为「未合并」或失败；之后的读取显示回收后的状态而不是一直「未确认」（`client.js:655-662`、`client.js:1072-1074`、`src/launch-queue.js:52-119`、`index.js:390-394`） |
+| 状态 | 六个状态之一，带状态点或 spinner；「未确认」是运行中 Task 的警告标签，「排队中」表示正在等待并发名额，「已取消」表示用户停止，三者都不是第七个状态。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有 Worker Session 时，插件启动扫描和派发、Task 结束、停止任务、Worker 释放名额或保存设置触发的队列检查会读 Review、分支和 Worktree HEAD 后把它回收为「未合并」或失败；之后的读取显示回收后的状态而不是一直「未确认」（`client.js:655-662`、`client.js:1072-1074`、`src/launch-queue.js:54-120`、`index.js:390-394`） |
 | 标题 | 标题；没有标题时显示 Task ID |
 | 团队与项目 | Team 名和项目根 |
 | 更新时间 | 存储的 `updatedAt`，缺失时用 `createdAt`，按本地时间 |
@@ -130,7 +130,7 @@
 | 项 | 行为 |
 | --- | --- |
 | Worker 模型 | 服务商、模型和可选的推理强度三个输入框，带模型目录建议；三项都留空时保存 `null`，新 worker 跟随 DSH 默认模型（`src/settings-panel.js`、`src/worker-settings.js`） |
-| 并发 worker 上限 | 1–16，默认 3；超出的新 Task 显示「排队中」，有空闲名额后按创建顺序启动；review 是 worker 的子代理，不占额外名额；失联的 `starting`、`running` 或 `resuming` 超过 2 分钟会在启动和下一次队列检查中按交付事实回收为「未合并」或失败，失联的 `starting`/`resuming` 不再占名额（`src/launch-queue.js:52-119`） |
+| 并发 worker 上限 | 1–16，默认 3；超出的新 Task 显示「排队中」，有空闲名额后按创建顺序启动；review 不占 worker 名额，但和 worker 一起计入 DSH Host 的 `maxActiveSubagents`（官方默认 8）；Host 报 `ACTIVATION_LIMIT_REACHED` 时任务保持「排队中」等下一次队列检查，不显示失败；失联的 `starting`、`running` 或 `resuming` 超过 2 分钟会在启动和下一次队列检查中按交付事实回收为「未合并」或失败，失联的 `starting`/`resuming` 不再占名额（`src/launch-queue.js:54-120`、`src/launch-queue.js:206-228`、`src/subagent-capacity.js`） |
 | 保存 | 只影响之后启动的 worker；已有 worker 保持原模型。失败原因显示在保存按钮上方 |
 
 bundle 组成和提示词文字仍在 `cordis.patch.yml` 与 [004 配置与提示词](004-config-prompts.md) 列出的源文件里；设置页不编辑提示词。记忆没有写入或编辑入口：全局/项目记忆、memory 管理的 skill 和全局知识库由 memory 角色维护，记忆系统标签页只能逐条删除；Worker、Reviewer 和 memory 角色通过 `knowledge_query` / `knowledge_get` 读取。
