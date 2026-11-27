@@ -92,6 +92,27 @@ test('the global knowledge base deduplicates, snippets matches, corrects and del
   assert.equal(saved.entries.length, 2)
 })
 
+test('the knowledge base matches multi-word and Chinese queries by keyword score', async () => {
+  const scoped = storeModule.createMemoryStore(join(root, 'data-search'), { agentsHome })
+  const desktop = await scoped.addKnowledge(
+    'DSH 桌面版 Windows Electron 安装布局：client-ui-chat 补丁放在 resources/app.asar。',
+  )
+  const landing = await scoped.addKnowledge(
+    'The landing guard records pushes before the pull request is opened.',
+  )
+  const guard = await scoped.addKnowledge('The landing guard blocks pushes.')
+  const multi = await scoped.searchKnowledge('DSH 桌面版 Windows Electron 安装布局 client-ui-chat 补丁')
+  assert.deepEqual(multi.map(entry => entry.id), [desktop.entry.id])
+  assert.match(multi[0].snippet, /client-ui-chat/)
+  assert.deepEqual((await scoped.searchKnowledge('安装 补丁')).map(entry => entry.id), [desktop.entry.id])
+  assert.deepEqual(
+    (await scoped.searchKnowledge('landing guard pull request')).map(entry => entry.id),
+    [landing.entry.id, guard.entry.id],
+    'entries matching more query keywords rank first',
+  )
+  assert.deepEqual(await scoped.searchKnowledge('不存在 的 词'), [])
+})
+
 test('the knowledge file is global and rejects malformed documents', async () => {
   const path = join(root, 'data', 'memory', 'knowledge.json')
   await writeFile(path, JSON.stringify({ version: 99, entries: [] }))

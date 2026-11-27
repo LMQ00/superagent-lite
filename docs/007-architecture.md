@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-318`、`router.js:1-9`）。
+Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-321`、`router.js:1-9`）。
 
 ```mermaid
 flowchart TB
@@ -43,7 +43,7 @@ flowchart TB
 
 ### `index.js`
 
-Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。如果 Task 已被面板停止成 `cancelled`，它不会写回 `running`，而是直接中断新 agent。report worker 的守卫放行项目 checkout 内的只读检查工具和 checkout 之外的只读检索工具（网页搜索、网页读取、知识库和后台任务查询），继续拒绝写改文件、创建 Worktree、提交和改变 HEAD；其余 Worker 仍须先进入分配的 Worktree。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/worker-settings`、`/superagent-lite/memory` 和 `/superagent-lite/branches` 五个路由；新 Host 的 `connection.admit` 从调用方 fiber 读取 `connection.authentication`，所以这些路由只在注入了该服务的上下文注册，旧 Host 则靠自带的 `requestRejection` 判断走无需该服务的注册路径；两条路径分别在 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 的真实安装包上验证五个端点返回 `200`（`index.js:40-81`）。任务停止由 `stopWorker` 完成；删除任务时先停止并等待 worker 离开运行态。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。插件启动时扫描一次旧记录，之后启动队列在派发、Task 结束、停止任务、Worker 释放名额和保存并发设置时调用 `pumpWorkers`；启动扫描和每次 pump 都会回收失联超过 2 分钟且没有活着 Worker Session 的 `starting`、`running`、`resuming` Task：读 Review 记录、worker 分支与 Worktree HEAD，Review 通过且 HEAD 匹配时落为 `awaiting-merge`，否则落为 `failed` 并释放名额（`index.js:314-317`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`）。
+Host 生命周期入口。`agent/created` 为 Worker Session 找到 Task，把 `starting` 或 `resuming` 改为 `running`，安装工具守卫，按条件注册 `create_worktree`、`review_worker_commit`、消息和报告工具，并注册 `knowledge_query` 与 `knowledge_get`（`index.js`）。如果 Task 已被面板停止成 `cancelled`，它不会写回 `running`，而是直接中断新 agent。report worker 的守卫放行项目 checkout 内的只读检查工具和 checkout 之外的只读检索工具（网页搜索、网页读取、知识库和后台任务查询），继续拒绝写改文件、创建 Worktree、提交和改变 HEAD；其余 Worker 仍须先进入分配的 Worktree，但只读的 `knowledge_query` / `knowledge_get` 在 Worktree 之前就能用。它为已认领的 Reviewer 注册 `submit_review`、`knowledge_query` 和 `knowledge_get`，为 memory 角色注册这两个读取工具与 `knowledge_write`；并注册 `/superagent-lite/tasks`、`/superagent-lite/git`、`/superagent-lite/worker-settings`、`/superagent-lite/memory` 和 `/superagent-lite/branches` 五个路由；新 Host 的 `connection.admit` 从调用方 fiber 读取 `connection.authentication`，所以这些路由只在注入了该服务的上下文注册，旧 Host 则靠自带的 `requestRejection` 判断走无需该服务的注册路径；两条路径分别在 `0.2.2-rc.1` 到 `0.2.2-rc.5` 和 `0.2.3-alpha.1` 的真实安装包上验证五个端点返回 `200`（`index.js:40-81`）。任务停止由 `stopWorker` 完成；删除任务时先停止并等待 worker 离开运行态。它把项目 + 全局记忆注册为 Worker 的必需运行时上下文，并在 Worker 创建时读取。插件启动时扫描一次旧记录，之后启动队列在派发、Task 结束、停止任务、Worker 释放名额和保存并发设置时调用 `pumpWorkers`；启动扫描和每次 pump 都会回收失联超过 2 分钟且没有活着 Worker Session 的 `starting`、`running`、`resuming` Task：读 Review 记录、worker 分支与 Worktree HEAD，Review 通过且 HEAD 匹配时落为 `awaiting-merge`，否则落为 `failed` 并释放名额（`index.js:317-320`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`）。
 
 `subagent/end` 落定 change 和 merge 任务：`review-required`、`awaiting-merge`、`failed` 或 `delivery-blocked`；report 任务未交报告则 `failed`。`session/event` 把事件交给派发守卫，并在 Worker 的 `turn/end` 触发原始归档。它不决定路由，也不编辑项目文件。
 
@@ -73,13 +73,13 @@ Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_
 
 ### `src/continue.js`
 
-把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲或已结束时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），report 任务用只读和 `report_task` 规则，仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming`，保留旧 Review 记录；同样的入口也用于 `resuming` 的再次追加和 BLOCKED 后没有 Worktree 的恢复；`queued`/`starting` 返回稍后再试而不投递。已经合并、worker 分支被删除或记录的 Worktree 已不存在的 Task 拒绝恢复。follow-up 先记录，发送失败回滚；`images` 指定的本地图片附在跟进消息文本之后（`src/continue.js:46-68`、`src/continue.js:195-212`、`src/continue.js:260-291`）。
+把 follow-up 送给运行中的 Worker 或空闲 Worker。运行中发短更新；空闲或已结束时发精简续派发消息（任务标识、不可变规则、唯一权威的 Follow-up），report 任务用只读和 `report_task` 规则，仅在检测到上下文压缩时回放原需求。已结束的 Task 先改 `resuming`，保留旧 Review 记录；同样的入口也用于 `resuming` 的再次追加和 BLOCKED 后没有 Worktree 的恢复；`queued`/`starting` 返回稍后再试而不投递。已经合并、worker 分支被删除或记录的 Worktree 已不存在的 Task 拒绝恢复。follow-up 先记录，发送失败回滚；`images` 指定的本地图片附在跟进消息文本之后（`src/continue.js:46-68`、`src/continue.js:197-214`、`src/continue.js:262-293`）。
 
 压缩检测读取 Worker Session 的推导消息，找 `compact-checkpoint` 来源；活着的 Worker 直接读 Session，未加载的 Worker 通过 `ctx.sessionQuery.inspectSession` 读取持久化会话，不重新挂载。两个入口都不可用时保守地不回放原需求。
 
 ### `src/worker-prompt.js`
 
-生成 change 和 report 两种任务消息。它统一 `Project team`、`Base branch`、`Task`、`Requirements`、模式段和 `Before` / `During` / `After` / `Reporting` 段；非 Git 项目把头部写成无基础分支，并把 change 段换成直接在工作区修改、不建 Worktree/不提交、调用工作区审查；report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读任务的授权；报告、结论和审查请求如何附带 `images` 也写在这些段落里（`src/worker-prompt.js:1-152`）。
+生成 change 和 report 两种任务消息。它统一 `Project team`、`Base branch`、`Task`、`Requirements`、模式段和 `Before` / `During` / `After` / `Reporting` 段；非 Git 项目把头部写成无基础分支，并把 change 段换成直接在工作区修改、不建 Worktree/不提交、调用工作区审查；Git 和非 Git 的 change 段都先要求用 `knowledge_query` 查知识库；report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读任务的授权；报告、结论和审查请求如何附带 `images` 也写在这些段落里（`src/worker-prompt.js:1-154`）。
 
 ### `src/turn-guard.js`
 
@@ -91,7 +91,7 @@ Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_
 
 ### `src/landing.js`
 
-保存每个 Task 的落地状态：dispatch 写入 `land` 和 `mode`，create_worktree 写入分支，review 与面板写入 reviewed HEAD，continue 可追加推送/PR 授权。`index.js` 的 shell guard 用它检查 `git push`、`git merge`、`gh pr create` 和 `gh pr merge`；未授权、未审查或越界时返回拒绝原因。`git merge` 只对 `mode=merge` 的 Task 开放，change/report 任务即使有 `land` 也不能合并（`src/landing.js:1-416`、`src/worker-prompt.js:64-106`）。
+保存每个 Task 的落地状态：dispatch 写入 `land` 和 `mode`，create_worktree 写入分支，review 与面板写入 reviewed HEAD，continue 可追加推送/PR 授权。`index.js` 的 shell guard 用它检查 `git push`、`git merge`、`gh pr create` 和 `gh pr merge`；未授权、未审查或越界时返回拒绝原因。`git merge` 只对 `mode=merge` 的 Task 开放，change/report 任务即使有 `land` 也不能合并（`src/landing.js:1-416`、`src/worker-prompt.js:64-107`）。
 
 ### `src/review.js`
 
@@ -313,7 +313,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |
 | `report_task` | report worker | 结束 report 任务并交回结论 |
 | `message_router` | Worker | 把最终结论发给 Router；送达后触发 change 任务的 memory 提取 |
-| `knowledge_query` | Worker、Reviewer、memory 角色 | 按关键词查询全局知识库，返回编号和匹配关键词前后的上下文片段；只读 |
+| `knowledge_query` | Worker、Reviewer、memory 角色 | 按关键词查询全局知识库（英文按单词、中文按相邻两字切分，多词按命中关键词数排序），返回编号和匹配关键词前后的上下文片段；只读 |
 | `knowledge_get` | Worker、Reviewer、memory 角色 | 按 `knowledge_query` 返回的编号读取完整知识条目；只读 |
 | `knowledge_write` | memory 角色 | 新增、纠正或删除全局知识；只有 memory 角色可见 |
 

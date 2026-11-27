@@ -161,14 +161,38 @@ function knowledgeFrom(doc) {
 }
 
 const KNOWLEDGE_SNIPPET_CONTEXT = 120
+const KNOWLEDGE_TERM = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+|[a-z0-9]+/g
+const LATIN_TERM = /^[a-z0-9]+$/
 
-function knowledgeSnippet(text, needle) {
+// Latin words stay whole; a Chinese run becomes overlapping bigrams so a
+// multi-word query can match entries keyword by keyword.
+function knowledgeTerms(text) {
+  const terms = new Set()
+  for (const [run] of text.toLowerCase().matchAll(KNOWLEDGE_TERM)) {
+    if (!LATIN_TERM.test(run)) {
+      if (run.length === 1) terms.add(run)
+      else for (let index = 0; index < run.length - 1; index += 1) terms.add(run.slice(index, index + 2))
+    } else {
+      terms.add(run)
+    }
+  }
+  return [...terms]
+}
+
+function knowledgeTermIndex(text, term) {
+  const lower = text.toLowerCase()
+  if (!LATIN_TERM.test(term)) return lower.indexOf(term)
+  const match = new RegExp(`(^|[^a-z0-9])${term}(?![a-z0-9])`).exec(lower)
+  return match ? match.index + match[1].length : -1
+}
+
+function knowledgeSnippet(text, term) {
   const limit = KNOWLEDGE_SNIPPET_CONTEXT * 2
-  if (!needle) return text.length > limit ? `${text.slice(0, limit)}…` : text
-  const index = text.toLowerCase().indexOf(needle)
+  if (!term) return text.length > limit ? `${text.slice(0, limit)}…` : text
+  const index = knowledgeTermIndex(text, term)
   if (index < 0) return text
   const start = Math.max(0, index - KNOWLEDGE_SNIPPET_CONTEXT)
-  const end = Math.min(text.length, index + needle.length + KNOWLEDGE_SNIPPET_CONTEXT)
+  const end = Math.min(text.length, index + term.length + KNOWLEDGE_SNIPPET_CONTEXT)
   return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`
 }
 
@@ -422,13 +446,15 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > KNOWLEDGE_QUERY_LIMIT) {
       throw new TypeError(`Knowledge query limit must be an integer from 1 to ${KNOWLEDGE_QUERY_LIMIT}`)
     }
-    const needle = query.trim().toLowerCase()
+    const terms = knowledgeTerms(query)
     const entries = await readKnowledge()
     return entries
-      .filter(entry => !needle || entry.text.toLowerCase().includes(needle))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map(entry => ({ entry, matched: terms.filter(term => knowledgeTermIndex(entry.text, term) >= 0) }))
+      .filter(result => terms.length === 0 || result.matched.length > 0)
+      .sort((a, b) => b.matched.length - a.matched.length ||
+        b.entry.updatedAt.localeCompare(a.entry.updatedAt))
       .slice(0, limit)
-      .map(entry => ({ ...entry, snippet: knowledgeSnippet(entry.text, needle) }))
+      .map(({ entry, matched }) => ({ ...entry, snippet: knowledgeSnippet(entry.text, matched[0]) }))
   }
 
   async function getKnowledge(ids) {

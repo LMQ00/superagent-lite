@@ -157,6 +157,9 @@ export async function apply(ctx) {
     const inCheckout = () => state.path === ctx.workingDirectory.get(agent.session)
     const inspectingProject = () => state.path === undefined && ctx.workingDirectory.get(agent.session) === task.projectRoot
     const inspectionTools = new Set(['read', 'glob', 'grep', 'read_image', 'bash', 'pwsh', 'todo_write', 'skill'])
+    // Knowledge reads touch nothing in the checkout, so a worker may query them
+    // before create_worktree; knowledge_write stays behind the normal boundary.
+    const knowledgeReadTools = new Set(['knowledge_query', 'knowledge_get'])
     // External lookup reads nothing in the checkout, so a report-only task may
     // use it from anywhere while the project writes stay refused.
     const externalReadTools = new Set([
@@ -182,7 +185,7 @@ export async function apply(ctx) {
             (inspectingProject() && inspectionTools.has(name))) return
         return 'Report-only tasks inspect the checkout and external sources read-only and end with report_task.'
       }
-      if (name !== 'create_worktree' && !inCheckout()) {
+      if (name !== 'create_worktree' && !knowledgeReadTools.has(name) && !inCheckout()) {
         return 'Create the assigned project worktree before using any other tool.'
       }
       if (name === 'bash' || name === 'pwsh') {

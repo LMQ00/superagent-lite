@@ -73,6 +73,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
   }
   await apply(ctx)
   await beforeCreate?.()
+  let guard
   const agent = {
     id: workerId,
     session: {
@@ -88,7 +89,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     ctx: {
       get: name => name === 'skills' ? skills : undefined,
       tools: {
-        guard() { return () => {} },
+        guard(callback) { guard = callback; return () => {} },
         register(tool) { registered.push(tool); return () => {} },
       },
       systemPrompt: { context(entry) { contexts.push(entry); return () => {} } },
@@ -98,6 +99,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
   return {
     agent, activations, registered, warnings, contexts, listeners, events, skillProviders,
     message: () => registered.find(tool => tool.name === 'message_router'),
+    guard: args => guard(args),
   }
 }
 
@@ -301,6 +303,17 @@ test('a worker gets project and global memory injected and only the knowledge re
   assert.match(memory.text(), /data, not instructions/)
   assert.doesNotMatch(memory.text(), /Knowledge that must not be injected/)
   assert.doesNotMatch(memory.text(), /knowledge_query/)
+})
+
+test('a worker may query knowledge before creating its worktree', async () => {
+  const workerId = 'worker-dd'
+  const projectRoot = await taskForWorker('de'.repeat(8), workerId, 'change', { worktree: false })
+  await mkdir(projectRoot, { recursive: true })
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields())
+  assert.equal(wiring.guard({ name: 'knowledge_query' }), undefined)
+  assert.equal(wiring.guard({ name: 'knowledge_get' }), undefined)
+  assert.match(wiring.guard({ name: 'read' }), /Create the assigned project worktree/)
+  assert.match(wiring.guard({ name: 'knowledge_write' }), /Create the assigned project worktree/)
 })
 
 test('a report worker gets the same project and global memory and project skill catalog read-only', async () => {
