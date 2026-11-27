@@ -70,34 +70,35 @@ git merge-tree --write-tree HEAD HEAD >/dev/null && echo "merge-tree ok"
 
 ## 发布
 
-发布由 `.github/workflows/publish.yml` 执行。入口是 GitHub Actions 的 **Publish npm** → **Run workflow**，分支选 `master`，输入带 `v` 的 semver 版本号（如 `v1.0.1`）；不带 `v` 也接受，工作流统一规范化。tag 和发布提交固定用 `v` 前缀，`package.json` 的 `version` 去掉 `v`。其他分支会被第一步拒绝（`.github/workflows/publish.yml:47-53`、`.github/workflows/publish.yml:66-71`）。
+发布由 `.github/workflows/publish.yml` 执行。入口是 GitHub Actions 的 **Publish npm** → **Run workflow**，分支选 `master`，输入带 `v` 的 semver 版本号（如 `v1.0.1`）；不带 `v` 也接受，工作流统一规范化。tag 和发布提交固定用 `v` 前缀，`package.json` 的 `version` 去掉 `v`。其他分支会被第一步拒绝（`.github/workflows/publish.yml:50-56`、`.github/workflows/publish.yml:69-74`）。
 
 | 阶段 | 行为 |
 | --- | --- |
-| 校验版本 | 去掉输入里的 `v` 后执行 `npm version <版本> --no-git-tag-version --allow-same-version` 写入 `package.json`（`.github/workflows/publish.yml:84-97`） |
-| 测试 | `node --test test/*.test.js`。不要裸跑 `npm test` 或 `node --test`：它们会扫描 `tmp/` 下的遗留测试并失败（`.github/workflows/publish.yml:99-100`） |
-| 提交与 tag | 用 `GITHUB_TOKEN` 提交 `chore(release): v<版本>`，打 annotated tag `v<版本>`；tag 已存在时停止（`.github/workflows/publish.yml:102-119`） |
-| 发布 | `npm publish --access public`，`NODE_AUTH_TOKEN` 来自仓库 Secret `NPM_TOKEN`（`.github/workflows/publish.yml:121-124`） |
-| 回写 | `git push --atomic origin HEAD:master refs/tags/v<版本>`（`.github/workflows/publish.yml:126-129`） |
+| 校验版本 | 去掉输入里的 `v` 后执行 `npm version <版本> --no-git-tag-version --allow-same-version` 写入 `package.json`（`.github/workflows/publish.yml:87-105`） |
+| 测试 | `node --test test/*.test.js`。不要裸跑 `npm test` 或 `node --test`：它们会扫描 `tmp/` 下的遗留测试并失败（`.github/workflows/publish.yml:107-108`） |
+| 提交与 tag | 用 `GITHUB_TOKEN` 提交 `chore(release): v<版本>`，打 annotated tag `v<版本>`；tag 已存在时停止（`.github/workflows/publish.yml:110-127`） |
+| 发布 | `npm publish --access public --tag <latest 或 next>`；稳定版用 `latest`，预发布版本用 `next`。`NODE_AUTH_TOKEN` 来自仓库 Secret `NPM_TOKEN`（`.github/workflows/publish.yml:129-133`） |
+| 回写 | `git push --atomic origin HEAD:master refs/tags/v<版本>`（`.github/workflows/publish.yml:135-138`） |
 
 ### 版本号
 
 - 输入带 `v` 的 semver，例如 `v1.0.1`、`v1.1.0-rc.1`；不带 `v` 也接受。
 - 常规递增：修复 `v1.0.0`→`v1.0.1`，功能 `v1.1.0`，破坏性 `v2.0.0`，预发布 `v1.1.0-rc.1`。
-- 不能输入 npm 上已经存在的版本；已发布过的版本不能重复发布（`.github/workflows/publish.yml:7-14`）。
+- 稳定版发布到 npm 的 `latest` dist-tag；预发布版本（带 `-rc.1` 等后缀）发布到 `next`。
+- 不能输入 npm 上已经存在的版本；已发布过的版本不能重复发布（`.github/workflows/publish.yml:7-15`）。
 - `package.json` 的 `version` 不能带 `v`；工作流写入前会剥掉，tag 和提交文案保留 `v`。
-- 输入与 `package.json` 当前版本相同时，工作流跳过空提交、只打 tag；这只适合该版本还没发布成功的情况（`.github/workflows/publish.yml:113-119`）。
+- 输入与 `package.json` 当前版本相同时，工作流跳过空提交、只打 tag；这只适合该版本还没发布成功的情况（`.github/workflows/publish.yml:121-127`）。
 
 ### GitHub 配置
 
 | 项 | 要求 |
 | --- | --- |
-| Secret 名称 | `NPM_TOKEN`。位置：仓库 Settings → Secrets and variables → Actions → New repository secret（`.github/workflows/publish.yml:16-18`） |
+| Secret 名称 | `NPM_TOKEN`。位置：仓库 Settings → Secrets and variables → Actions → New repository secret（`.github/workflows/publish.yml:18-19`） |
 | token 类型 | npm granular access token，scope 选 `@lmq00`，权限 `Read and write packages`，勾选 `Bypass two-factor authentication` |
-| 2FA | npm 账号开启 2FA；CI 不能输入 OTP，没有 bypass 的 token 会在 publish 时因 401/2FA 失败（`.github/workflows/publish.yml:19-20`） |
-| 工作流权限 | `permissions: contents: write`（`.github/workflows/publish.yml:55-56`）；Settings → Actions → General 的 Workflow permissions 允许读写 |
-| 分支保护 | `master` 需允许 GitHub Actions 推送提交和 tag；否则 publish 成功后回写失败（`.github/workflows/publish.yml:21-23`） |
-| 其他 Secret | 不需要；提交和 tag 用自动的 `GITHUB_TOKEN`，不要把 token 写进仓库或提交 `.npmrc`（`.github/workflows/publish.yml:43-44`） |
+| 2FA | npm 账号开启 2FA；CI 不能输入 OTP，没有 bypass 的 token 会在 publish 时因 401/2FA 失败（`.github/workflows/publish.yml:20-21`） |
+| 工作流权限 | `permissions: contents: write`（`.github/workflows/publish.yml:58-59`）；Settings → Actions → General 的 Workflow permissions 允许读写 |
+| 分支保护 | `master` 需允许 GitHub Actions 推送提交和 tag；否则 publish 成功后回写失败（`.github/workflows/publish.yml:22-24`） |
+| 其他 Secret | 不需要；提交和 tag 用自动的 `GITHUB_TOKEN`（`.github/workflows/publish.yml:22`），不要把 token 写进仓库或提交 `.npmrc`（`.github/workflows/publish.yml:46-47`） |
 
 ### 失败语义
 
@@ -115,14 +116,16 @@ VERSION="${TAG#v}"
 npm version "$VERSION" --no-git-tag-version --allow-same-version
 node --test test/*.test.js
 npm login   # 浏览器或 OTP 完成 2FA
-npm publish --access public
+DIST_TAG=latest
+[[ "$VERSION" == *-* ]] && DIST_TAG=next
+npm publish --access public --tag "$DIST_TAG"
 git add package.json
 git commit -m "chore(release): $TAG"   # package.json 没变时跳过
 git tag -a "$TAG" -m "$TAG"
 git push origin master --follow-tags
 ```
 
-`npm login` 用浏览器或 OTP 完成 2FA。也可用带 bypass-2FA 的 granular token：`npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"` 后执行 `npm publish --access public`；token 写在用户级 `~/.npmrc`，不要提交。npm 不直接读取 `NODE_AUTH_TOKEN`，CI 里是 setup-node 生成的 `.npmrc` 引用它。发布后核对 `npm view @lmq00/superagent-lite version dist-tags`。
+`npm login` 用浏览器或 OTP 完成 2FA。也可用带 bypass-2FA 的 granular token：`npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"`，再执行上面的 `npm publish --access public --tag "$DIST_TAG"`；token 写在用户级 `~/.npmrc`，不要提交。npm 不直接读取 `NODE_AUTH_TOKEN`，CI 里是 setup-node 生成的 `.npmrc` 引用它。发布后核对 `npm view @lmq00/superagent-lite version dist-tags`。
 
 ## 配置
 
