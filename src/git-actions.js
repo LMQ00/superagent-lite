@@ -1,7 +1,7 @@
 import { readTask, updateTask, listTasks } from './task-store.js'
 import { runCommand, runProcess } from './process.js'
 import { githubRepository, publishGithub, pullRequestUrl } from './github.js'
-import { deleteWorkerBranch, deleteWorkerBranchOnly, mergeWorkerBranch, parseWorktrees, removeWorkerWorktree } from './merge.js'
+import { deleteWorkerBranch, deleteWorkerBranchOnly, deleteWorkerWorktreeAndBranch, mergeWorkerBranch, parseWorktrees, removeWorkerWorktree } from './merge.js'
 import { setLandingPullRequest, setLandingReview } from './landing.js'
 import { assertStillDeliverable, deliverableHead } from './delivery.js'
 import { runReview, worktreeHead } from './review.js'
@@ -645,6 +645,10 @@ export function createGitManager(ctx, dependencies = {}) {
           ...(worktree
             ? (running ? { worktreeReason: 'The task is still running; stop its worker before deleting the worktree' } : {})
             : { worktreeReason: 'This branch has no worktree to delete' }),
+          canDeleteBoth: worktree !== undefined && !running,
+          ...(worktree
+            ? (running ? { bothReason: 'The task is still running; stop its worker before deleting the worktree and branch' } : {})
+            : { bothReason: 'This branch has no worktree to delete' }),
           canDeleteBranch: worktree === undefined && !running,
           ...(running
             ? { branchReason: 'The task is still running; stop its worker before deleting the branch' }
@@ -698,5 +702,28 @@ export function createGitManager(ctx, dependencies = {}) {
     }
   }
 
-  return { list, detail, perform, branches, removeWorktree: removeWorktreeEntry, removeBranch: removeBranchEntry }
+  async function removeWorktreeAndBranchEntry(target, signal) {
+    const records = store.listTasks ? await store.listTasks() : []
+    const rows = await inventory(records, signal)
+    const row = rows.find(candidate => candidate.projectRoot === target?.projectRoot &&
+      candidate.branch === target?.branch && candidate.path === target?.path)
+    if (!row || typeof row.path !== 'string') throw new Error('This Worktree was not created by this plugin')
+    if (!row.canDeleteBoth) throw new Error(row.bothReason ?? 'The worktree and branch cannot be deleted')
+    const record = row.task ? records.find(candidate => candidate.id === row.task.id) : undefined
+    const removed = await deleteWorkerWorktreeAndBranch(ctx, {
+      projectRoot: row.projectRoot, branch: row.branch, path: row.path, task: record,
+    }, signal, store.updateTask)
+    return {
+      branch: row.branch,
+      path: row.path,
+      deleted: removed.branchDeleted,
+      worktreeDeleted: removed.worktreeDeleted,
+      branchDeleted: removed.branchDeleted,
+      message: removed.branchDeleted
+        ? `Deleted the worktree at ${row.path} and the worker branch ${row.branch}.`
+        : `Removed the worktree at ${row.path}; the worker branch ${row.branch} no longer existed.`,
+    }
+  }
+
+  return { list, detail, perform, branches, removeWorktree: removeWorktreeEntry, removeWorktreeAndBranch: removeWorktreeAndBranchEntry, removeBranch: removeBranchEntry }
 }

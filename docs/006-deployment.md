@@ -39,7 +39,7 @@ Bundle 的 `engines.dsh` 是 `>=0.2.2-rc.1 <=0.2.3-alpha.1`，Host 版本不满�
 | 客户端任务卡补丁 | npm `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5` / `0.2.3-alpha.1`（源码 + bundle，共用一个 target）、`0.2.2-rc.1`（仅 bundle）、DSH-go 的 `0.2.2-rc.1` Host | `node scripts/dsh-client-ui-chat-agent-message-card.mjs --check` 输出匹配的版本、布局和待改文件；版本或片段不匹配时退出码 1 且不写入 |
 | 子代理 promptSource 补丁 | `0.2.2-rc.2` / `0.2.2-rc.3` / `0.2.2-rc.4` / `0.2.2-rc.5`（源码 + bundle）、`0.2.2-rc.1`（仅 bundle，单独的 diff）、`0.2.3-alpha.1` 不需要补丁 | 插件启动时在进程内按已安装 `dsh-subagent` 的版本读取源码和 bundle，先逐条比对目标片段再一次性写入；片段缺失、命中多次或文件读不到时报告 `failed` 且不改任何文件。手工核对仍可运行 `patch -p1 --dry-run -d "$DSUBAGENT" < scripts/dsh-subagent-0.2.2-prompt-source.patch`（rc.1 用 `scripts/dsh-subagent-0.2.2-rc.1-prompt-source.patch`）；rc.2 到 rc.5 补丁后 `src/manager.ts` 与 `lib/types/manager.js` 各有一处 `spec.promptSource ?? { kind: 'user' }`，rc.1 的 `lib/index.js` 与 `lib/types/manager.js` 有一处 `request.promptSource ?? { kind: 'user' }`；`0.2.3-alpha.1` 的 `src/manager.ts` 已用 `createAgentMessage` 记录初始任务，插件只读检测并报告 `native` |
 
-面板路由按 Host 的认证契约分流：`0.2.2-rc.1` 到 `0.2.2-rc.5` 的 `connection` 暴露 `requestRejection`，`admit` 在内部完成认证，插件用这个函数判断并走不需要 `connection.authentication` 的注册路径；`0.2.3-alpha.1` 移除了 `requestRejection`，`admit` 从调用方 fiber 读取 `connection.authentication`，所以五个面板路由只在注入了该服务的上下文注册（`index.js:73-81`）。两条路径都在隔离目录安装各版本真实 npm Host 启动验证：`GET /superagent-lite/tasks`、`/branches`、`/memory`、`/worker-settings` 和带 `taskId` 的 `/git` 全部返回 `200` 和 JSON，不能用单元测试模拟替代。对任意已安装版本还可以用 `DSH_INSTALL_DIR=<dsh 包目录> node --test test/host-connection.test.js` 核对它只暴露一种认证契约。
+面板路由按 Host 的认证契约分流：`0.2.2-rc.1` 到 `0.2.2-rc.5` 的 `connection` 暴露 `requestRejection`，`admit` 在内部完成认证，插件用这个函数判断并走不需要 `connection.authentication` 的注册路径；`0.2.3-alpha.1` 移除了 `requestRejection`，`admit` 从调用方 fiber 读取 `connection.authentication`，所以五个面板路由只在注入了该服务的上下文注册（`index.js:74-82`）。两条路径都在隔离目录安装各版本真实 npm Host 启动验证：`GET /superagent-lite/tasks`、`/branches`、`/memory`、`/worker-settings` 和带 `taskId` 的 `/git` 全部返回 `200` 和 JSON，不能用单元测试模拟替代。对任意已安装版本还可以用 `DSH_INSTALL_DIR=<dsh 包目录> node --test test/host-connection.test.js` 核对它只暴露一种认证契约。
 
 按实际内容归并：`0.2.2-rc.2` 到 `0.2.2-rc.5` 的 `@deepseek-ai/dsh-client-ui-chat` 除 `package.json` 外逐字节相同，因此共用同一个 source-and-bundle 目标；`0.2.3-alpha.1` 的 Chat 包有变化，但被补丁修改的两个源码文件和所有 bundle 片段与 rc.2–rc.5 相同，所以也归入该目标。`0.2.2-rc.1` 的 Chat 包没有 `src/`，单独走 bundle-only 目标。子代理包 `0.2.2-rc.2` 到 `0.2.2-rc.5` 除 `package.json` 外相同，共用一个源码 + bundle 补丁；`0.2.2-rc.1` 没有 `src/` 且初始请求嵌套在 `request` 下，使用单独的 bundle-only 补丁和 `src/subagent-start.js` 的 rc.1 请求形状；`0.2.3-alpha.1` 原生记录 agent 消息。区间内 `dsh-base` 的 `cordis.patch.yml` 差异只在账号、web provider、agent-team 等基础行，未触及本 bundle 挂载的 `worktrees` 服务或补丁目标，因此不调整本仓库的 `cordis.patch.yml`。
 
@@ -201,7 +201,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 5. 重载或重启 DSH Web；如果升级同时重装了 DSH，启动日志出现 `superagent-lite host patch: applied ...; restart DSH to load it` 时再重启一次，让 Host 导入补好的 subagent bundle。这条日志只属于 npm 安装；桌面版和只读安装不会写补丁，而是在「项目任务」面板显示只读提示。
 6. 打开「项目任务」，确认已有 Task 和分支仍在列表里。
 
-升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:129-146`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:317-320`）。
+升级不改写 Task 或记忆文件，它们留在 `~/.dsh/superagent-lite/`；全局和项目 skill 也保留在各自的 skill 目录，旧的固定名字在下次 memory 写入时补上 `author: memory`。重启时仍在运行的 Worker 可能显示「未确认」；Worker Session 可用时可以用 `continue_worker` 继续，否则需要重新派发。失联的 `starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动时扫描一次，之后派发、Worker 结束、停止任务或保存设置触发的启动队列也会扫描：读 Review 记录、worker 分支和 Worktree HEAD，Review 通过且 HEAD 与 `review.head` 一致时落为 `awaiting-merge`，否则落为 `failed`，回收在 Task 锁内复核，不碰真正在跑的会话（`src/board.js:129-146`、`src/launch-queue.js:52-119`、`src/launch-queue.js:190-195`、`index.js:318-321`）。
 
 回滚：停用 bundle，检出上一个 commit，必要时恢复备份，再重载 DSH Web。
 
@@ -236,6 +236,9 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The selected remote is not a single GitHub fetch/push repository` | 选择一个 fetch 和 push URL 指向同一 GitHub 仓库的 remote |
 | `The worker Session is not running; open its conversation to review the commit there` | 审查动作需要活着的 Worker Session；恢复或重新派发该 Task |
 | `The task is still running; stop its worker before deleting the branch` | 等 Task 结束工作、分支不再被运行中的 Worker 占用后再删除分支 |
+| `The task is still running; stop its worker before deleting the worktree and branch` | 等 Task 结束工作后再从「分支 / worktree」标签页一步删除 Worktree 和分支 |
+| `The worktree at <path> was removed, but the worker branch <branch> could not be deleted and still exists: ...` | 一步删除中 Worktree 已移除但分支删除失败；按错误信息处理分支占用或权限问题，再从该页「删除分支」重试 |
+| `The worktree at <path> was removed, but the worker branch <branch> is still checked out in the worktree at <holder>; remove it before deleting the branch` | 一步删除中分支仍被另一个 Worktree 检出；先移除那个 Worktree 再从该页「删除分支」重试 |
 | `No reviewed local commit is ready for delivery` | 先调用 `review_worker_commit` 并修完问题；合并与发送 PR 共用这条前置校验 |
 | `The worker branch no longer matches its reviewed commit` | 审查后又有提交；重新审查新 HEAD |
 | `The reviewer did not inspect the committed change; read the base..head diff or a changed file before deciding` | Reviewer 没有读改动；重新运行审查，让它读 `base..head` 或改动文件 |
