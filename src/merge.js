@@ -196,6 +196,47 @@ export async function removeWorkerWorktree(ctx, { projectRoot, branch, path, tas
   })
 }
 
+// The branch/worktree tab also offers one step for a Worktree and its branch:
+// the clean Worktree is removed first inside the same per-root queue, then the
+// branch is deleted once no Worktree holds it. Orphan plugin objects have no
+// Task record, so `task` is optional. If the branch delete fails after the
+// Worktree is gone, the error names the leftover branch instead of reporting
+// success.
+export async function deleteWorkerWorktreeAndBranch(ctx, { projectRoot, branch, path, task }, signal, update = updateTask) {
+  if (RUNNING.has(task?.status)) throw new Error('The task is still running; stop its worker before deleting the worktree and branch')
+  return serializeByRoot(projectRoot, async () => {
+    const git = args => runCommand(ctx, args, projectRoot, signal)
+    const listed = parseWorktrees(await git(['worktree', 'list', '--porcelain']))
+    const own = listed.find(entry => entry.path === path)
+    if (!own) throw new Error(`The worktree at ${path} no longer exists`)
+    if (own.branch !== branch) throw new Error(`The worktree at ${path} is not on the worker branch ${branch}`)
+    const dirty = await runCommand(ctx, ['status', '--porcelain', '--untracked-files=all'], own.path, signal)
+      .catch(() => '')
+    if (dirty.split('\n').some(dirtyTargetLine)) {
+      throw new Error('The worker worktree has uncommitted changes; commit or remove them before deleting the branch')
+    }
+    await git(['worktree', 'remove', own.path]).catch(error => {
+      throw new Error(`Could not remove the worker worktree at ${own.path}: ${error.message}`)
+    })
+    const remaining = parseWorktrees(await git(['worktree', 'list', '--porcelain']))
+    if (remaining.some(entry => entry.path === own.path)) {
+      throw new Error(`The worker worktree at ${own.path} still exists; remove it before deleting the branch`)
+    }
+    const holder = remaining.find(entry => entry.branch === branch)
+    if (holder) {
+      throw new Error(`The worktree at ${own.path} was removed, but the worker branch ${branch} is still checked out in the worktree at ${holder.path}; remove it before deleting the branch`)
+    }
+    const exists = await git(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]).then(() => true, () => false)
+    if (exists) {
+      await git(['branch', '-D', branch]).catch(error => {
+        throw new Error(`The worktree at ${own.path} was removed, but the worker branch ${branch} could not be deleted and still exists: ${error.message}`)
+      })
+    }
+    if (task) await update(task.id, { worktree: undefined, branchDeletedAt: new Date().toISOString() })
+    return { branch, path: own.path, worktreeDeleted: true, branchDeleted: exists }
+  })
+}
+
 export async function deleteWorkerBranchOnly(ctx, { projectRoot, branch, task }, signal, update = updateTask) {
   if (RUNNING.has(task?.status)) throw new Error('The task is still running; stop its worker before deleting the branch')
   return serializeByRoot(projectRoot, async () => {

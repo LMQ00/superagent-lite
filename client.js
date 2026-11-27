@@ -74,8 +74,10 @@ window.__ModuleLoader__.load({
         branchesProject: 'Project', branchesWorktree: 'Worktree', branchesTask: 'Task',
         branchesNoTask: 'No task record', branchesNoWorktree: 'No worktree',
         deleteWorktree: 'Delete worktree', deleteWorktreeTitle: 'Delete the worktree',
+        deleteBoth: 'Delete worktree and branch', deleteBothTitle: 'Delete the worktree and branch',
         deleteBranchTitle: 'Delete the branch',
         deleteWorktreeHint: 'Removes this worktree and keeps its worker branch. This cannot be undone.',
+        deleteBothHint: 'Removes this worktree and deletes its worker branch in one step. Commits on the branch that are not merged into the base branch are lost; this cannot be undone.',
         deleteBranchHint: 'Deletes this worker branch. Its worktree is already removed; the branch cannot be restored.',
         branchesDeleted: 'Done.', branchesDeleteFailed: 'Could not delete it.',
         hostReadonlyTitle: 'Desktop runtime is read-only; task card patch unavailable',
@@ -152,8 +154,10 @@ window.__ModuleLoader__.load({
         branchesProject: '项目', branchesWorktree: 'worktree', branchesTask: '任务',
         branchesNoTask: '无任务记录', branchesNoWorktree: '无 worktree',
         deleteWorktree: '删除 worktree', deleteWorktreeTitle: '删除 worktree',
+        deleteBoth: '删除 worktree 和分支', deleteBothTitle: '删除 worktree 和分支',
         deleteBranchTitle: '删除分支',
         deleteWorktreeHint: '会移除这个 worktree，保留对应的 worker 分支；此操作无法恢复。',
+        deleteBothHint: '会同时移除这个 worktree 的检出并删除对应的 worker 分支；分支上尚未合并的提交会一并丢失，且无法恢复。',
         deleteBranchHint: '会删除这个 worker 分支；对应 worktree 已移除，分支删除后无法恢复。',
         branchesDeleted: '操作已完成。', branchesDeleteFailed: '无法删除，请重试。',
         hostReadonlyTitle: '桌面版内置运行时只读，任务卡补丁不可用',
@@ -781,7 +785,7 @@ window.__ModuleLoader__.load({
         url.searchParams.set('kind', kind)
         url.searchParams.set('projectRoot', row.projectRoot)
         url.searchParams.set('branch', row.branch)
-        if (kind === 'worktree' && row.path) url.searchParams.set('path', row.path)
+        if (kind !== 'branch' && row.path) url.searchParams.set('path', row.path)
         return `${url.pathname}${url.search}`
       }
       const confirmBranchDelete = async () => {
@@ -1462,18 +1466,29 @@ window.__ModuleLoader__.load({
               task && chip('branchesTask', task.title || task.id),
               task && h('code', { className: 'sl-code', title: task.id }, task.id)),
             h('div', { className: 'sl-task__actions' },
-              h('button', {
-                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
-                disabled: branchPending || !row.canDeleteWorktree,
-                title: row.canDeleteWorktree ? undefined : row.worktreeReason,
-                onClick: () => setBranchDialog({ kind: 'worktree', row }),
-              }, icon('trash'), t('deleteWorktree')),
-              h('button', {
-                type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
-                disabled: branchPending || !row.canDeleteBranch,
-                title: row.canDeleteBranch ? undefined : row.branchReason,
-                onClick: () => setBranchDialog({ kind: 'branch', row }),
-              }, icon('trash'), t('deleteBranch')),
+              ...(path
+                ? [
+                    h('button', {
+                      type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                      disabled: branchPending || !row.canDeleteWorktree,
+                      title: row.canDeleteWorktree ? undefined : row.worktreeReason,
+                      onClick: () => setBranchDialog({ kind: 'worktree', row }),
+                    }, icon('trash'), t('deleteWorktree')),
+                    h('button', {
+                      type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                      disabled: branchPending || !row.canDeleteBoth,
+                      title: row.canDeleteBoth ? undefined : row.bothReason,
+                      onClick: () => setBranchDialog({ kind: 'worktree-and-branch', row }),
+                    }, icon('trash'), t('deleteBoth')),
+                  ]
+                : [
+                    h('button', {
+                      type: 'button', className: 'sl-btn sl-btn--outline sl-btn--danger',
+                      disabled: branchPending || !row.canDeleteBranch,
+                      title: row.canDeleteBranch ? undefined : row.branchReason,
+                      onClick: () => setBranchDialog({ kind: 'branch', row }),
+                    }, icon('trash'), t('deleteBranch')),
+                  ]),
               branchPending && h('span', { className: 'sl-hint' }, t('working')))))
       }
       const branchesViewPanel = () => h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': branchesTabId },
@@ -1492,12 +1507,14 @@ window.__ModuleLoader__.load({
       const branchDialogView = () => {
         if (!branchDialog) return null
         const { kind, row } = branchDialog
-        const title = kind === 'worktree' ? t('deleteWorktreeTitle') : t('deleteBranchTitle')
+        const title = kind === 'worktree' ? t('deleteWorktreeTitle')
+          : kind === 'worktree-and-branch' ? t('deleteBothTitle') : t('deleteBranchTitle')
         return h('div', { className: 'sl-modal-backdrop' },
           h('div', { className: 'sl-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
             h('h2', null, title),
-            h('p', null, t(kind === 'worktree' ? 'deleteWorktreeHint' : 'deleteBranchHint')),
-            h('p', null, h('code', null, kind === 'worktree' ? `${row.branch} · ${row.path ?? ''}` : row.branch)),
+            h('p', null, t(kind === 'worktree' ? 'deleteWorktreeHint'
+              : kind === 'worktree-and-branch' ? 'deleteBothHint' : 'deleteBranchHint')),
+            h('p', null, h('code', null, kind === 'branch' ? row.branch : `${row.branch} · ${row.path ?? ''}`)),
             branchDialogError && h('p', { role: 'alert', className: 'sl-error' }, branchDialogError),
             h('div', { className: 'sl-modal__actions' },
               h('button', {

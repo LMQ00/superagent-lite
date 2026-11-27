@@ -19,6 +19,7 @@ test('the branches panel refuses non-owner requests without listing branches', a
     const handler = createBranchesPanelHandler({ admit: () => admission }, {
       list: async () => assert.fail('must not list branches'),
       removeWorktree: async () => assert.fail('must not remove a worktree'),
+      removeWorktreeAndBranch: async () => assert.fail('must not remove a worktree and branch'),
       removeBranch: async () => assert.fail('must not remove a branch'),
     })
     assert.equal((await request(handler)).status, admission.rejection ?? 403)
@@ -62,6 +63,7 @@ test('the branches panel validates every delete target before touching Git', asy
   const handler = createBranchesPanelHandler(owner(), {
     list: async () => [],
     removeWorktree: async () => { touched = true },
+    removeWorktreeAndBranch: async () => { touched = true },
     removeBranch: async () => { touched = true },
   })
   const base = '/superagent-lite/branches'
@@ -75,6 +77,8 @@ test('the branches panel validates every delete target before touching Git', asy
     `${base}?kind=branch&projectRoot=%2Fone&branch=feature`,
     `${base}?kind=worktree&projectRoot=%2Fone&branch=sl-a`,
     `${base}?kind=worktree&projectRoot=%2Fone&branch=sl-a&path=relative`,
+    `${base}?kind=worktree-and-branch&projectRoot=%2Fone&branch=sl-a`,
+    `${base}?kind=worktree-and-branch&projectRoot=%2Fone&branch=sl-a&path=relative`,
   ]
   for (const url of urls) {
     const result = await request(handler, 'DELETE', url)
@@ -91,6 +95,10 @@ test('the branches panel deletes a worktree and a branch through their own actio
       calls.push(['worktree', target, signal instanceof AbortSignal])
       return { branch: target.branch, path: target.path, deleted: true, row: { branch: target.branch }, message: 'Worktree deleted' }
     },
+    removeWorktreeAndBranch: async (target, signal) => {
+      calls.push(['worktree-and-branch', target, signal instanceof AbortSignal])
+      return { branch: target.branch, path: target.path, deleted: true, worktreeDeleted: true, branchDeleted: true, message: 'Worktree and branch deleted' }
+    },
     removeBranch: async (target, signal) => {
       calls.push(['branch', target, signal instanceof AbortSignal])
       return { branch: target.branch, deleted: true, message: 'Branch deleted' }
@@ -100,11 +108,18 @@ test('the branches panel deletes a worktree and a branch through their own actio
     `/superagent-lite/branches?kind=worktree&projectRoot=%2Fone&branch=sl-a&path=${encodeURIComponent('/one/.agents/worktrees/sl-a')}`)
   assert.equal(worktree.status, 200)
   assert.deepEqual(JSON.parse(worktree.body), { branch: 'sl-a', path: '/one/.agents/worktrees/sl-a', deleted: true, row: { branch: 'sl-a' }, message: 'Worktree deleted' })
+  const both = await request(handler, 'DELETE',
+    `/superagent-lite/branches?kind=worktree-and-branch&projectRoot=%2Fone&branch=sl-c&path=${encodeURIComponent('/one/.agents/worktrees/sl-c')}`)
+  assert.equal(both.status, 200)
+  assert.deepEqual(JSON.parse(both.body), {
+    branch: 'sl-c', path: '/one/.agents/worktrees/sl-c', deleted: true, worktreeDeleted: true, branchDeleted: true, message: 'Worktree and branch deleted',
+  })
   const branch = await request(handler, 'DELETE', `/superagent-lite/branches?kind=branch&projectRoot=%2Fone&branch=sl-b`)
   assert.equal(branch.status, 200)
   assert.deepEqual(JSON.parse(branch.body), { branch: 'sl-b', deleted: true, message: 'Branch deleted' })
   assert.deepEqual(calls, [
     ['worktree', { projectRoot: '/one', branch: 'sl-a', path: '/one/.agents/worktrees/sl-a' }, true],
+    ['worktree-and-branch', { projectRoot: '/one', branch: 'sl-c', path: '/one/.agents/worktrees/sl-c' }, true],
     ['branch', { projectRoot: '/one', branch: 'sl-b' }, true],
   ])
 })
@@ -115,12 +130,20 @@ test('the branches panel maps a refused delete to 409 without a partial success'
       assert.equal(target.path, '/one/.agents/worktrees/sl-a')
       throw new Error('The worker worktree has uncommitted changes')
     },
+    removeWorktreeAndBranch: async target => {
+      assert.equal(target.path, '/one/.agents/worktrees/sl-a')
+      throw new Error('The worktree at /one/.agents/worktrees/sl-a was removed, but the worker branch sl-a could not be deleted and still exists')
+    },
     removeBranch: async () => { throw new Error('The task is still running') },
   })
   const worktree = await request(handler, 'DELETE',
     `/superagent-lite/branches?kind=worktree&projectRoot=%2Fone&branch=sl-a&path=${encodeURIComponent('/one/.agents/worktrees/sl-a')}`)
   assert.equal(worktree.status, 409)
   assert.deepEqual(JSON.parse(worktree.body), { error: 'The worker worktree has uncommitted changes' })
+  const both = await request(handler, 'DELETE',
+    `/superagent-lite/branches?kind=worktree-and-branch&projectRoot=%2Fone&branch=sl-a&path=${encodeURIComponent('/one/.agents/worktrees/sl-a')}`)
+  assert.equal(both.status, 409)
+  assert.match(JSON.parse(both.body).error, /worktree at \/one\/\.agents\/worktrees\/sl-a was removed, but the worker branch sl-a could not be deleted/)
   const branch = await request(handler, 'DELETE', `/superagent-lite/branches?kind=branch&projectRoot=%2Fone&branch=sl-a`)
   assert.equal(branch.status, 409)
   assert.deepEqual(JSON.parse(branch.body), { error: 'The task is still running' })

@@ -73,6 +73,7 @@ export async function apply(ctx) {
       handler: createBranchesPanelHandler(connection, {
         list: signal => gitManager.branches(signal),
         removeWorktree: (target, signal) => gitManager.removeWorktree(target, signal),
+        removeWorktreeAndBranch: (target, signal) => gitManager.removeWorktreeAndBranch(target, signal),
         removeBranch: (target, signal) => gitManager.removeBranch(target, signal),
       }),
     }))
