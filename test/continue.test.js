@@ -35,7 +35,7 @@ async function taskFixture(id, status = 'running') {
 function context(sends, worker, onSend, sessionQuery) {
   return {
     agents: { get: () => typeof worker === 'string' ? { status: worker } : worker },
-    sessionQuery,
+    get: name => name === 'sessionQuery' ? sessionQuery : undefined,
     subagents: {
       async sendMessage(sender, targetId, content) {
         await onSend?.()
@@ -257,22 +257,28 @@ test('a compacted live worker gets the original requirements replayed', async ()
   assertSectionOrder(sends[0].text, ['Task ID:', 'Branch:', 'Worktree:', 'Base:', 'Rules:', 'Requirements (replayed', 'Follow-up (the only authoritative instruction for this turn):'])
 })
 
-test('a cold worker is inspected for compaction before replaying the requirements', async () => {
+test('a cold worker is observed for compaction before replaying the requirements', async () => {
   const { createContinueTool } = await import('../src/continue.js')
   const { updateTask } = await import('../src/task-store.js')
   const id = '6000000000000001'
   await taskFixture(id)
   await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
   const sends = []
-  const inspected = []
+  const observed = []
+  const disposed = []
   const tool = createContinueTool(context(sends, undefined, undefined, {
-    async inspectSession(sessionId, read) {
-      inspected.push(sessionId)
-      return read({ deriveMessages: () => [{ source: { kind: 'compact-checkpoint' } }] })
+    async observeSession(sessionId, options) {
+      observed.push({ sessionId, options })
+      return {
+        events: [{ type: 'user/message', data: { source: { kind: 'compact-checkpoint' } } }],
+        [Symbol.dispose]() { disposed.push(sessionId) },
+      }
     },
   }))
   await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
-  assert.deepEqual(inspected, ['worker'])
+  assert.deepEqual(observed.map(item => item.sessionId), ['worker'])
+  assert.ok(observed[0].options.signal instanceof AbortSignal)
+  assert.deepEqual(disposed, ['worker'])
   assert.match(sends[0].text, /Requirements \(replayed because this session's earlier context was compacted\):\nImplement it\./)
 })
 
@@ -283,14 +289,40 @@ test('an uncompacted cold worker does not get the original requirements replayed
   await taskFixture(id)
   await updateTask(id, { status: 'awaiting-merge', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
   const sends = []
+  const disposed = []
   const tool = createContinueTool(context(sends, undefined, undefined, {
-    async inspectSession(_sessionId, read) {
-      return read({ deriveMessages: () => [{ source: { kind: 'user' } }] })
+    async observeSession() {
+      return {
+        events: [{ type: 'user/message', data: { source: { kind: 'user' } } }],
+        [Symbol.dispose]() { disposed.push('worker') },
+      }
     },
   }))
   await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.deepEqual(disposed, ['worker'])
   assert.doesNotMatch(sends[0].text, /Requirements:/)
   assert.match(sends[0].text, /The original requirements are in the earlier conversation;/)
+})
+
+test('a settled worker resumes when no sessionQuery service is available', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const { readTask, updateTask } = await import('../src/task-store.js')
+  const id = '6000000000000003'
+  await taskFixture(id)
+  await updateTask(id, { status: 'failed', worktree: { path: join(home, 'worktree'), branch: 'sl-test' } })
+  const sends = []
+  const ctx = context(sends)
+  // Cordis throws on reading a property that was not injected; the tool must
+  // read the optional service through ctx.get instead of ctx.sessionQuery.
+  Object.defineProperty(ctx, 'sessionQuery', {
+    get() { throw new Error('cannot get property "sessionQuery" without inject') },
+  })
+  const tool = createContinueTool(ctx)
+  const text = await tool.execute({ taskId: id, task: 'New requirement' }, { agent: { id: 'router' }, signal: new AbortController().signal })
+  assert.match(text, /Follow-up delivered/)
+  assert.doesNotMatch(sends[0].text, /Requirements:/)
+  assert.match(sends[0].text, /The original requirements are in the earlier conversation;/)
+  assert.equal((await readTask(id)).status, 'resuming')
 })
 
 test('other settled states also resume with the compact follow-up message', async () => {

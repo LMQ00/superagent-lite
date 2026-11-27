@@ -9,9 +9,9 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」，以及给 worker 附带本地图片的提示 | `cordis.patch.yml:21-48`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:91`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-134` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:41-52`、`src/continue.js:216-231`、`src/continue.js:262-264`、`src/worker-status.js` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:41-52`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、change 模式先查知识库的要求、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-154` |
-| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；change 续派发先要求查询知识库，非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:70-177` |
+| 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；change 续派发先要求查询知识库，非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:83-190` |
 | 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:14-36`、`src/review.js:58-114`、`src/helper-guard.js:119-131`、`src/review-scope.js:1-294` |
 | 报告与路由消息 | 工具描述、`images` 参数和长度限制 | `src/report-tool.js:10-20`、`src/message-router.js:7-17` |
 | 记忆提示词与工具 | memory 角色提示词、字段、skill 规则、全局知识库查询/读取/写入工具，以及 Router/Worker/Reviewer 的记忆注入 | `src/memory.js:10-546` |
@@ -51,7 +51,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 | 链路 | 工具参数 | 消息构造 | 模型要求 |
 | --- | --- | --- | --- |
 | router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:148-161`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
-| router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:242`、`src/dispatch.js:68-103`） | 目标 worker 模型声明图片输入 |
+| router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:255`、`src/dispatch.js:68-103`） | 目标 worker 模型声明图片输入 |
 | worker → router 报告 | `message_router.images` | 追加到报告文本之后（`src/message-router.js:23-24`） | router 模型声明图片输入 |
 | worker → router report 结论 | `report_task.images` | 追加到报告文本之后（`src/report-tool.js:37-38`） | router 模型声明图片输入 |
 | worker → review | `review_worker_commit.images` | 追加到审查提示词文本之后（`src/review.js:91-141`） | reviewer 模型声明图片输入 |
