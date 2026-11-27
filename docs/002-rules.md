@@ -51,7 +51,7 @@
 | --- | --- | --- | --- |
 | 观察 | 作为 Router Session | 读取输入，调用 `dispatch_worker` 和 `continue_worker`；只问状态时调用 `worker_status` | 每个输入 |
 | 委派 | `dispatch_worker` 且 `mode=change`、`mode=report` 或 `mode=merge` | 创建一个 Task 和一个 Worker Session，或把 merge 请求追加给运行中的 merge worker | 否；需要决定 |
-| 编辑 | change 任务中调用 `create_worktree`（仅 Git 项目） | Git 项目在分配的 Worktree 工作，未进入前其他工具被拦；非 Git 项目直接使用项目根 | 否；Git 项目 Worker 必须先进入 Worktree，非 Git 项目无需进入 |
+| 编辑 | change 任务中调用 `create_worktree`（仅 Git 项目） | Git 项目在分配的 Worktree 工作，未进入前除只读的 `knowledge_query` / `knowledge_get` 外其他工具被拦；非 Git 项目直接使用项目根 | 否；Git 项目 Worker 必须先进入 Worktree（只读知识库查询除外），非 Git 项目无需进入 |
 | 审查 | 完成后调用 `review_worker_commit` | Git 项目读取已提交 diff，非 Git 项目读取当前项目文件和工作区内容，并启动一个独立 reviewer；reviewer 不能写改文件或改变分支 | 否；Git 项目需要干净的已提交 Worktree |
 | 报告 | report 任务中调用 `report_task` | 带着结论结束 Task | 否；仅 report 任务 |
 | 落地 | change/report 派发或续派发时携带 `land=true` | change worker 可推送指派分支、开 PR；只限指派分支与 reviewed HEAD | 否；未携带时不推送、不开 PR、不合并 |
