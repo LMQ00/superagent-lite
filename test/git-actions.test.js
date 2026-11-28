@@ -525,6 +525,20 @@ test('deleting the worker branch removes its worktree and keeps the task complet
   assert.equal(view.status, 'completed')
 })
 
+test('deleting a worker branch already removed by an external cleanup settles the task record', async () => {
+  const facts = await setupRepo()
+  const record = recordFor(facts)
+  const store = taskStore([record])
+  await git(['worktree', 'remove', facts.worktree], facts.repo)
+  await git(['branch', '-D', 'sl-feature'], facts.repo)
+  const removed = await deleteWorkerBranch(context(), record, signal, store.updateTask)
+  assert.deepEqual(removed, { branch: 'sl-feature', deleted: false })
+  const stored = await store.readTask(taskId)
+  assert.equal(stored.worktree, undefined)
+  assert.equal(stored.branchDeletedAt.length > 0, true)
+  assert.equal(stored.status, 'awaiting-merge')
+})
+
 test('a branch deleted after a merged Pull request does not need to be an ancestor of the local base', async () => {
   const facts = await setupRepo()
   const record = recordFor(facts, { status: 'merged', prState: 'MERGED' })
