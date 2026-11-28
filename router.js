@@ -10,7 +10,7 @@ export async function apply(ctx) {
   await refreshGlobalMemory().catch(error => ctx.logger.warn(`superagent-lite global memory: ${error.message}`))
   ctx.tools.register(createDispatchTool(ctx))
   ctx.tools.register(createContinueTool(ctx))
-  ctx.tools.register(createWorkerStatusTool())
+  ctx.tools.register(createWorkerStatusTool(ctx))
   registerGlobalMemoryContext(ctx)
   registerRouterPrompt(ctx)
 }

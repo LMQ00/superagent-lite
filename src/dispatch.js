@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { createTask, listTasks, readTask, linkWorkerSession, updateTask } from './task-store.js'
+import { belongsToProject } from './project-scope.js'
 import { initLanding, forgetLanding, landingAuthorizationRule, landingRule } from './landing.js'
 import { enqueueWorker } from './launch-queue.js'
 import { deleteWorkerBranch, deleteWorkerBranchOnly, deleteWorkerWorktreeAndBranch, parseWorktrees } from './merge.js'
@@ -303,16 +304,18 @@ export function createDispatchTool(ctx) {
       const { title, worktreeName, teamId, task: taskText, mode, land, branches, images } = decision
 
       const id = createHash('sha256').update(JSON.stringify([exec.agent.id, exec.callId])).digest('hex').slice(0, 16)
+      const cwd = ctx.workingDirectory.get(exec.agent.session)
       const existing = await readTask(id)
       if (existing) {
-        if (existing.parentSessionId !== exec.agent.session.id) throw new Error('Task id is already owned by another Session')
+        if (existing.parentSessionId !== exec.agent.session.id || !belongsToProject(existing, cwd)) {
+          throw new Error('Task id is already owned by another Session or project')
+        }
         if (existing.status !== 'starting' && existing.status !== 'failed') {
           return { delegated: true, mode: existing.mode, taskId: id, workerSessionId: existing.workerSessionId, status: existing.status, teamId: existing.teamId }
         }
         throw new Error(`Dispatch ${id} is already being established; inspect the task board before retrying`)
       }
 
-      const cwd = ctx.workingDirectory.get(exec.agent.session)
       const { projectRoot, git, baseCommit, baseBranch } = await resolveProject(ctx, cwd, exec.signal)
       if (!git && mode === 'merge') throw new Error('Merge tasks require a git repository')
       if (!git && land) throw new Error('Landing requires a git repository; this project is not under git')

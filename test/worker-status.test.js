@@ -93,6 +93,27 @@ test('worker_status reports this router task categories and ignores another rout
   )
 })
 
+test('worker_status scopes tasks to the router current project as well as its session', async () => {
+  const own = task({ title: 'Own project task', projectRoot: '/project-a', teamId: 'team-a' })
+  const foreign = task({ title: 'Foreign project task', projectRoot: '/project-b', teamId: 'team-b' })
+  for (const record of [own, foreign]) assert.equal(await createTask(record), true)
+
+  const tool = createWorkerStatusTool({ workingDirectory: { get: () => '/project-a' } })
+  const report = await tool.execute({}, exec())
+  assert.match(report, /Own project task/)
+  assert.doesNotMatch(report, /Foreign project task/)
+  assert.match(await tool.execute({ taskId: own.id }, exec()), /Own project task/)
+  await assert.rejects(
+    tool.execute({ taskId: foreign.id }, exec()),
+    /does not belong to this Router Session and project/,
+  )
+
+  const other = createWorkerStatusTool({ workingDirectory: { get: () => '/project-b' } })
+  const otherReport = await other.execute({}, exec())
+  assert.match(otherReport, /Foreign project task/)
+  assert.doesNotMatch(otherReport, /Own project task/)
+})
+
 test('workerStatusReport handles an empty router and a supplied task list without a store', () => {
   assert.equal(workerStatusReport([], []), 'No tasks were dispatched by this Router Session.')
   const text = workerStatusReport([task({ id: 'a'.repeat(16), status: 'failed', title: 'Broken' })])
@@ -163,6 +184,16 @@ test('a status notice without a live injector is skipped', () => {
     agents: { get: () => ({ inject() { throw new Error('inbox closed') } }) },
   }
   assert.equal(notifyWorkerStatus(failing, task(), 'cancelled'), false)
+})
+
+test('a status notice is skipped when the router works in another project', () => {
+  const parent = { session: { id: 'router' }, inject() { throw new Error('must not inject') } }
+  const ctx = {
+    logger: { warn() {} },
+    agents: { get: () => parent },
+    workingDirectory: { get: () => '/project-b' },
+  }
+  assert.equal(notifyWorkerStatus(ctx, task({ projectRoot: '/project-a' }), 'cancelled'), false)
 })
 
 test('a legacy cancelled tombstone is hidden when the same task ID is active again', async () => {

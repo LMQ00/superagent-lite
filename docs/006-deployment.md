@@ -161,7 +161,7 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | 启动 | 启用 bundle，启动 DSH Web |
 | 重载 | 禁用再启用 bundle，或重启 DSH Web |
 | 停止 | 禁用 bundle，或停止 DSH Web |
-| 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话的排队、运行、已交付、已取消和失败任务 |
+| 任务状态 | 打开「项目任务」；6 个状态分组见 [005 界面](005-panel.md)，顺序由 [003 生命周期](003-lifecycle.md) 定义。也可以直接问 Router，它用 `worker_status` 查询本会话在当前项目里的排队、运行、已交付、已取消和失败任务 |
 | 行内动作 | 未合并提供合并和提交 PR；未审查提供审查；有 worker 分支的行提供删除分支（运行中禁用）；运行中或排队中提供停止；每行提供删除任务（运行中或排队中会先停止再删除，合并或发布中禁用）。任务行可勾选后批量删除。「分支 / worktree」标签页只列本插件创建的 Worktree 和 `sl-*` 分支，分别提供删除 Worktree 与删除分支（运行中禁用）；删除成功后就地更新该标签页。失败动作显示后端错误，Task 保留已存储的生命周期状态 |
 | 停止变化 | 任务被停止时，插件向 Router 注入后台 `worker-status` 通知；通知不打开新回合、不算新用户输入。停止把 Task 写成 `cancelled` 终态并保留记录，面板显示「已取消」标签；worker 被中断，并发名额立即释放，排队任务可以启动 |
 | 记录位置 | `~/.dsh/superagent-lite/tasks/` 保存 Task 记录；旧版本 `tasks/cancelled/` 的排队取消墓碑仍可被 `worker_status` 查询；worker 设置在 `~/.dsh/superagent-lite/worker-settings.json`；记忆在 `~/.dsh/superagent-lite/memory/`；原始归档和 memory 读取的会话记录在 `~/.dsh/superagent-lite/task/archive/`；全局 skill 在 `~/.agents/skills/<skill名>/`；项目 skill 在 `<项目根>/.dsh/skills/<skill名>/`；Worktree 在 `<项目根>/.agents/worktrees/`，由面板「分支 / worktree」标签页单独管理 |
@@ -229,6 +229,8 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `This worker is frozen.` | Worker 的 subagent 已结束；用 `continue_worker` 恢复 Task，或重新派发 |
 | `This worker has no matching project task` | 当前 Session 不是该 Task 的 Worker；重新派发，不要复用 Session |
 | `Dispatch <id> is already being established; inspect the task board before retrying` | 同一派发对应的 Task 处于 `starting` 或 `failed`；查看「项目任务」后用新输入派发；`queued` 的同名 Task 会直接返回 |
+| `Task id is already owned by another Session or project` | 同一派发 ID 已属于另一个 Router Session 或当前项目之外的记录；换一个输入或回到原项目处理 |
+| `Task does not belong to this router Session and project` | `continue_worker` / `worker_status` 的 Task ID 属于另一个 Router Session 或另一个项目；切回原项目或重新派发 |
 | `The router Session is not running` | 本地合并需要 Router Session 保持运行 |
 | `Git delivery is unavailable under the current Session file policy` | 把 Router Session 设为 full access |
 | `This project is not a git repository; there is no branch to review, merge, publish, or delete` | 非 Git Task 没有 Git 动作；用 worker 的审查工具重新审查工作区 |
