@@ -2,7 +2,7 @@
 
 一个 DeepSeek Harness 插件：把项目工作从对话里分派出去，交给在 Git 项目里使用独立 Worktree、在非 Git 目录里直接执行、并都接受只读审查的 worker。一次输入只做一次调度决定，router 不替 worker 干活。
 
-- router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 合并已交付分支：没有正在运行的 merge worker 时派发新的，有则把请求追加给同一个 worker；同一未发布任务的补充用 `continue_worker`。
+- router 收到输入后调用 `dispatch_worker` 并写明 `mode`：`change` 改项目文件，`report` 让 worker 只查证并交回结论，`answer` 直接回答且不派 worker、不建任务，`merge` 合并已交付分支（没有正在运行的 merge worker 时派发新的，有则把请求追加给同一个 worker），`remove` 直接删除 worker 分支及其 worktree（不派 worker、不建任务，运行中的任务、base branch、非本插件创建的分支和有未提交改动的工作树会被拒绝）；同一未发布任务的补充用 `continue_worker`。
 - worker 在独立分支和 Worktree 中修改文件，提交后调用 `review_worker_commit`，由一个独立子代理审查该提交；reviewer 不能使用写改文件的工具，也不能运行改变分支或历史的 git 命令。新任务的目录和分支用可读的英文短名加 Task ID 后缀命名，如 `sl-fix-plan-color-0123456789ab`。
 - 不属于任何 Git 仓库的文件夹同样可以走完 change 和 report 流程：worker 直接在该目录执行，不建分支、Worktree 或提交；`review_worker_commit` 改为审查当前项目文件和实际工作区内容，任务以审查通过为完成。Git 专有的合并、发送 PR 和删除分支在非 Git 目录不可用。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
@@ -33,7 +33,7 @@ npm i @lmq00/superagent-lite
 - 只读的诊断、分析、查找可以直接问；router 用 report 模式派工，worker 可以联网检索和读取网页做调研，任务结束后不留分支和提交。
 - 消息可以携带本地图片：router 在 `dispatch_worker` / `continue_worker` 的 `images` 里传本地 PNG/JPEG/WebP/GIF 路径，worker 在 `message_router`、`report_task`、`review_worker_commit` 的 `images` 里传路径。插件把图片存进 Host 附件库，再作为消息内容发给对方；接收方模型必须声明支持图片输入。
 - 在非 Git 目录里也可以直接说清要改什么：派发、执行、审查和记忆走与 Git 项目相同的状态机，只是不建分支、Worktree 和提交；审查通过后任务直接完成。合并、发送 PR 和 `land` 授权需要 Git 仓库。
-- 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。
+- 换一个业务目标就是新任务，router 会派新的 worker，即使和正在跑的任务改同一批文件。合并请求也是新任务：即使点名了已有任务，router 也走 `dispatch_worker` 的 `mode=merge`，不续派该任务原来的 worker；已经有 merge worker 在跑时，新请求追加给它，不另起一个。要清理已合并或放弃的 worker 分支时，直接让 router 走 `dispatch_worker` 的 `mode=remove`，用分支名或任务 ID 指定目标；删除前的安全边界和面板「删除分支」一致。
 - 合并与发送 PR 需要动作执行时 Session 具有完整文件访问权限；本地合并还需要 router 会话仍在运行。
 
 ## 记忆
