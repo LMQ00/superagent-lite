@@ -10,7 +10,7 @@
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:92`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-134` |
 | 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的五种取值、change/merge 的英文 `worktreeName`、merge/remove 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:246-266`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
-| Router 每轮路由提醒 | 每个请求注入的路由决定提醒，以及给 worker 的任务文字要改正语病和没逻辑的表述、通顺有逻辑且保留原意、不增加修饰和用户未提到的功能 | `src/router-prompt.js:1-21`、`router.js:15` |
+| Router 每轮路由提醒 | 每个请求注入的路由决定提醒；每轮首次装配时写入本轮时间标记，使运行时上下文快照每轮重新记录、在 GUI 中每轮可见；以及给 worker 的任务文字要改正语病和没逻辑的表述、通顺有逻辑且保留原意、不增加修饰和用户未提到的功能 | `src/router-prompt.js:1-41`、`router.js:15` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、change 模式先查知识库的要求、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-154` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；change 续派发先要求查询知识库，非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:83-190` |
 | 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:14-36`、`src/review.js:58-114`、`src/helper-guard.js:119-131`、`src/review-scope.js:1-294` |
@@ -117,7 +117,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 2. 预设 persona：Router 或 Worker 的 `persona.prefix`。
 3. 已挂载工具各自注册的工具指导。
 4. 记忆运行时上下文：Worker（包括 report 只读 worker）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取，Router 只读取全局记忆；以 order `170` 注册并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-5. Router 路由提醒：Router 预设以 order `175` 注册必需运行时上下文，每个请求提醒先做一次路由决定（`dispatch_worker`、`continue_worker`，只问任务状态时 `worker_status`），并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间、摘要和提醒是背景，不算新输入（`src/router-prompt.js:1-21`、`router.js:15`）。
+5. Router 路由提醒：Router 预设以 order `175` 注册必需运行时上下文，每个请求提醒先做一次路由决定（`dispatch_worker`、`continue_worker`，只问任务状态时 `worker_status`），并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间、摘要和提醒是背景，不算新输入。DSH 只在运行时上下文快照变化时记录新的快照，所以提醒在每轮首次装配时写入本轮时间标记并缓存到该轮结束：同一轮内的多次装配内容不变，换一轮就生成新文本，GUI 每轮都能看到这条提醒；重启后恢复的会话在新一轮同样生成新文本并重新记录快照（`src/router-prompt.js:1-41`、`router.js:15`）。
 6. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、任务停止/排队开始的 `worker-status` 后台通知。任务消息、续派消息、报告和审查请求可以携带 `images` 指定的本地图片块。
 
 两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:50-53`、`cordis.patch.yml:93-96`、`cordis.patch.yml:81-87`、`src/worker-prompt.js:17-20`、`src/worker-prompt.js:37-63`）。
