@@ -298,10 +298,16 @@ test('the memory tab browses and deletes global memory, project memory, skills a
     '/one': {
       global: { userProfile: 'Prefers Chinese reports.' },
       project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
-      knowledge: [{
-        id: '1', text: 'Run npm test before reporting.',
-        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
-      }],
+      knowledge: {
+        global: [{
+          id: '1', text: 'Run npm test before reporting.',
+          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+        }],
+        project: [{
+          id: '1', text: 'The board is the first project.',
+          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+        }],
+      },
       skills: {
         global: sharedSkills,
         project: [
@@ -313,10 +319,16 @@ test('the memory tab browses and deletes global memory, project memory, skills a
     '/two': {
       global: { userProfile: 'Prefers Chinese reports.' },
       project: { projectRoot: '/two', responsibilities: 'Watch the second project.', positioning: '' },
-      knowledge: [{
-        id: '1', text: 'Run npm test before reporting.',
-        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
-      }],
+      knowledge: {
+        global: [{
+          id: '1', text: 'Run npm test before reporting.',
+          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+        }],
+        project: [{
+          id: '1', text: 'The second project keeps beta notes.',
+          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+        }],
+      },
       skills: {
         global: [{ name: 'superagent-shared-memory', description: 'Shared inspection guidance.', content: 'Inspect the repository first.' }],
         project: [{ name: 'superagent-project-memory', description: 'Project inspection guidance.', content: 'Run the project tests.' }],
@@ -373,6 +385,8 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   assert.match(text(tree), /Project inspection guidance/)
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
+  assert.match(text(tree), /项目知识库1/)
+  assert.match(text(tree), /The second project keeps beta notes/)
   // The most recently updated task's project is the current project.
   const projectSelect = nodes(tree).find(node => node.type === 'select')
   assert.equal(projectSelect.props.value, '/two')
@@ -381,7 +395,7 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   assert.ok(searchInput, 'the memory tab has a search box')
   assert.equal(searchInput.props['aria-label'], '搜索记忆')
   assert.equal(nodes(tree).filter(node => ['input', 'textarea'].includes(node.type)).length, 1)
-  assert.equal(buttons(tree, '删除').length, 5)
+  assert.equal(buttons(tree, '删除').length, 6)
   assert.equal(nodes(tree).filter(node => node.props?.role === 'tabpanel').length, 1)
 
   projectSelect.props.onChange({ target: { value: '/one' } })
@@ -402,9 +416,11 @@ test('the memory tab browses and deletes global memory, project memory, skills a
   assert.doesNotMatch(text(tree), /Shared inspection guidance/)
   assert.match(text(tree), /全局知识库1/)
   assert.match(text(tree), /Run npm test before reporting/)
+  assert.match(text(tree), /项目知识库1/)
+  assert.match(text(tree), /The board is the first project/)
   assert.match(text(tree), /更新时间/)
   assert.equal(nodes(tree).filter(node => node.type === 'button' &&
-    /^删除: /.test(node.props?.['aria-label'] ?? '')).length, 7)
+    /^删除: /.test(node.props?.['aria-label'] ?? '')).length, 8)
   const memoryRequests = requests.filter(request => request.path.startsWith('/superagent-lite/memory'))
   assert.deepEqual(memoryRequests.map(request => new URL(request.path, 'http://localhost').searchParams.get('projectRoot')),
     ['/two', '/one'])
@@ -447,16 +463,22 @@ test('the memory tab filters all sections locally and keeps collapse, expand and
   const view = {
     global: { userProfile: longProfile },
     project: { projectRoot: '/one', responsibilities: 'Keep the board accurate.', positioning: 'Local-first tools.' },
-    knowledge: [
-      {
-        id: '7', text: 'Always run the test suite.',
+    knowledge: {
+      global: [
+        {
+          id: '7', text: 'Always run the test suite.',
+          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+        },
+        {
+          id: '8', text: longKnowledge,
+          createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+      project: [{
+        id: '9', text: 'This project keeps its notes in the board.',
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
-      },
-      {
-        id: '8', text: longKnowledge,
-        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
-      },
-    ],
+      }],
+    },
     skills: {
       global: [{ name: 'shared-memory', description: 'Inspect the repository first.', content: 'Read AGENTS.md before editing.' }],
       project: [{ name: 'board-memory', description: 'Keep the board accurate.', content: 'Run npm test.' }],
@@ -491,8 +513,10 @@ test('the memory tab filters all sections locally and keeps collapse, expand and
 
   // Long memory and knowledge text is clamped until expanded; skill content
   // starts folded and shows only the name and description.
-  assert.equal(sectionCount(tree), 3)
+  assert.equal(sectionCount(tree), 4)
   assert.match(text(tree), /Global knowledge base2/)
+  assert.match(text(tree), /Project knowledge base1/)
+  assert.match(text(tree), /This project keeps its notes in the board/)
   assert.match(text(tree), /Inspect the repository first/)
   assert.doesNotMatch(text(tree), /Read AGENTS.md before editing/)
   const profile = nodes(tree).find(node => node.type === 'p' &&
@@ -557,10 +581,11 @@ test('the memory tab filters all sections locally and keeps collapse, expand and
 
   // Clearing the query restores the already-loaded view without another read.
   tree = search('')
-  assert.equal(sectionCount(tree), 3)
+  assert.equal(sectionCount(tree), 4)
   assert.match(text(tree), /Prefers terse/)
   assert.match(text(tree), /Keep the board accurate/)
   assert.match(text(tree), /Global knowledge base2/)
+  assert.match(text(tree), /Project knowledge base1/)
   assert.equal(requests.filter(request => request.path.startsWith('/superagent-lite/memory')).length, 1)
   board.dispose()
 })
@@ -575,7 +600,10 @@ test('the memory tab reports a load failure and can retry from the same panel', 
         ? { ok: false }
         : {
             ok: true,
-            json: async () => ({ global: { userProfile: 'Recovered.' }, project: { responsibilities: 'R' }, knowledge: [] }),
+            json: async () => ({
+              global: { userProfile: 'Recovered.' }, project: { responsibilities: 'R' },
+              knowledge: { global: [], project: [] },
+            }),
           }
     },
     language: 'en',
@@ -606,10 +634,16 @@ test('deletes saved memory, skills and knowledge in place after confirmation', a
   const view = {
     global: { userProfile: 'Delete this profile.' },
     project: { projectRoot: '/one', responsibilities: 'Delete this responsibility.', positioning: 'Keep positioning.' },
-    knowledge: [{
-      id: '1', text: 'Delete this knowledge.',
-      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
-    }],
+    knowledge: {
+      global: [{
+        id: '1', text: 'Delete this knowledge.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      }],
+      project: [{
+        id: '1', text: 'Delete this project knowledge.',
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+      }],
+    },
     skills: {
       global: [{ name: 'superagent-shared-memory', description: 'Shared inspection guidance.', content: 'Inspect the repository first.' }],
       project: [{ name: 'superagent-project-memory', description: 'Project inspection guidance.', content: 'Run the project tests.' }],
@@ -666,12 +700,21 @@ test('deletes saved memory, skills and knowledge in place after confirmation', a
   tree = await confirm()
   assert.doesNotMatch(text(tree), /Project inspection guidance/)
 
-  deleteButton('#1').props.onClick()
+  const knowledgeDeleteButtons = current => nodes(current).filter(node => node.type === 'button' &&
+    node.props?.['aria-label'] === 'Delete: #1')
+  knowledgeDeleteButtons(tree)[0].props.onClick()
   tree = board.render()
   assert.match(text(tree), /so queries no longer return it/)
   tree = await confirm()
-  assert.doesNotMatch(text(tree), /Delete this knowledge/)
+  assert.doesNotMatch(text(tree), /Delete this knowledge\./)
   assert.match(text(tree), /Global knowledge base0/)
+  assert.match(text(tree), /Delete this project knowledge/)
+
+  knowledgeDeleteButtons(tree)[0].props.onClick()
+  tree = board.render()
+  tree = await confirm()
+  assert.doesNotMatch(text(tree), /Delete this project knowledge/)
+  assert.match(text(tree), /Project knowledge base0/)
 
   const deletes = requests.filter(request => request.options.method === 'DELETE')
   assert.deepEqual(deletes.map(request => {
@@ -684,7 +727,8 @@ test('deletes saved memory, skills and knowledge in place after confirmation', a
     ['memory', 'global', 'userProfile', null, null, null],
     ['memory', 'project', 'responsibilities', '/one', null, null],
     ['skill', 'project', null, '/one', 'superagent-project-memory', null],
-    ['knowledge', null, null, null, null, '1'],
+    ['knowledge', 'global', null, null, null, '1'],
+    ['knowledge', 'project', null, '/one', null, '1'],
   ])
   for (const request of deletes) {
     assert.equal(request.options.credentials, 'same-origin')
@@ -702,7 +746,13 @@ test('keeps memory content and reports the error when a delete fails', async () 
       if (path === '/superagent-lite/tasks') return { ok: true, json: async () => ({ tasks: [task({ projectRoot: '/one' })] }) }
       if (path === '/superagent-lite/worker-settings') return { ok: true, json: async () => ({ settings: {} }) }
       if (options.method === 'DELETE') return { ok: false, json: async () => ({ error: 'Memory is locked' }) }
-      return { ok: true, json: async () => ({ global: { userProfile: 'Keep this profile.' }, project: { responsibilities: 'R' }, knowledge: [] }) }
+      return {
+        ok: true,
+        json: async () => ({
+          global: { userProfile: 'Keep this profile.' }, project: { responsibilities: 'R' },
+          knowledge: { global: [], project: [] },
+        }),
+      }
     },
     language: 'en',
   })

@@ -107,16 +107,19 @@ test('the memory role describes both scopes, their fields and the storage rules'
   assert.match(prompt, /knowledge_query/)
   assert.match(prompt, /knowledge_get/)
   assert.match(prompt, /knowledge_write/)
-  assert.match(prompt, /The knowledge base is global/)
+  assert.match(prompt, /There are two knowledge bases/)
+  assert.match(prompt, /global knowledge base stores reusable knowledge broadly applicable to every project/)
+  assert.match(prompt, /project knowledge base belongs to the current project only/)
+  assert.match(prompt, /knowledge_write with an explicit scope/)
   assert.match(prompt, /1 of at most 10 project skills/)
   assert.match(prompt, /Never add an 11th project skill/)
   assert.match(prompt, /reuse the name of an existing memory-managed project skill/)
-  assert.match(prompt, /Knowledge, facts, experience, conclusions and observations belong in the global knowledge base/)
+  assert.match(prompt, /Knowledge, facts, experience, conclusions and observations belong in a knowledge base/)
   assert.match(prompt, /A skill is only a reusable fixed procedure or method/)
   assert.match(prompt, /Saving nothing is normal and preferred/)
   assert.match(prompt, /Do not use the number of written entries as a goal/)
   assert.match(prompt, /Only this role may write knowledge/)
-  assert.doesNotMatch(prompt, /project knowledge base/i)
+  assert.doesNotMatch(prompt, /The knowledge base is global/)
   assert.match(prompt, /prefer less over more/)
   assert.match(prompt, /Return the complete updated text for each field you change/)
   assert.match(prompt, /return only the skills to create or update/)
@@ -520,62 +523,88 @@ test('empty results write nothing and malformed results fail closed', async () =
   await assert.rejects(runMemoryExtraction(empty.ctx, noConversation, { projectRoot }, signal), /conversation is empty/)
 })
 
-test('knowledge tools describe the shared knowledge base and guide the model to query it', async () => {
+test('knowledge tools describe both knowledge scopes and guide the model to query them', async () => {
   const { createKnowledgeGetTool, createKnowledgeQueryTool } = await import('../src/memory.js')
   const query = createKnowledgeQueryTool()
   const get = createKnowledgeGetTool()
   assert.match(query.description, /Query the local knowledge base/)
-  assert.match(query.description, /shared long-term knowledge base for every role and agent preset/)
+  assert.match(query.description, /shared global knowledge base for every project/)
+  assert.match(query.description, /current project's own knowledge base/)
   assert.match(query.description, /Call this tool whenever saved reusable knowledge might help/)
   assert.match(query.description, /before starting work/)
   assert.match(query.description, /supports keyword queries/)
   assert.match(query.description, /numbered context snippets/)
   assert.match(query.description, /knowledge_get/)
   assert.match(get.description, /Read full entries from the local knowledge base/)
-  assert.match(get.description, /shared long-term knowledge base for every role and agent preset/)
+  assert.match(get.description, /shared global knowledge base for every project/)
+  assert.match(get.description, /current project's own knowledge base/)
   assert.match(get.description, /not injected/)
 })
 
-test('knowledge tools query snippets, read full entries and correct global knowledge', async () => {
+test('knowledge tools query snippets, read full entries and correct both scopes', async () => {
   const {
     createKnowledgeGetTool, createKnowledgeQueryTool, createKnowledgeWriteTool,
   } = await import('../src/memory.js')
-  const exec = { signal: new AbortController().signal }
-  const query = createKnowledgeQueryTool()
-  const get = createKnowledgeGetTool()
-  const write = createKnowledgeWriteTool()
+  const projectRoot = join(home, 'knowledge-tools-project')
+  const ctx = { workingDirectory: { get: () => projectRoot } }
+  const exec = {
+    agent: { id: 'knowledge-tools-agent', session: { header: {} } },
+    signal: new AbortController().signal,
+  }
+  const query = createKnowledgeQueryTool(ctx)
+  const get = createKnowledgeGetTool(ctx)
+  const write = createKnowledgeWriteTool(ctx)
   assert.match(await query.execute({}, exec), /No matching knowledge base entries/)
-  const added = await write.execute({ action: 'add', text: 'The unit suite is npm test.' }, exec)
+  const added = await write.execute({ action: 'add', scope: 'global', text: 'The unit suite is npm test.' }, exec)
   const id = /entry ([a-z0-9-]+)/.exec(added)?.[1]
   assert.ok(id, added)
-  const duplicate = await write.execute({ action: 'add', text: 'The unit suite is npm test.' }, exec)
+  const duplicate = await write.execute({ action: 'add', scope: 'global', text: 'The unit suite is npm test.' }, exec)
   assert.match(duplicate, new RegExp(`already saved as ${id}`))
+  const projectAdded = await write.execute({
+    action: 'add', scope: 'project', text: 'This project uses the alpha layout.',
+  }, exec)
+  const projectId = /entry ([a-z0-9-]+)/.exec(projectAdded)?.[1]
+  assert.ok(projectId, projectAdded)
   const searched = await query.execute({ query: 'npm' }, exec)
-  assert.match(searched, new RegExp(`#${id} The unit suite is npm test\\.`))
+  assert.match(searched, new RegExp(`#global:${id} The unit suite is npm test\\.`))
   assert.match(searched, /Use knowledge_get with these ids/)
-  assert.match(await get.execute({ ids: [id] }, exec), new RegExp(`#${id} The unit suite is npm test\\.`))
-  assert.match(await get.execute({ ids: ['999'] }, exec), /#999 not found/)
+  const projectSearched = await query.execute({ query: 'alpha' }, exec)
+  assert.match(projectSearched, new RegExp(`#project:${projectId} This project uses the alpha layout\\.`))
+  assert.match(await get.execute({ ids: [`global:${id}`] }, exec),
+    new RegExp(`#global:${id} The unit suite is npm test\\.`))
+  assert.match(await get.execute({ ids: [id] }, exec),
+    new RegExp(`#global:${id} The unit suite is npm test\\.`))
+  assert.match(await get.execute({ ids: ['global:999'] }, exec), /#global:999 not found/)
   await assert.rejects(get.execute({ ids: [] }, exec), /ids are required/)
-  await write.execute({ action: 'update', id, text: 'Run npm test for the unit suite.' }, exec)
+  await write.execute({ action: 'update', scope: 'global', id, text: 'Run npm test for the unit suite.' }, exec)
   assert.match(await query.execute({ query: 'unit' }, exec), /Run npm test for the unit suite\./)
-  assert.match(await get.execute({ ids: [id] }, exec), /#\d+ Run npm test for the unit suite\./)
-  await write.execute({ action: 'delete', id }, exec)
+  assert.match(await get.execute({ ids: [id] }, exec), /#global:\d+ Run npm test for the unit suite\./)
+  await write.execute({ action: 'delete', scope: 'global', id }, exec)
+  assert.match(await query.execute({}, exec), new RegExp(`#project:${projectId}`))
+  assert.match(await get.execute({ ids: [`global:${id}`] }, exec), /not found/)
+  await write.execute({ action: 'delete', scope: 'project', id: projectId }, exec)
   assert.match(await query.execute({}, exec), /No matching knowledge base entries/)
-  assert.match(await get.execute({ ids: [id] }, exec), /not found/)
-  await assert.rejects(write.execute({ action: 'add', text: '' }, exec), /cannot be empty/)
-  await assert.rejects(write.execute({ action: 'unknown' }, exec), /must be add, update or delete/)
+  await assert.rejects(write.execute({ action: 'add', scope: 'global', text: '' }, exec), /cannot be empty/)
+  await assert.rejects(write.execute({ action: 'unknown', scope: 'global' }, exec), /must be add, update or delete/)
 })
 
-test('the knowledge base is global and the memory view returns it for every project', async () => {
+test('the memory view separates global knowledge from project knowledge', async () => {
   const { createMemoryStore, readMemoryView } = await import('../src/memory.js')
   const store = createMemoryStore()
+  const firstProject = join(home, 'knowledge-first')
+  const secondProject = join(home, 'knowledge-second')
   await store.addKnowledge('Reusable fact shared by every project.')
-  const first = await readMemoryView(join(home, 'knowledge-first'))
-  const second = await readMemoryView(join(home, 'knowledge-second'))
+  await store.addKnowledge('Reusable fact for the first project.', {
+    scope: 'project', projectRoot: firstProject,
+  })
+  const first = await readMemoryView(firstProject)
+  const second = await readMemoryView(secondProject)
   const withoutProject = await readMemoryView()
-  assert.equal(first.knowledge.at(0).text, 'Reusable fact shared by every project.')
-  assert.deepEqual(second.knowledge, first.knowledge)
-  assert.deepEqual(withoutProject.knowledge, first.knowledge)
+  assert.equal(first.knowledge.global.at(0).text, 'Reusable fact shared by every project.')
+  assert.deepEqual(first.knowledge.project.map(entry => entry.text), ['Reusable fact for the first project.'])
+  assert.deepEqual(second.knowledge.global, first.knowledge.global)
+  assert.deepEqual(second.knowledge.project, [])
+  assert.deepEqual(withoutProject.knowledge, { global: first.knowledge.global, project: [] })
 })
 
 test('worker turn archives keep the full turn with reference numbers', async () => {

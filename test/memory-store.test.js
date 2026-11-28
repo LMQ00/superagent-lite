@@ -129,6 +129,82 @@ test('the knowledge file is global and rejects malformed documents', async () =>
   await assert.rejects(store.readKnowledge(), /Invalid knowledge base entries/)
 })
 
+test('project knowledge is keyed by project root and queries merge both scopes', async () => {
+  const { createHash } = await import('node:crypto')
+  const own = storeModule.createMemoryStore(join(root, 'data-scoped'), { agentsHome })
+  const projectA = join(root, 'knowledge-project-a')
+  const projectB = join(root, 'knowledge-project-b')
+  assert.deepEqual(await own.readProjectKnowledge(projectA), [])
+
+  const global = await own.addKnowledge('Every project runs npm test.')
+  const first = await own.addKnowledge('Project A uses the alpha layout.', {
+    scope: 'project', projectRoot: projectA,
+  })
+  assert.equal(first.entry.id, '1')
+  await own.addKnowledge('Project B uses the beta layout.', {
+    scope: 'project', projectRoot: projectB,
+  })
+  assert.deepEqual((await own.readProjectKnowledge(projectA)).map(entry => entry.text), [
+    'Project A uses the alpha layout.',
+  ])
+  assert.equal((await own.readProjectKnowledge(projectB)).map(entry => entry.text).join(), 'Project B uses the beta layout.')
+
+  const merged = await own.searchKnowledge('', 10, { projectRoot: projectA })
+  assert.deepEqual(new Set(merged.map(entry => `${entry.scope}:${entry.id}`)), new Set([
+    `global:${global.entry.id}`, `project:${first.entry.id}`,
+  ]))
+  assert.deepEqual((await own.searchKnowledge('alpha', 10, { projectRoot: projectA }))
+    .map(entry => entry.scope), ['project'])
+  assert.deepEqual(await own.searchKnowledge('alpha', 10, { projectRoot: projectB }), [])
+  assert.deepEqual((await own.searchKnowledge('alpha', 10)).map(entry => entry.scope), [])
+
+  const results = await own.getKnowledge(
+    [`project:${first.entry.id}`, `global:${global.entry.id}`, 'project:999'],
+    { projectRoot: projectA },
+  )
+  assert.deepEqual(results.map(result => [result.scope, result.entry?.text]), [
+    ['project', 'Project A uses the alpha layout.'],
+    ['global', 'Every project runs npm test.'],
+    ['project', undefined],
+  ])
+  assert.deepEqual((await own.getKnowledge(['project:1'], { projectRoot: projectA }))[0].scope, 'project')
+  assert.equal((await own.getKnowledge(['project:1'], { projectRoot: projectB }))[0].entry.text,
+    'Project B uses the beta layout.')
+  assert.equal((await own.getKnowledge(['project:999'], { projectRoot: projectB }))[0].entry, undefined)
+
+  const duplicate = await own.addKnowledge('Project A uses the alpha layout.', {
+    scope: 'project', projectRoot: projectA,
+  })
+  assert.equal(duplicate.duplicate, true)
+  assert.equal((await own.addKnowledge('Project A uses the alpha layout.', {
+    scope: 'project', projectRoot: projectB,
+  })).duplicate, false)
+
+  const corrected = await own.updateKnowledge(`project:${first.entry.id}`, 'Project A uses the alpha layout v2.', {
+    scope: 'project', projectRoot: projectA,
+  })
+  assert.equal(corrected.text, 'Project A uses the alpha layout v2.')
+  await own.deleteKnowledge(first.entry.id, { scope: 'project', projectRoot: projectA })
+  assert.deepEqual(await own.readProjectKnowledge(projectA), [])
+
+  const path = join(root, 'data-scoped', 'memory', 'knowledge',
+    `${createHash('sha256').update(projectB).digest('hex')}.json`)
+  const saved = JSON.parse(await readFile(path, 'utf8'))
+  assert.equal(saved.projectRoot, projectB)
+  assert.equal(saved.entries.some(entry => entry.text === 'Project B uses the beta layout.'), true)
+
+  await writeFile(path, JSON.stringify({ version: 1, projectRoot: projectA, entries: [] }))
+  await assert.rejects(own.readProjectKnowledge(projectB), /different project root/)
+  await writeFile(path, JSON.stringify({ version: 99, projectRoot: projectB, entries: [] }))
+  await assert.rejects(own.readProjectKnowledge(projectB), /Invalid or unsupported knowledge base/)
+  await assert.rejects(own.readProjectKnowledge('relative'), /absolute project root/)
+  await assert.rejects(own.addKnowledge('x', { scope: 'other', projectRoot: projectA }), /scope/)
+  await assert.rejects(own.addKnowledge('x', { scope: 'project' }), /absolute project root/)
+  await assert.rejects(own.deleteKnowledge('1', { scope: 'project' }), /absolute project root/)
+  await assert.rejects(own.deleteKnowledge('global:1', { scope: 'project', projectRoot: projectA }),
+    /belongs to the global knowledge base/)
+})
+
 test('memory writes named skills to their own directories with the memory author', async () => {
   const project = join(root, 'project-skill')
   assert.equal(await store.readSkill('global', project), undefined)

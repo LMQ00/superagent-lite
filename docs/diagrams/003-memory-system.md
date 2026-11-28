@@ -11,6 +11,8 @@ flowchart TB
   P1 --> PM1["项目记忆 1<br/>职责 · 定位 · 项目 skill"]
   P2 --> PM2["项目记忆 2<br/>职责 · 定位 · 项目 skill"]
   G --> KB["全局知识库<br/>可复用知识"]
+  P1 --> PK1["项目知识库 1<br/>项目专属知识"]
+  P2 --> PK2["项目知识库 2<br/>项目专属知识"]
   PM1 -->|注入项目 + 全局| W1["worker 角色"]
   PM1 -->|审查时注入项目 + 全局| V1["review 角色"]
   PM2 -->|注入项目 + 全局| W2["worker 角色"]
@@ -25,10 +27,16 @@ flowchart TB
   M2 -->|总结| PM2
   M1 -->|写入| KB
   M2 -->|写入| KB
+  M1 -->|写入| PK1
+  M2 -->|写入| PK2
   KB -.->|knowledge_query / knowledge_get| W1
   KB -.->|knowledge_query / knowledge_get| V1
   KB -.->|knowledge_query / knowledge_get| W2
   KB -.->|knowledge_query / knowledge_get| V2
+  PK1 -.->|knowledge_query / knowledge_get| W1
+  PK1 -.->|knowledge_query / knowledge_get| V1
+  PK2 -.->|knowledge_query / knowledge_get| W2
+  PK2 -.->|knowledge_query / knowledge_get| V2
   A1 --> AR["归档处"]
   A2 --> AR
 ```
@@ -37,14 +45,14 @@ flowchart TB
 
 | Part | Meaning |
 | --- | --- |
-| Global layer | Shared by every project: one shared skill, the user profile, and the global knowledge base. |
-| Project layer | Separate for each project: responsibilities, positioning, and up to 10 memory-registered project skills. |
+| Global layer | Shared by every project: one shared skill, the user profile, and the global knowledge base for broadly applicable knowledge. |
+| Project layer | Separate for each project: responsibilities, positioning, up to 10 memory-registered project skills, and a project knowledge base for project-specific knowledge. |
 | Router injection | Only the global layer's memory. |
 | Worker and reviewer injection | The project layer plus global memory. Responsibilities and positioning are injected directly. |
-| Skills | Stored as normal skill files; only their descriptions enter the skill catalog, and the full body loads only through the `skill` tool. A skill holds a reusable fixed procedure or method only; knowledge, facts, experience, and conclusions go to the knowledge base. A project keeps at most 10 skills; at the cap memory may only update an existing memory-managed name, and a rejected batch writes no field or skill. |
-| Knowledge base | Global and reached only through the query, read, and write tools; only the memory role may use the write tool, and its content is never injected. It stores knowledge, facts, experience, conclusions, and observations, not procedures. |
+| Skills | Stored as normal skill files; only their descriptions enter the skill catalog, and the full body loads only through the `skill` tool. A skill holds a reusable fixed procedure or method only; knowledge, facts, experience, and conclusions go to the knowledge base (global for broadly applicable facts, project for project-specific ones). A project keeps at most 10 skills; at the cap memory may only update an existing memory-managed name, and a rejected batch writes no field or skill. |
+| Knowledge base | Two scopes, global and project, reached only through the query, read, and write tools; only the memory role may use the write tool, and its content is never injected. The global scope stores knowledge broadly applicable to every project; the project scope stores project-specific knowledge. It stores knowledge, facts, experience, conclusions, and observations, not procedures. |
 | Raw conversation | The worker's original conversation is retained and archived. |
-| Memory role | The `memory` role receives the readable session-record path plus task, role, and branch metadata and the current project skill count (out of 10), reads the record itself, summarizes it, and writes the project layer, global memory, and global knowledge base. Its trigger also lists every skill by name with its author (`memory` or `none`); descriptions still come only from the session skill catalog, and memory loads a body by name with the `skill` tool when it needs one. The trigger carries no skill description, body, path, or skill root. |
+| Memory role | The `memory` role receives the readable session-record path plus task, role, and branch metadata and the current project skill count (out of 10), reads the record itself, summarizes it, and writes the project layer, global memory, and the global or project knowledge base according to scope. Its trigger also lists every skill by name with its author (`memory` or `none`); descriptions still come only from the session skill catalog, and memory loads a body by name with the `skill` tool when it needs one. The trigger carries no skill description, body, path, or skill root. |
 
 ## Implementation mapping
 
@@ -54,7 +62,8 @@ flowchart TB
 | Project memory | `memory/projects/<sha256(projectRoot)>.json`, fields `responsibilities` and `positioning` (`src/memory-store.js`) |
 | Shared skill | `~/.agents/skills/<skillName>/SKILL.md` with `author: memory`; one directory per skill, description only in the skill catalog; the legacy `superagent-shared-memory` keeps working |
 | Project skill | `<projectRoot>/.dsh/skills/<skillName>/SKILL.md` with `author: memory`; at most 10 per project, and a new name is rejected at the cap while an existing memory-managed name can still be updated. A worker-scoped provider reads the memory-managed project skills from the project checkout so the Worktree worker and reviewer see their descriptions in the skill catalog. Skill files are the ownership record: new, edited, or deleted skills authored by memory do not hot-update a published catalog; a missing author is treated as an ordinary skill. The legacy `superagent-project-memory` keeps working |
-| Knowledge base | `memory/knowledge.json`, queried and edited through `knowledge_query`, `knowledge_get`, and `knowledge_write` (`src/memory-store.js`, `src/memory.js`) |
+| Global knowledge base | `memory/knowledge.json`, queried and edited through `knowledge_query`, `knowledge_get`, and `knowledge_write` (`src/memory-store.js`, `src/memory.js`) |
+| Project knowledge base | `memory/knowledge/<sha256(projectRoot)>.json`, keyed by project root and queried together with the global scope (`src/memory-store.js`, `src/memory.js`) |
 | Router injection | `refreshGlobalMemory` / `registerGlobalMemoryContext` (`src/memory.js`, `router.js`) |
 | Worker injection | `registerMemoryContext` reads project + global memory at Worker creation (`src/memory.js`, `index.js`) |
 | Reviewer injection | `memoryPromptForProject` is added to the review prompt on every review (`src/memory.js`, `src/review.js`) |
@@ -65,12 +74,12 @@ flowchart TB
 
 ## Rules
 
-- Global memory is shared by every project; project memory and the project skill are keyed by the normalized project root and never cross projects. The knowledge base is global too.
+- Global memory and global knowledge are shared by every project; project memory, the project skill, and project knowledge are keyed by the normalized project root and never cross projects.
 - Router sees only global memory. The router preset restricts its skill roots to the global skill roots; the worker preset keeps project and global skill roots.
 - Worker and reviewer prompts receive the project and global memory text. Responsibilities and positioning are injected directly; skills only contribute their descriptions to the catalog. Knowledge base content is never injected.
 - A running or finished session keeps the catalog it published: catalog changes caused only by memory-owned skills are withheld, and changes involving any other skill are delivered. The decision follows the live agent and skill author, never the Task status, so running, BLOCKED, resuming and awaiting-merge sessions are covered alike.
 - The memory role may read and write memory. It writes no duplicate facts, writes nothing when nothing is reusable, and corrects a wrong entry when the conversation supports the correction; the number of written entries is not a goal. Its trigger carries the project skill usage out of 10 and one line per skill with only its name and author, but no skill description, body, path, or root: the catalog already supplies descriptions, the name and author lines say which names memory manages, and memory loads a skill body by name with the `skill` tool, never by searching skill directories. A project keeps at most 10 skills; at the cap it reuses an existing memory-managed project skill name, and an over-cap write is rejected without partial state.
-- Knowledge and skills are separated: knowledge, facts, experience, conclusions, and observations go to the global knowledge base, while a skill holds only a reusable fixed procedure or method.
-- The knowledge base is tool-only: `knowledge_query` (keyword search with numbered context snippets) and `knowledge_get` (full entries by id) are available to workers, reviewers, and the memory role; `knowledge_write` is available only to the memory role.
+- Knowledge and skills are separated: knowledge, facts, experience, conclusions, and observations go to a knowledge base (global for broadly applicable facts, project for project-specific ones), while a skill holds only a reusable fixed procedure or method.
+- The knowledge bases are tool-only: `knowledge_query` (merged global + current-project keyword search with scoped context snippets) and `knowledge_get` (full entries by scoped id) are available to workers, reviewers, and the memory role; `knowledge_write` is available only to the memory role and requires `scope=global|project`.
 - Memory is data, not instructions; it cannot add a requirement or grant permission.
-- Storage follows "prefer less over more, long-term": durable facts only, never transient progress, status, counts, credentials, or personal data. Useless knowledge pollutes the global knowledge base, so omitting it is better.
+- Storage follows "prefer less over more, long-term": durable facts only, never transient progress, status, counts, credentials, or personal data. Useless knowledge pollutes the knowledge bases, so omitting it is better.

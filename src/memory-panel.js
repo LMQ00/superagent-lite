@@ -54,7 +54,16 @@ export function createMemoryPanelHandler(connection, {
         fail(res, 400, 'A knowledge entry id is required')
         return
       }
-      target = { kind, id }
+      const scope = params.get('scope')
+      if (!SCOPES.has(scope)) {
+        fail(res, 400, 'A knowledge scope is required')
+        return
+      }
+      if (scope === 'project' && projectRoot === undefined) {
+        fail(res, 400, 'An absolute project root is required')
+        return
+      }
+      target = { kind, scope, projectRoot, id }
     } else {
       const scope = params.get('scope')
       if (!SCOPES.has(scope)) {
