@@ -309,6 +309,7 @@ async function applyHarness(projectRoot, memoryOutput = {}) {
   const listeners = new Map()
   const contexts = []
   const registered = new Map()
+  const globalTools = []
   const skillProviders = []
   const warnings = []
   const activations = []
@@ -336,6 +337,7 @@ async function applyHarness(projectRoot, memoryOutput = {}) {
     workingDirectory: { get: () => projectRoot, async set() {} },
     systemPrompt: { context() { return () => {} } },
     get: name => name === 'skills' ? skills : undefined,
+    tools: { register(tool, options) { globalTools.push({ tool, options }); return () => {} } },
     subagents: {
       resolveMaxDepth: () => 1,
       async startActivation(spec) {
@@ -390,7 +392,7 @@ async function applyHarness(projectRoot, memoryOutput = {}) {
       on() {},
     },
   }
-  return { listeners, contexts, registered, skillProviders, warnings, activations, worker, guard: () => guard }
+  return { listeners, contexts, registered, globalTools, skillProviders, warnings, activations, worker, guard: () => guard }
 }
 
 test('a non-git worker gets memory and context injection before any worktree exists', async () => {
@@ -425,8 +427,10 @@ test('a non-git worker gets memory and context injection before any worktree exi
   assert.equal(harness.registered.get('create_worktree').options.when(), false)
   assert.equal(harness.registered.get('review_worker_commit').options.when(), true)
   assert.equal(harness.registered.get('message_router').options.when({ agent: harness.worker }), true)
-  assert.equal(harness.registered.has('knowledge_query'), true)
-  assert.equal(harness.registered.has('knowledge_get'), true)
+  assert.equal(harness.registered.has('knowledge_query'), false)
+  assert.equal(harness.registered.has('knowledge_get'), false)
+  assert.equal(harness.globalTools.some(entry => entry.tool.name === 'knowledge_query'), true)
+  assert.equal(harness.globalTools.some(entry => entry.tool.name === 'knowledge_get'), true)
   assert.equal(harness.guard()({ name: 'read' }), undefined)
   assert.equal(harness.guard()({ name: 'write' }), undefined)
   assert.equal(harness.guard()({ name: 'edit' }), undefined)

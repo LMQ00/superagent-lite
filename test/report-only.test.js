@@ -71,6 +71,7 @@ function harness(repo) {
     sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' }) },
     workingDirectory: { get: () => repo, async set() {} },
     systemPrompt: { context: () => () => {} },
+    tools: { register() { return () => {} } },
   }
   return { ctx, listeners, agents, delivered, commands, worktrees, activations }
 }

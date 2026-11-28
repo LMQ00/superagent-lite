@@ -520,16 +520,19 @@ test('empty results write nothing and malformed results fail closed', async () =
   await assert.rejects(runMemoryExtraction(empty.ctx, noConversation, { projectRoot }, signal), /conversation is empty/)
 })
 
-test('knowledge tools describe the local knowledge base and keyword lookup', async () => {
+test('knowledge tools describe the shared knowledge base and guide the model to query it', async () => {
   const { createKnowledgeGetTool, createKnowledgeQueryTool } = await import('../src/memory.js')
   const query = createKnowledgeQueryTool()
   const get = createKnowledgeGetTool()
   assert.match(query.description, /Query the local knowledge base/)
-  assert.match(query.description, /Call this tool/)
+  assert.match(query.description, /shared long-term knowledge base for every role and agent preset/)
+  assert.match(query.description, /Call this tool whenever saved reusable knowledge might help/)
+  assert.match(query.description, /before starting work/)
   assert.match(query.description, /supports keyword queries/)
   assert.match(query.description, /numbered context snippets/)
   assert.match(query.description, /knowledge_get/)
   assert.match(get.description, /Read full entries from the local knowledge base/)
+  assert.match(get.description, /shared long-term knowledge base for every role and agent preset/)
   assert.match(get.description, /not injected/)
 })
 
