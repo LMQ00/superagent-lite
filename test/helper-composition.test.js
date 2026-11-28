@@ -85,14 +85,14 @@ test('knowledge read tools registered on the app context are visible to any agen
   await ctx.plugin(ToolsService, {}).await()
   // index.js registers these on its app-level context without a `when`
   // condition, so an agent composed from another preset resolves them too.
-  ctx.tools.register(createKnowledgeQueryTool())
-  ctx.tools.register(createKnowledgeGetTool())
+  ctx.tools.register(createKnowledgeQueryTool(ctx))
+  ctx.tools.register(createKnowledgeGetTool(ctx))
   const foreignKey = { id: 'foreign-preset-agent' }
   const foreign = createScope(ctx, foreignKey)
   t.after(() => foreign.dispose())
   assert.equal(ctx.tools.get('knowledge_query', foreignKey)?.name, 'knowledge_query')
   assert.equal(ctx.tools.get('knowledge_get', foreignKey)?.name, 'knowledge_get')
-  assert.match(ctx.tools.get('knowledge_query', foreignKey).description, /shared long-term knowledge base/)
+  assert.match(ctx.tools.get('knowledge_query', foreignKey).description, /shared global knowledge base for every project/)
 })
 
 test('the read-only sandbox permits git inspection and denies writes', {

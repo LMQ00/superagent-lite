@@ -33,11 +33,11 @@ const applied = new WeakSet()
 export async function apply(ctx) {
   if (applied.has(ctx)) return
   applied.add(ctx)
-  // The knowledge base is shared by the whole installation, so its read tools
-  // belong to the app context: every agent sees them, including agents whose
-  // preset does not include this plugin.
-  ctx.tools.register(createKnowledgeQueryTool())
-  ctx.tools.register(createKnowledgeGetTool())
+  // Every agent may read the global knowledge base plus the knowledge base of
+  // the project it works in, so these tools belong to the app context: every
+  // agent sees them, including agents whose preset does not include this plugin.
+  ctx.tools.register(createKnowledgeQueryTool(ctx))
+  ctx.tools.register(createKnowledgeGetTool(ctx))
   const hostPatch = await reconcileHostPatches(ctx)
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
     authoredSkills: async agent => {
@@ -148,7 +148,7 @@ export async function apply(ctx) {
         const projectRoot = helper.projectRoot
           ?? (await taskForSession(undefined, parentSession))?.projectRoot
         if (helper.kind === 'memory') {
-          agent.ctx.tools.register(createKnowledgeWriteTool(), { when: () => true })
+          agent.ctx.tools.register(createKnowledgeWriteTool(ctx), { when: () => true })
         }
         if (projectRoot) {
           try {

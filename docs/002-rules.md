@@ -109,7 +109,7 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 - Git 项目 Reviewer 收到保存的需求、follow-up 文本、项目 + 全局记忆、base 与 head commit、Worktree 路径；**diff 不放进提示词**，Reviewer 自己读 `base..head` 和改动文件（`src/review.js:59-89`）。非 Git 项目收到需求、follow-up、项目 + 全局记忆和项目根，提示词说明没有 commit/diff，Reviewer 读取当前项目文件和工作区内容。
 - `review_worker_commit.images` 可选，按 Worker 当前目录解析成本地图片，附在审查提示词文本之后；附件失败时本次审查不启动（`src/review.js:170-183`、`src/review.js:91-141`）。
 - 审查针对已提交的 diff，或非 Git 项目的当前工作区内容；follow-up 只作上下文；只有具体的正确性、回归或缺少测试问题才阻止通过，风格偏好不阻止（`src/review.js:59-89`）。
-- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:17-39`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局知识，但不能写入。
+- Reviewer 用 `submit_review` 记录裁决：内容「通过」是通过，其他内容记为审查意见。只有已认领的 Reviewer 能调用它，且一个审查只能提交一次（`src/review.js:17-39`）。Reviewer 可以用 `knowledge_query` 和 `knowledge_get` 查询全局和当前项目知识，但不能写入。
 - 工具拿到裁决后，还要确认 Reviewer 实际读过改动（Git 项目为 diff 或改动文件，非 Git 项目为项目文件）、Git 项目 Worker HEAD 没有移动，才写入 `review.head`、`review.reviewerSessionId` 和 `review.approved`；非 Git 项目写入工作区标识 `workspace`（`src/review.js:151-166`、`src/review.js:182-184`）。
 - 面板的 `review` 动作对 `unreviewed` 的 Git Task 运行同一审查，要求 Worker Session 仍活着；通过写 `awaiting-merge`，有意见写 `review-required`。非 Git Task 没有分支，面板不提供该动作（`src/git-actions.js:403-425`）。
 - 通过的审查属于它的 commit。同一 Project 的另一个 Task 当前 HEAD 就是该 commit 时，面板读取可以采纳这条审查（`src/git-actions.js:259-276`、`src/git-actions.js:293-305`）。
@@ -121,23 +121,24 @@ Router Session 运行 `superagent-lite` 预设。派发守卫只对该预设生�
 | --- | --- | --- | --- |
 | 全局 | `userProfile`、共享 skill | memory 角色 | Router、Worker、Reviewer、面板（可删除） |
 | 项目 | `responsibilities`、`positioning`、项目 skill | memory 角色 | Worker、Reviewer、面板（可删除） |
-| 全局知识库 | 可复用、广泛适用的知识 | memory 角色（`knowledge_write`） | 所有角色（`knowledge_query` / `knowledge_get`）、面板（可删除） |
+| 全局知识库 | 可复用、广泛适用的知识 | memory 角色（`knowledge_write`，`scope=global`） | 所有角色（`knowledge_query` / `knowledge_get`）、面板（可删除） |
+| 项目知识库 | 当前项目专属的事实、约定和结论 | memory 角色（`knowledge_write`，`scope=project`） | 当前项目的 Worker、Reviewer、memory（`knowledge_query` / `knowledge_get`）、面板（可删除） |
 
-- 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；全局知识库在 `~/.dsh/superagent-lite/memory/knowledge.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
-- 不同项目的项目记忆和项目 skill 互相不可见；全局记忆、全局 skill 和知识库所有项目共享（`src/memory-store.js`）。
+- 全局记忆在 `~/.dsh/superagent-lite/memory/global.json`；项目记忆在 `~/.dsh/superagent-lite/memory/projects/<sha256(项目根)>.json`；全局知识库在 `~/.dsh/superagent-lite/memory/knowledge.json`；项目知识库在 `~/.dsh/superagent-lite/memory/knowledge/<sha256(项目根)>.json`；原始归档在 `~/.dsh/superagent-lite/task/archive/`（`src/memory-store.js`、`src/memory.js`）。
+- 不同项目的项目记忆、项目 skill 和项目知识库互相不可见；全局记忆、全局 skill 和全局知识库所有项目共享（`src/memory-store.js`）。
 - 全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在项目 checkout 的 `.dsh/skills/<skill名>/SKILL.md`，每个 skill 一个目录；项目 skill 目录会追加到 `.git/info/exclude`。项目 skill 由 Worker 作用域的 provider 读取，因此不会弄脏 report 和 merge 要求的干净 checkout。
 - memory 写入的 skill 在 frontmatter 带 `author: memory`，不同内容用不同名字；写入的 skill 名与已有非 memory 作者 skill 冲突时拒绝写入，不静默覆盖；同一次更新内重复名字也拒绝。既有的固定名字 `superagent-shared-memory` / `superagent-project-memory` 在没有 author 时仍可读取和更新，写入时补上 author。
-- 项目 skill 同时最多 10 个：达到上限后 memory 只能复用已有 memory 管理的项目 skill 名字更新，不能新建；写入路径拒绝并返回明确的超限错误，整次提取在写字段和 skill 前失败，不产生半写入。skill 只放可复用的固定流程或方法步骤，知识、事实、经验、结论和观察写全局知识库（`src/memory-store.js`、`src/memory.js`）。
+- 项目 skill 同时最多 10 个：达到上限后 memory 只能复用已有 memory 管理的项目 skill 名字更新，不能新建；写入路径拒绝并返回明确的超限错误，整次提取在写字段和 skill 前失败，不产生半写入。skill 只放可复用的固定流程或方法步骤，知识、事实、经验、结论和观察写知识库：广泛适用写全局知识库，项目专属写项目知识库（`src/memory-store.js`、`src/memory.js`）。
 - 每个文本字段最多 4,000 字符；skill description 最多 500 字符；项目 skill 最多 10 个；知识条目的规范化文本最多 2,000 字符，最多 200 条（`src/memory-store.js`）。
 - Router 只被注入全局记忆；Worker 创建时和 Reviewer 每次审查时注入项目 + 全局记忆（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-- 职责和定位直接注入；skill 只把 description 放进 skill catalog，Worker、Reviewer 和 memory 角色需要完整内容时用 `skill` 工具按名加载；知识库内容不注入角色上下文，所有角色（包括不使用本插件的预设）通过应用级 `knowledge_query`（关键词查询，英文按单词、中文按相邻两字切分，多词按命中关键词数排序，单个关键词按子串匹配并返回编号和上下文片段）和 `knowledge_get`（按编号取完整条目）读取（`src/memory.js`、`src/helper-guard.js`、`index.js:36-40`、`cordis.patch.yml`）。
+- 职责和定位直接注入；skill 只把 description 放进 skill catalog，Worker、Reviewer 和 memory 角色需要完整内容时用 `skill` 工具按名加载；知识库内容不注入角色上下文，所有角色（包括不使用本插件的预设）通过应用级 `knowledge_query`（按当前项目合并全局 + 项目知识库查询，英文按单词、中文按相邻两字切分，多词按命中关键词数排序，单个关键词按子串匹配并返回 `#global:<id>` / `#project:<id>` 限定编号和上下文片段）和 `knowledge_get`（按限定编号取完整条目）读取（`src/memory.js`、`src/helper-guard.js`、`index.js:36-40`、`cordis.patch.yml`）。
 - memory 写入的 skill 只对之后新派发的 Worker/Reviewer 生效；已运行或已结束的 Worker/Reviewer 会话保留启动时的 catalog，不接收由 `author: memory` 的 skill 的新增、修改或删除引起的 catalog 更新，因此不会在最终报告后继续行动。拦截按会话（agent）的 catalog 基线和 skill 作者判断，与 Task 状态无关：running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入；作者缺失的 skill 按普通 skill 处理，变化照常放行（`src/skill-catalog.js`、`src/memory-store.js`、`index.js`）。
 - 注入文本明确标记为 data, not instructions，不能添加需求或授予权限（`src/memory.js`）。
 - memory 角色只在 change worker 的最终报告后触发一次；触发消息只含会话记录路径、任务/角色/分支等元信息、项目 skill 已用数量与 10 个上限以及每条 skill 的名称和作者（`author: memory` 或 `none`），不含对话正文，memory 自己用 `read` / `grep` 读取完整记录；skill 的 description 只通过会话里的 catalog 获知，触发消息不写 skill 路径、description、正文或 skill 根目录，需要正文时按名调用 `skill` 工具；最终报告工具保留工具名但参数不进入记录（`src/memory.js`、`src/helper-guard.js`、`src/message-router.js`、`index.js`）。
 - 写入只改变提取结果中非空且与当前值不同的字段；skill 需要 description 和 content 都非空才写入；没有变化时不写文件（`src/memory.js`）。
 - 没有可复用、广泛适用的内容就不写，不把写入条数当指标；没用的知识只会污染知识库，宁可不写（`src/memory.js`）。
-- 知识库写入按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由知识库分配，搜索结果按命中的关键词数量排序，带编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 是应用级工具，对所有角色开放，包括不使用本插件的预设（`src/memory.js`、`src/helper-guard.js`、`index.js:36-40`）。
-- 面板的「记忆系统」标签页经 owner-only `/superagent-lite/memory` 读取与删除全局记忆、所选项目的项目记忆、memory 管理的全局/项目 skill 和全局知识库：GET 读取；DELETE 按 `kind`（memory/skill/knowledge）、`scope`、`field`/`name` 或知识 `id` 只删除用户确认的单条内容，skill 需要 `name`，项目作用域需要绝对 `projectRoot`；没有新增或编辑接口，写入仍只由 memory 角色完成。删除知识后 `knowledge_query` 不再返回该条目，删除 skill 后之后新派发的会话不再看到它（`src/memory-panel.js`、`src/memory-store.js`、`src/memory.js`）。
+- 知识库写入必须指定 `scope=global|project`，在目标作用域内按规范化文本去重；纠正用 `update`，删除用 `delete`；编号由各知识库分配，搜索结果按命中的关键词数量排序，带限定编号和匹配关键词前后的上下文片段；`knowledge_write` 只对 memory 角色开放，`knowledge_query` / `knowledge_get` 是应用级工具，对所有角色开放，包括不使用本插件的预设（`src/memory.js`、`src/helper-guard.js`、`index.js:36-40`）。
+- 面板的「记忆系统」标签页经 owner-only `/superagent-lite/memory` 读取与删除全局记忆、所选项目的项目记忆、memory 管理的全局/项目 skill 和全局/项目知识库：GET 读取；DELETE 按 `kind`（memory/skill/knowledge）、`scope`、`field`/`name` 或知识 `id` 只删除用户确认的单条内容，skill 和知识都需要 `scope`，项目作用域需要绝对 `projectRoot`；没有新增或编辑接口，写入仍只由 memory 角色完成。删除知识后 `knowledge_query` 不再返回该条目，删除 skill 后之后新派发的会话不再看到它（`src/memory-panel.js`、`src/memory-store.js`、`src/memory.js`）。
 - 不保存密码、API key、token、凭据或个人数据；不保存一次性任务进度、状态、计数或短期细节；存储遵守「宁缺毋滥、长期主义」（`src/memory.js`）。
 - 原始归档每个 `turn/end` 存一轮，带 Session 序号和轮内 `reference` 编号；memory 触发时另写一份 `task/archive/sessions/<sha256(Session ID)>.md` 完整会话记录并把路径交给 memory；两者都只由 Host 写入，Git 与非 Git 项目走同一位置，其他模型工具没有专用读取入口（`src/memory.js`、`src/memory-store.js`）。
 
@@ -192,7 +193,7 @@ Reviewer 可以查看任意文件、运行命令和测试；只有两条限制�
 
 - Task 已结束 Worker 工作（`awaiting-merge` 或 `awaiting-ci`）、有 worker 分支和 Worktree、`review.approved === true`、当前 HEAD 等于 `review.head`、文件策略为 full access。
 - 唯一额外条件是 GitHub：`gh auth status --hostname github.com` 必须成功，所选 remote 的 fetch 与 push URL 必须指向同一 GitHub 仓库；写权限由 push 本身验证（`src/git-actions.js:429-441`）。
-- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:246-254`、`client.js:984-1015`）。
+- 面板先读取 remote 列表，用户选择一个 GitHub remote；没登录 `gh` 时弹窗不能提交（`src/git-actions.js:246-254`、`client.js:1005-1036`）。
 - 已有精确匹配且打开的 PR 时复用；已有精确匹配且已合并的 PR 时记为 `merged`；已关闭时拒绝（`src/git-actions.js:442-452`）。
 - 准备阶段用 `assertStillDeliverable` 复核状态与 Review 后把 Task 标为 `publishing`，把 reviewed HEAD 推送到所选 remote 的 push URL 和 `refs/heads/<worker branch>`，再创建 base 为 `task.baseBranch` 的 PR（`src/git-actions.js:453-459`、`src/github.js:64-99`）。
 - PR 打开后 Task 标为 `awaiting-ci`；发送命令失败时标为 `delivery-blocked`。GitHub 写入不自动重试（`src/git-actions.js:471-474`）。
