@@ -51,7 +51,7 @@ Host 生命周期入口。注册主体是幂等的 `activate`：`agent/created`�
 
 ### `router.js`
 
-装载时先刷新并注册全局记忆上下文，再注册 `dispatch_worker`、`continue_worker` 和 `worker_status`。它还把路由提醒注册为 order `175` 的必需运行时上下文：每个请求提醒先做一次路由决定，并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间和摘要属于背景，不算新输入。提醒在每轮首次装配时写入本轮时间标记并缓存到该轮结束，使运行时上下文快照每轮变化、在 GUI 中每轮可见（`src/router-prompt.js:1-41`、`router.js:15`）。Router 只读取全局记忆；Router 预设的 skill 根也只保留全局 skill 根。`worker_status` 只查询本 Router Session 派发的任务，不派发工作（`src/worker-status.js`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:112-133`、`src/dispatch.js:368-389`）。`mode=remove` 不创建 Task 或 Worker，直接用 `branches` 里的 Task ID 或分支名调用 `src/merge.js` 的删除函数（`src/dispatch.js:167-233`）。它不持有 Task 记录。
+装载时先刷新并注册全局记忆上下文，再注册 `dispatch_worker`、`continue_worker` 和 `worker_status`。它还把路由提醒注册为 order `175` 的必需运行时上下文：每个请求提醒先做一次路由决定，并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间和摘要属于背景，不算新输入。提醒在每轮首次装配时写入本轮时间标记并缓存到该轮结束，使运行时上下文快照每轮变化、在 GUI 中每轮可见（`src/router-prompt.js:1-41`、`router.js:15`）。Router 只读取全局记忆；Router 预设的 skill 根也只保留全局 skill 根。`worker_status` 只查询本 Router Session 在当前项目派发的任务，不派发工作（`src/worker-status.js`、`src/project-scope.js`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:112-133`、`src/dispatch.js:371-392`）。`mode=remove` 不创建 Task 或 Worker，直接用 `branches` 里的 Task ID 或分支名调用 `src/merge.js` 的删除函数（`src/dispatch.js:167-233`）。它不持有 Task 记录。
 
 ### `src/memory.js`
 
@@ -71,7 +71,7 @@ Task JSON 的唯一存储模块。默认根目录 `~/.dsh/superagent-lite`，创
 
 ### `src/worker-status.js`
 
-Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_status`：按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组返回本 Router Session 的 Task，包含 Task ID、标题、Team、模式、Worker Session 和存储状态，可传 `taskId` 只查一个。`stopWorker` 停止 Task 后调用 `notifyWorkerStatus`；启动队列在 Worker 启动成功后也调用同一通知函数。通知以 `source.kind = superagent-lite-worker-status` 注入 Router 的下一模型步，不打开新回合，也不算新用户输入（`src/worker-status.js`）。
+Router 的状态查询与通知模块。`createWorkerStatusTool` 提供 `worker_status`：按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组返回本 Router Session 在当前项目派发的 Task，包含 Task ID、标题、Team、模式、Worker Session 和存储状态，可传 `taskId` 只查一个。`stopWorker` 停止 Task 后调用 `notifyWorkerStatus`；启动队列在 Worker 启动成功后也调用同一通知函数。通知以 `source.kind = superagent-lite-worker-status` 注入 Router 的下一模型步，不打开新回合，也不算新用户输入（`src/worker-status.js`、`src/project-scope.js`）。
 
 ### `src/continue.js`
 
@@ -159,7 +159,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 - `src/process.js` 是唯一进程启动器；所有 `git` 和 `gh` 调用经它执行（`src/process.js:7-35`）。
 - `src/task-store.js` 是唯一 Task 记录存储模块；其他模块调用 `createTask`、`updateTask`、`readTask`、`removeTask`、`stopTask`、`listCancelledTasks`、`listTasks`、`linkWorkerSession` 或 `taskForSession`（`src/task-store.js`）。
 - `src/worker-stop.js` 负责停止流程（写 `cancelled`、中断 worker、释放名额、可选等待空闲）；`src/worker-control.js` 封装 `ctx.subagents.interrupt` 和等待 worker 停止，启动队列与 `agent/created` 共用同一中断路径。
-- `src/worker-status.js` 是唯一 Task 状态查询和 Router 状态通知模块；`worker_status` 只读，通知使用独立的 `superagent-lite-worker-status` 来源。
+- `src/worker-status.js` 是唯一 Task 状态查询和 Router 状态通知模块；`worker_status` 只读，通知使用独立的 `superagent-lite-worker-status` 来源。两者都按 Router 当前目录过滤 Task 的项目归属（`src/project-scope.js`）。
 - `src/helper-guard.js` 是唯一 helper 计数器和只读 guard 安装者（`src/helper-guard.js`）。
 - `src/memory-store.js` 是唯一记忆、知识、skill 文件和归档存储模块；`src/memory.js` 是唯一记忆提示词、提取流程和知识工具模块。
 - `src/github.js` 和 `src/merge.js` 是面板的交付写路径；`src/merge-tool.js` 是 merge worker 的目标分支合入路径；授权 Worker 的 shell 落地由 `index.js` 的 guard 经 `src/landing.js` 检查（`src/github.js:64-100`、`src/merge.js:30-142`、`src/merge-tool.js:13-64`、`src/landing.js:387-416`）。
@@ -225,6 +225,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/review.js` | 检查已提交 diff 或非 Git 工作区内容，运行独立 Reviewer，接收 `submit_review` 并记录裁决。 |
 | `src/review-scope.js` | 记录 Reviewer 是否读过改动或项目文件，并拒绝会改变 git 分支或历史的命令。 |
 | `src/task-store.js` | 读写 Task 记录和 Worker Session 映射，删除记录与映射，按锁把运行中或排队中的 Task 写成 `cancelled` 终态并保留记录；旧取消墓碑仍可读取。 |
+| `src/project-scope.js` | 判断 Task 是否属于 Router 当前目录所在项目；Router 的任务查询、续派和状态通知共用这套项目归属检查。 |
 | `src/settings-panel.js` | 提供 owner-only worker 设置读写端点，并校验模型目录。 |
 | `src/skill-catalog.js` | 稳定已运行 Worker/Reviewer 会话的 skill catalog，按 skill 文件的 `author: memory` 拦截由 memory skill 新增、修改或删除构成的 catalog 更新；以 `prepend` 注册在预设 catalog 监听器外层，才能看到并过滤它们在 `next()` 之后追加的 catalog；作者缺失按普通 skill 处理。 |
 | `src/subagent-capacity.js` | 读取 Host 的 `maxActiveSubagents`，与面板 worker 上限比较并只做容量缺口告警；提供 Host 限额错误判别，不改写官方设置。 |
@@ -234,7 +235,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/worker-settings.js` | 保存 worker 模型和并发上限，校验字段并返回 `agentOptions`。 |
 | `src/worker-prompt.js` | 生成 change 和 report 任务消息，并为非 Git 项目生成直接工作区路径。 |
 | `src/worker-control.js` | 中断 Worker 会话并等待它离开运行态；删除任务用它确认 worker 已停。 |
-| `src/worker-status.js` | 提供 `worker_status` 查询本会话任务，并发送任务停止/排队开始的 Router 状态通知。 |
+| `src/worker-status.js` | 提供 `worker_status` 查询本会话在当前项目的任务，并发送任务停止/排队开始的 Router 状态通知。 |
 | `src/worktree-tool.js` | 创建或进入 Git Task 的 Worktree，并保存元数据；非 Git 任务拒绝。 |
 | `src/worker-stop.js` | 停止 Task：写 `cancelled`、中断 worker、立即触发启动队列、可选等待 worker 空闲，并通知 Router。 |
 
@@ -287,7 +288,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/launch-queue.test.js` | 失联 `starting`/`running`/`resuming` 的回收条件、`awaiting-merge`/基于交付事实的失败判定、幂等、活或新鲜的 Worker 不动、名额释放与 pump 启动排队任务、Host 限额时回排队而非失败、真实启动异常仍失败、失败/取消任务不占名额和容量缺口告警。 |
 | `test/wiring.test.js` | `apply` 把 `turn/end` 与 idle 接到派发提醒；catalog 守卫注册在最外层，能过滤预设监听器在 `next()` 之后追加的 memory skill 更新；启动时扫描失联记录。 |
 | `test/worker-prompt.test.js` | change、report 与非 Git change 任务消息、段顺序和范围限制。 |
-| `test/worker-status.test.js` | 状态分类、`worker_status` 按 Router 隔离和单任务查询、停止通知、旧取消墓碑隐藏和通知来源。 |
+| `test/worker-status.test.js` | 状态分类、`worker_status` 按 Router 与当前项目隔离和单任务查询、停止通知、旧取消墓碑隐藏和通知来源。 |
 | `test/worker-stop.test.js` | 停止运行中 worker 后中断会话并释放名额、停止排队任务后不再启动、重复停止幂等和等待 worker 停止。 |
 | `test/worktree-tool.test.js` | 可读 Worktree 与分支名、重复调用重新进入，以及旧 Task 的原命名回退。 |
 
@@ -317,7 +318,7 @@ Task 文件在 `~/.dsh/superagent-lite/`，Worktree 在各项目下。
 | --- | --- | --- |
 | `dispatch_worker` | Router | 记录派发决定；`answer` 直接回答，`change`/`report`/`merge` 启动 Worker；change/merge 必须给出英文 `worktreeName` |
 | `continue_worker` | Router | 给同一 Task 发 follow-up |
-| `worker_status` | Router | 查询本 Router Session 的排队、运行、已交付、已取消和失败任务；不派发 |
+| `worker_status` | Router | 查询本 Router Session 在当前项目的排队、运行、已交付、已取消和失败任务；不派发 |
 | `create_worktree` | change worker | 创建或进入 Task 的 Worktree |
 | `review_worker_commit` | change worker | 审查干净的已提交 diff |
 | `submit_review` | Reviewer helper | 记录裁决；内容「通过」即通过 |

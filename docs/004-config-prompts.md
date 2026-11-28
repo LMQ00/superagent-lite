@@ -9,7 +9,7 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」，以及给 worker 附带本地图片的提示 | `cordis.patch.yml:21-49`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:92`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-134` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的五种取值、change/merge 的英文 `worktreeName`、merge/remove 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:246-266`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的五种取值、change/merge 的英文 `worktreeName`、merge/remove 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:246-266`、`src/continue.js:230-247`、`src/continue.js:278-280`、`src/worker-status.js` |
 | Router 每轮路由提醒 | 每个请求注入的路由决定提醒；每轮首次装配时写入本轮时间标记，使运行时上下文快照每轮重新记录、在 GUI 中每轮可见；以及给 worker 的任务文字要改正语病和没逻辑的表述、通顺有逻辑且保留原意、不增加修饰和用户未提到的功能 | `src/router-prompt.js:1-41`、`router.js:15` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、change 模式先查知识库的要求、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-154` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；change 续派发先要求查询知识库，非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:83-190` |
@@ -62,7 +62,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 
 ## Worker 状态查询
 
-`worker_status` 是 Router 的路由工具之一，不派发工作。它只查询本 Router Session 派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，返回 Task ID、标题、Team、模式、Worker Session 和存储状态；传 `taskId` 只查一个任务。任务被停止、排队中的 Worker 开始执行时，插件向 Router 注入 `source.kind = superagent-lite-worker-status` 的后台状态通知；通知不打开新回合、不算新输入，`worker_status` 提供当前全量状态。
+`worker_status` 是 Router 的路由工具之一，不派发工作。它只查询本 Router Session 在当前项目派发的任务，按 `queued`、`running`、`delivered`、`cancelled`、`failed` 分组，返回 Task ID、标题、Team、模式、Worker Session 和存储状态；传 `taskId` 只查一个任务。任务被停止、排队中的 Worker 开始执行时，插件向 Router 注入 `source.kind = superagent-lite-worker-status` 的后台状态通知；通知不打开新回合、不算新输入，`worker_status` 提供当前全量状态。
 
 ## 记忆提示词与注入
 

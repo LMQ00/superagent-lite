@@ -16,7 +16,7 @@
 - `mode=change` 和 `mode=merge` 还要求 `worktreeName`：1–4 个英文小写 kebab-case 短词，最多 32 字符，如 `fix-plan-color`；中文标题要翻译成英文，不能用中文、拼音或通用名。Git 项目用它决定新 Task 的 Worktree 和 worker 分支名，非 Git 项目只记录该字段、不创建 Worktree（`src/validation.js:9-18`、`src/worktree-tool.js:42-46`、`src/dispatch.js`）。
 - Task ID 是 `[agent.id, callId]` 的 SHA-256 前 16 位十六进制（`src/dispatch.js:197`）。
 - 同一对 `agent.id` 与 `callId` 再次派发时：已有 Task 若不在 `starting` 或 `failed`，直接返回该 Task；处于这两个状态则报 `Dispatch <id> is already being established; inspect the task board before retrying`（`src/dispatch.js:197-205`）。
-- Task 属于另一个 Router Session 时拒绝：`Task id is already owned by another Session`（`src/dispatch.js:199`）。
+- Task 属于另一个 Router Session 或当前项目之外的记录时拒绝：`Task id is already owned by another Session or project`（`src/dispatch.js:311`）。
 - 派发时先识别项目根：属于 Git 仓库就读取基础 commit、基础分支和工作区状态，除 `?? .agents/worktrees/.gitignore` 外有未提交改动就拒绝；不属于任何 Git 仓库时把当前目录作为项目根，Task 记录 `git: false`，不要求 commit、分支或干净工作区（`src/dispatch.js:130-144`）。
 - 非 Git 项目支持 `change` 和 `report`：worker 直接在工作区执行，没有 Worktree、提交、合并或推送；`mode=merge`、`mode=remove` 与 `land=true` 需要 Git 仓库，派发时直接拒绝（`src/dispatch.js`）。
 - `mode=merge` 还要求 `land=true` 和非空 `branches`；每项是分支名或 16 位 Task ID，最多 20 项。Task ID 会按本 Router Session 和 Project 解析成 worker 分支，目标分支必须存在且不能是 base branch（`src/validation.js:6-70`、`src/dispatch.js:18-48`）。
@@ -24,16 +24,16 @@
 - 首个 Task 固定 Team 与 Project 的一对一关系；之后改配任一侧都报 `The project and team must retain their existing one-to-one assignment`（`src/task-store.js:74-79`）。
 - 新 worker 受面板「设置」的并发上限约束：名额内启动，超出写为 `queued` 并按创建顺序等待；review 是 worker 的子代理，不占 worker 名额，但和 worker 一起计入 DSH Host 的 `maxActiveSubagents`（默认 8）。Host 报 `ACTIVATION_LIMIT_REACHED` 时把记录写回 `queued` 并结束本轮启动，下一次 `pumpWorkers` 再试，不把 Task 记为失败。`starting`、`running` 或 `resuming` 超过 2 分钟没有活着的 Worker Session 时，插件启动扫描和下一次 `pumpWorkers` 会读事实后回收：Review 通过、分支存在且 Worktree HEAD 仍等于 reviewed HEAD 的落为 `awaiting-merge`，否则落为 `failed` 并写明是无 turn/end 还是会话在恢复前结束；失联的 `starting`/`resuming` 同时释放名额，有活着 Session 的记录不受影响。面板可以停止运行中或排队中的 Task：状态写成 `cancelled`，worker 被中断，名额立即释放（`src/worker-settings.js`、`src/launch-queue.js:54-120`、`src/launch-queue.js:206-228`、`src/subagent-capacity.js`、`index.js:389-392`、`src/worker-stop.js`）。
 - `images` 可选，是本地 PNG/JPEG/WebP/GIF 路径数组，按 Router 当前目录解析；插件交给 Host 附件存储后把附件引用写进 Task，worker 启动时附在首条消息文本之后。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-47`、`src/dispatch.js:322-334`、`src/launch-queue.js:150-162`、`src/message-images.js:54-90`）。`mode=remove` 不产生 worker 消息，带 `images` 也会被拒绝。
-- 只询问 worker 或任务状态时，Router 用 `worker_status` 查询本会话派发的任务，不新建 Task；任务被停止或排队 worker 开始执行时，Router 收到后台状态通知。
+- 只询问 worker 或任务状态时，Router 用 `worker_status` 查询本会话在当前项目派发的任务，不新建 Task；任务被停止或排队 worker 开始执行时，Router 收到后台状态通知。
 
 ### 已有工作
 
 `continue_worker` 把追加要求送给已经存在且未发布的 Task。`dispatch_worker` 的 `mode=merge` 在已有运行中的 merge worker 时，把新请求追加到同一个 Task。
 
-- 调用者必须是该 Task 的 Router Session；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:245-251`）。
+- 调用者必须是该 Task 的 Router Session，且 Task 属于该 Router 当前所在项目；`taskId` 必须是 16 位小写十六进制；要求 1–20,000 字符（`src/continue.js:247-253`）。
 - 只有同一个 Deliverable 和目标的补充或修正才继续；不同业务目标即使看起来相关也新建 Task（`src/continue.js:231`）。例如再改一次提示词措辞可以继续，改变派发消息的结构是新任务。合并请求也是新任务：即使点名已有任务，也走 `dispatch_worker mode=merge`，不续派该任务；没有运行中的 merge worker 时新建 worker，已有则追加。
 - Worker agent 正在运行时，发送一条短的要求更新，让 Worker 判断是否属于本 Task；不属于就不执行，并在最终报告里带上未应用的 follow-up（`src/continue.js:256-274`）。
-- Task 处于 `queued` 或 `starting` 时还没有 Worker 回合可唤醒：`continue_worker` 不投递、不记录 follow-up、不授予 `land`，返回明确的「稍后再试」，Router 应在 Worker 启动后重试（`src/continue.js:275-277`）。
+- Task 处于 `queued` 或 `starting` 时还没有 Worker 回合可唤醒：`continue_worker` 不投递、不记录 follow-up、不授予 `land`，返回明确的「稍后再试」，Router 应在 Worker 启动后重试（`src/continue.js:278-280`）。
 - Worker 空闲或已结束时，发送精简续派发消息：任务标识（Task ID、分支、Worktree、base）、不可变规则，以及标明为本次唯一权威指令的 Follow-up；不再整段重发原始需求。change 续派发先要求用 `knowledge_query` 查知识库；非 Git 项目改为项目目录、非 Git 说明、直接修改和再次审查的规则；report 任务改为只读检查、允许联网检索和以 `report_task` 结束的规则。只有检测到 Worker 会话上下文被压缩（compact checkpoint）时才回放原需求。Task 处于 `awaiting-merge`、`review-required`、`failed` 或 `resuming` 时先标为 `resuming`；不再要求 Task 已有 Worktree，BLOCKED 在创建 Worktree 前就结束的 Git Task 也能恢复，续派发消息会要求 Worker 先创建 Worktree。已经合并、已删除 worker 分支、记录的 Worktree 已不存在，或处于交付中的 Task 仍拒绝恢复（`src/continue.js:59-81`、`src/continue.js:83-190`、`src/continue.js:278-289`）。
 - follow-up 先写入 `task.followUps` 再发送；发送失败删除该条。发送失败时，只有本次把已结束 Task 重新打开的才标为 `failed`；运行中的保持 `running`，恢复中的保持 `resuming`（`src/continue.js:210-227`、`src/continue.js:278-306`）。
 - `land=true` 只能来自用户本轮明确授权，写入 `task.land`、`task.landAuthorizedAt` 和 `task.landAuthorizedVia`；在 `continue_worker` 里它只授权推送和 PR，不授权合并；非 Git 项目拒绝 `land=true`；发送失败时回滚这次新增的授权（`src/continue.js:251-255`、`src/continue.js:278-306`）。

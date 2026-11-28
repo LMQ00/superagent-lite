@@ -7,7 +7,7 @@
 - 不属于任何 Git 仓库的文件夹同样可以走完 change 和 report 流程：worker 直接在该目录执行，不建分支、Worktree 或提交；`review_worker_commit` 改为审查当前项目文件和实际工作区内容，任务以审查通过为完成。Git 专有的合并、发送 PR 和删除分支在非 Git 目录不可用。
 - 审查通过的分支默认停在 reviewed commit；change worker 携带 `land=true` 时只可推送指派分支或开 PR。用户明确授权合并时，router 派发 merge worker：如果已有 merge worker 在运行，新请求追加给正在合并的那个 worker，不再派第二个。merge worker 先把目标分支合入自己的 worktree 分支，审查合并结果，再把 reviewed commit 本地合入 base branch。你也可以在面板合并或发送 PR：合并始终是本地 `git merge --no-ff`，不需要 `gh`；发送 PR 时选择一个 GitHub remote，推送审查过的 SHA。
 - 只读的诊断、分析、查找走 `mode=report`：不建分支、不提交、不审查，worker 可在项目 checkout 里只读检查，也可用网页搜索、网页读取和知识库查询做资料调研，最后用 `report_task` 把结论和证据交回 router；worker 仍按仓库 `AGENTS.md` 的约定执行，但该约定不能扩大只读任务的授权。
-- 想知道某个任务是排队中、运行中、已交付、已取消还是失败，直接问 router；它用 `worker_status` 查询本会话派发的任务，不重新派工。任务被停止、排队中的 worker 开始执行时，router 会收到后台状态通知。
+- 想知道某个任务是排队中、运行中、已交付、已取消还是失败，直接问 router；它用 `worker_status` 查询本会话在当前项目派发的任务，不重新派工。任务被停止、排队中的 worker 开始执行时，router 会收到后台状态通知。
 
 ## 安装
 
@@ -94,7 +94,7 @@ npm i @lmq00/superagent-lite
 - 合并始终是本地 Git 操作，不需要 `gh` 账号；发送 PR 要求一个 fetch 与 push URL 指向同一 GitHub 仓库的 remote，以及已登录的 `gh`。
 - 发送 PR 后由 GitHub 执行必需检查和分支保护；插件不预先查询检查状态。
 - 并发分两层：面板「设置」的 worker 上限（默认 3，范围 1–16）决定排队顺序；DSH Host 的 `maxActiveSubagents`（官方默认 8，插件不改写）是 worker 与 review/memory 子代理共用的硬上限。超出的任务按创建顺序排队，排队中的任务可以停止并立即释放名额；Host 名额满时任务保持「排队中」，下一次队列检查再启动，不记为失败。Git 任务各自使用独立 Worktree 和检出；非 Git 目录没有 Worktree 隔离。Worktree 隔离工作文件，不是操作系统账号或凭据的隔离边界。
-- `worker_status` 只查询本 Router Session 派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。停止后的任务保留 `cancelled` 记录并显示在面板的「失败」分组（带「已取消」标签）；旧版本排队取消留下的墓碑记录仍可被查询，但不进入面板任务列表。
+- `worker_status` 只查询本 Router Session 在当前项目派发的任务；「已交付」包含已审查待落地、交付中和已合并等交付阶段。停止后的任务保留 `cancelled` 记录并显示在面板的「失败」分组（带「已取消」标签）；旧版本排队取消留下的墓碑记录仍可被查询，但不进入面板任务列表。
 - 面板的「设置」只保存 worker 模型和并发上限，不自动刷新；提示词和其他行为配置仍在 `cordis.patch.yml` 和代码里。worker 模型留空时跟随 DSH 默认模型，保存后只影响新启动的 worker。
 - 「分支 / worktree」标签页只从仍留有任务记录的项目根推导对象：项目根下没有任务记录时，该项目的 worktree 和 `sl-*` 分支不会出现在面板里；带 Worktree 的行可以一次删除 Worktree 和分支，也可以先只删 Worktree、再删分支。
 - 审查不接收整份 patch：Git 项目由 reviewer 自己读 `base..head` 和改动文件；非 Git 项目由 reviewer 读当前项目文件。Reviewer 可以查看任意文件、运行命令和测试；只禁止写改文件的工具，以及会改变 git 分支或历史的命令（commit、merge、rebase 等）。

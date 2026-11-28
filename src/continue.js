@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readTask, updateTask } from './task-store.js'
+import { belongsToProject, routerDirectory } from './project-scope.js'
 import { grantLanding, landingAuthorizationRule, landingRule, nonGitLandingRule, revokeLanding } from './landing.js'
 import { validateLandFlag } from './validation.js'
 import { imageBlocks, imagesParameter } from './message-images.js'
@@ -247,7 +248,9 @@ export function createContinueTool(ctx) {
       const text = task.trim()
       if (!parent || !/^[a-f0-9]{16}$/.test(taskId) || !text || text.length > 20000) throw new Error('A task ID and follow-up text are required')
       const record = await readTask(taskId)
-      if (!record || record.parentSessionId !== parent.id) throw new Error('Task does not belong to this router Session')
+      if (!record || record.parentSessionId !== parent.id || !belongsToProject(record, routerDirectory(ctx, parent))) {
+        throw new Error('Task does not belong to this router Session and project')
+      }
       const requestedLand = validateLandFlag(land)
       if (record.git === false && requestedLand) throw new Error('Landing requires a git repository; this project is not under git')
       const granted = requestedLand && record.land !== true
