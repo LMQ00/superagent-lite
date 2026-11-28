@@ -73,6 +73,28 @@ test('installed tool, scope and sandbox services enforce the helper boundary', {
   assert.match(denial({ agent: helperKey, name: 'subagent' }), /Read-only helpers cannot use/)
 })
 
+test('knowledge read tools registered on the app context are visible to any agent scope', { skip: !anchor }, async (t) => {
+  const { Context, ToolsService, createScope } = await dsh()
+  const { createKnowledgeGetTool, createKnowledgeQueryTool } = await import('../src/memory.js')
+  const ctx = new Context()
+  ctx.provide('systemPrompt', {
+    tools() {},
+    section() { return () => {} },
+    getSectionOrder() { return 0 },
+  })
+  await ctx.plugin(ToolsService, {}).await()
+  // index.js registers these on its app-level context without a `when`
+  // condition, so an agent composed from another preset resolves them too.
+  ctx.tools.register(createKnowledgeQueryTool())
+  ctx.tools.register(createKnowledgeGetTool())
+  const foreignKey = { id: 'foreign-preset-agent' }
+  const foreign = createScope(ctx, foreignKey)
+  t.after(() => foreign.dispose())
+  assert.equal(ctx.tools.get('knowledge_query', foreignKey)?.name, 'knowledge_query')
+  assert.equal(ctx.tools.get('knowledge_get', foreignKey)?.name, 'knowledge_get')
+  assert.match(ctx.tools.get('knowledge_query', foreignKey).description, /shared long-term knowledge base/)
+})
+
 test('the read-only sandbox permits git inspection and denies writes', {
   skip: !anchor || process.platform === 'win32',
 }, async (t) => {

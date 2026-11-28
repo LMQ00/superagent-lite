@@ -49,6 +49,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     { seq: 3, type: 'user/message', data: { source: { kind: 'user' }, text: 'Implement it.' } },
     { seq: 4, type: 'turn/end', data: { turn: 1 } },
   ]
+  const globalTools = []
   const ctx = {
     logger: { warn: message => warnings.push(message) },
     inject() {},
@@ -56,6 +57,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     on(name, handler) { listeners.set(name, handler) },
     agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
+    tools: { register(tool, options) { globalTools.push({ tool, options }); return () => {} } },
     workingDirectory: { get: () => projectRoot },
     worktrees: {
       async create(_agent, { name }) {
@@ -97,7 +99,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
   }
   await listeners.get('agent/created')({ agent })
   return {
-    agent, activations, registered, warnings, contexts, listeners, events, skillProviders,
+    agent, activations, registered, warnings, contexts, listeners, events, skillProviders, globalTools,
     message: () => registered.find(tool => tool.name === 'message_router'),
     guard: args => guard(args),
   }
@@ -273,7 +275,7 @@ test('deleting one of several memory-authored skills does not inject a catalog u
   assert.deepEqual(decision.messages, [])
 })
 
-test('a worker gets project and global memory injected and only the knowledge read tools', async () => {
+test('a worker gets project and global memory injected and the app-wide knowledge read tools', async () => {
   const workerId = 'worker-b'
   const projectRoot = await taskForWorker('b'.repeat(16), workerId)
   await mkdir(projectRoot, { recursive: true })
@@ -286,8 +288,9 @@ test('a worker gets project and global memory injected and only the knowledge re
   })
   await store.addKnowledge('Knowledge that must not be injected into role context.')
   const wiring = await workerWiring(workerId, projectRoot, memoryFields())
-  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), true)
-  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_get'), true)
+  assert.deepEqual(wiring.globalTools.map(entry => entry.tool.name).sort(), ['knowledge_get', 'knowledge_query'])
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_get'), false)
   assert.equal(wiring.skillProviders.length, 1)
   const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
   assert.equal(candidates.find(candidate => candidate.name === 'superagent-project-memory').description,
@@ -342,7 +345,9 @@ test('a report worker gets the same project and global memory and project skill 
   const candidates = await wiring.skillProviders[0].list({ signal: new AbortController().signal })
   assert.equal(candidates.find(candidate => candidate.name === 'superagent-project-memory').description,
     'Report project skill description.')
-  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), true)
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_query'), false)
+  assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_get'), false)
+  assert.equal(wiring.globalTools.some(entry => entry.tool.name === 'knowledge_query'), true)
   assert.equal(wiring.registered.some(tool => tool.name === 'knowledge_write'), false)
   assert.equal(wiring.registered.some(tool => tool.name === 'superagent_memory'), false)
   assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
@@ -398,7 +403,7 @@ test('the router injects only global memory from the shared store', async () => 
   assert.deepEqual(tools.map(tool => tool.name).sort(), ['continue_worker', 'dispatch_worker', 'worker_status'])
 })
 
-test('a memory helper gets the knowledge read and write tools while a reviewer gets only the read tools', async () => {
+test('a memory helper adds the write tool while every role already has the knowledge read tools', async () => {
   const { apply } = await import('../index.js')
   const { expectHelper } = await import('../src/helper-guard.js')
   await taskForWorker('e'.repeat(16), 'worker-e')
@@ -410,6 +415,7 @@ test('a memory helper gets the knowledge read and write tools while a reviewer g
     on(name, handler) { listeners.set(name, handler) },
     agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset() {} },
+    tools: { register() { return () => {} } },
   }
   await apply(ctx)
   const helper = (id, kind, scope) => {
@@ -436,7 +442,7 @@ test('a memory helper gets the knowledge read and write tools while a reviewer g
   }
   const memory = helper('memory-helper', 'memory', undefined)
   await listeners.get('agent/created')({ agent: memory.agent })
-  assert.deepEqual(memory.registered.map(tool => tool.name).sort(), ['knowledge_get', 'knowledge_query', 'knowledge_write'])
+  assert.deepEqual(memory.registered.map(tool => tool.name), ['knowledge_write'])
   assert.equal(memory.checks[0]({ name: 'knowledge_query' }), undefined)
   assert.equal(memory.checks[0]({ name: 'knowledge_get' }), undefined)
   assert.equal(memory.checks[0]({ name: 'knowledge_write' }), undefined)
@@ -445,8 +451,41 @@ test('a memory helper gets the knowledge read and write tools while a reviewer g
   const reviewerScope = { baseCommit: 'a'.repeat(40), headCommit: 'b'.repeat(40) }
   const reviewer = helper('review-helper', 'review', reviewerScope)
   await listeners.get('agent/created')({ agent: reviewer.agent })
-  assert.deepEqual(reviewer.registered.map(tool => tool.name).sort(), ['knowledge_get', 'knowledge_query', 'submit_review'])
+  assert.deepEqual(reviewer.registered.map(tool => tool.name), ['submit_review'])
   assert.match(reviewer.checks[0]({ name: 'knowledge_write' }), /Only the memory role/)
   assert.equal(reviewer.checks[0]({ name: 'knowledge_query' }), undefined)
   assert.equal(reviewer.checks[0]({ name: 'knowledge_get' }), undefined)
+})
+
+test('knowledge read tools are registered on the app context for every role and preset', async () => {
+  const { apply } = await import('../index.js')
+  const listeners = new Map()
+  const globalTools = []
+  const ctx = {
+    logger: { warn() {} },
+    inject() {},
+    effect() { return () => {} },
+    on(name, handler) { listeners.set(name, handler) },
+    agents: { get() {}, list: () => [] },
+    agentPresets: { composedPreset() {} },
+    tools: { register(tool, options) { globalTools.push({ tool, options }); return () => {} } },
+  }
+  await apply(ctx)
+  const query = globalTools.find(entry => entry.tool.name === 'knowledge_query')
+  const get = globalTools.find(entry => entry.tool.name === 'knowledge_get')
+  assert.deepEqual(globalTools.map(entry => entry.tool.name).sort(), ['knowledge_get', 'knowledge_query'])
+  // No per-agent activation condition: an agent outside this plugin's presets
+  // sees the same app-wide tools.
+  assert.equal(query.options?.when, undefined)
+  assert.equal(get.options?.when, undefined)
+  assert.match(query.tool.description, /local knowledge base/)
+  assert.match(query.tool.description, /shared long-term knowledge base for every role and agent preset/)
+  assert.match(query.tool.description, /Call this tool whenever saved reusable knowledge might help/)
+  assert.match(get.tool.description, /local knowledge base/)
+  const foreign = {
+    id: 'foreign-preset-agent',
+    session: { id: 'foreign-preset-agent', header: { origin: 'subagent', parentSession: 'other-router' } },
+    ctx: { tools: { register() { throw new Error('a preset outside this plugin must not get per-agent tools') } } },
+  }
+  await listeners.get('agent/created')({ agent: foreign })
 })

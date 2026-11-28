@@ -79,6 +79,7 @@ function harness(agent, { listed = true } = {}) {
       async startActivation(spec) { return { childId: spec.childId } },
       async sendMessage() {},
     },
+    tools: { register() { return () => {} } },
   }
   return { ctx, listeners, effects }
 }
@@ -103,8 +104,7 @@ async function runningTask(id, workerSessionId, { mode = 'change', worktree } = 
 }
 
 const workerTools = [
-  'create_worktree', 'knowledge_get', 'knowledge_query', 'merge_branch',
-  'message_router', 'report_task', 'review_worker_commit',
+  'create_worktree', 'merge_branch', 'message_router', 'report_task', 'review_worker_commit',
 ]
 
 test('apply registers a live worker that predates this plugin instance', async () => {
@@ -172,7 +172,7 @@ test('a live helper keeps its tools across a reload and is still recognized', as
   const first = harness(agent, { listed: false })
   await apply(first.ctx)
   await first.listeners.get('agent/created')({ agent })
-  assert.deepEqual([...tools.keys()].sort(), ['knowledge_get', 'knowledge_query', 'submit_review'])
+  assert.deepEqual([...tools.keys()].sort(), ['submit_review'])
   const registered = [...tools.keys()].sort()
 
   // The reload builds a fresh instance whose creation listener never saw this

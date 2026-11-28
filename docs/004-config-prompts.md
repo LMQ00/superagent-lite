@@ -9,7 +9,8 @@
 | Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」，以及给 worker 附带本地图片的提示 | `cordis.patch.yml:21-48`，预设 `superagent-lite` 的 `persona.prefix` |
 | Worker persona | 一行身份和模型变量 | `cordis.patch.yml:91`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-134` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:41-52`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:149-162`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
+| Router 每轮路由提醒 | 每个请求注入的路由决定提醒，以及给 worker 的任务文字要改正语病和没逻辑的表述、通顺有逻辑且保留原意、不增加修饰和用户未提到的功能 | `src/router-prompt.js:1-21`、`router.js:15` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、change 模式先查知识库的要求、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-154` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；change 续派发先要求查询知识库，非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:83-190` |
 | 审查提示词、裁决工具与限制 | Git 项目审查指令（base..head、diff 自分）、非 Git 项目工作区审查指令、审查请求附带的 `images`，`submit_review` 裁决工具（内容「通过」即通过）、JSON 负载，以及只禁止写改工具和改变分支或历史的 git 命令 | `src/review.js:14-36`、`src/review.js:58-114`、`src/helper-guard.js:119-131`、`src/review-scope.js:1-294` |
@@ -74,7 +75,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 - skill 与知识分工：skill 只放可复用的固定流程或方法步骤；知识、事实、经验、结论和观察写全局知识库，不写成 skill。
 - 项目 skill 上限：提示词报告当前项目 skill 总数（包含不由 memory 管理的目录）和 10 个上限，要求达到上限时复用已有 memory 管理的项目 skill 名字返回完整新内容，不得新增第 11 个；写入路径同时强制执行该上限，超限时报错并整次不写字段和 skill，不产生半写入。
 - 项目 skill 的触发与上限：触发消息给出项目 skill 已用数量与 10 个上限，并逐条列出 skill 名称和作者（`- <name> (author: memory|none)`）；不注入路径、description、正文或 skill 根目录，catalog 已提供 description，memory 需要正文时按名调用 `skill` 工具，不用 `read` / `grep` 翻 skill 目录。达到上限时复用已有 memory 管理的项目 skill 名字，不新增第 11 个。
-- 全局知识库：只存可复用、广泛适用的知识；先用 `knowledge_query` 按关键词查（中英文分词，多词按命中关键词数排序）编号和上下文片段，需要时用 `knowledge_get` 按编号读完整条目，再用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写。
+- 全局知识库：只存可复用、广泛适用的知识；`knowledge_query` / `knowledge_get` 是应用级工具，所有角色（包括不使用本插件的预设）都能用，工具说明写明这是共享知识库并引导模型先查询；先用 `knowledge_query` 按关键词查（中英文分词，多词按命中关键词数排序）编号和上下文片段，需要时用 `knowledge_get` 按编号读完整条目，再由 memory 用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写。
 - memory 保存的 skill 在 frontmatter 带 `author: memory`：之后派发的 Worker/Reviewer 会看到新 description，已经发布过 catalog 的会话不接收这些 skill 新增、修改或删除引起的 catalog 更新。
 - 可以不加记忆，不把写入条数当指标；没有可复用的结论就不写，没用的知识只会污染知识库。
 - 返回每个要更新字段的完整文本，空字符串表示保持不变；数组只返回要创建或更新的 skill，空数组表示该作用域不变；skill 需要 name、description 和 content 都非空，同一作用域内名字不能重复。
@@ -103,9 +104,9 @@ Router persona 固定可见回复（`cordis.patch.yml:41-48`）：
 1. 一行一条规则，一句说完。
 2. 先写默认动作，再写允许例外的条件。
 3. 工具机制写在工具描述里，不在 persona 里重复。
-4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
+4. 把用户请求和明确说出的验收标准写成通顺、有逻辑的句子交给 worker：改正语病和没逻辑的表述，不改变意图，不删减、不曲解、不增加修饰，也不加用户没提到的功能、计划或验收标准。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:225-244`、`src/review.js:44-91`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:228-247`、`src/review.js:44-91`）。
 
 ## 装配顺序
 
@@ -115,7 +116,8 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 2. 预设 persona：Router 或 Worker 的 `persona.prefix`。
 3. 已挂载工具各自注册的工具指导。
 4. 记忆运行时上下文：Worker（包括 report 只读 worker）创建时读取项目 + 全局记忆，Reviewer 每次审查时读取，Router 只读取全局记忆；以 order `170` 注册并标记为 `required`，关闭可选运行时上下文时仍然注入（`src/memory.js`、`router.js`、`src/review.js`、`index.js`）。
-5. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、任务停止/排队开始的 `worker-status` 后台通知。任务消息、续派消息、报告和审查请求可以携带 `images` 指定的本地图片块。
+5. Router 路由提醒：Router 预设以 order `175` 注册必需运行时上下文，每个请求提醒先做一次路由决定（`dispatch_worker`、`continue_worker`，只问任务状态时 `worker_status`），并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间、摘要和提醒是背景，不算新输入（`src/router-prompt.js:1-21`、`router.js:15`）。
+6. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、任务停止/排队开始的 `worker-status` 后台通知。任务消息、续派消息、报告和审查请求可以携带 `images` 指定的本地图片块。
 
 两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:49-52`、`cordis.patch.yml:92-95`、`cordis.patch.yml:80-86`、`src/worker-prompt.js:17-20`、`src/worker-prompt.js:37-63`）。
 
@@ -123,7 +125,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:225-244`、`src/helper-guard.js:84-131`、`src/git-actions.js:170-239`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:228-247`、`src/helper-guard.js:84-131`、`src/git-actions.js:170-239`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
@@ -145,7 +147,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | Worker 设置 | `~/.dsh/superagent-lite/worker-settings.json` 中的 `workerModel` 和 `maxWorkers` | 启动新 worker 时读取；面板保存后立即影响之后的派发 |
 | 全局记忆与共享 skill | `~/.dsh/superagent-lite/memory/global.json` 中的 `userProfile`，以及 `author: memory` 的全局 skill（位于 `~/.agents/skills/<skill名>/SKILL.md`） | Router 插件装载时；Worker 和 Reviewer 创建时读取 catalog；由这些 skill 新增、修改或删除引起的 catalog 变化不热更新已有会话 |
 | 项目记忆与项目 skill | `~/.dsh/superagent-lite/memory/projects/<hash>.json` 中的 `responsibilities` 和 `positioning`，以及 `author: memory` 的项目 skill（位于 `<项目根>/.dsh/skills/<skill名>/SKILL.md`） | Worker 创建时、Reviewer 每次审查前读取；已运行的 Worker/Reviewer 会话不接收由这些 skill 变化引起的 catalog 更新 |
-| 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | `knowledge_query` / `knowledge_get` 每次查询时读取；`knowledge_write` 立即写回 |
+| 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | 应用级 `knowledge_query` / `knowledge_get` 每次查询时读取，所有角色可用；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` 和 `task/archive/sessions/<sha256(Session ID)>.md` | 每个 Worker 回合 `turn/end` 时写回合事件；memory 触发时写会话记录并只把路径交给 memory；其他模型工具没有专用读取入口，Git 与非 Git 项目位置相同 |
 
 Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:68-81`、`src/review.js:58-73`）。

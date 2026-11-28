@@ -34,6 +34,7 @@ test('apply wires turn/end into a reminder delivered on agent idle', async () =>
     on(name, handler) { listeners.set(name, handler) },
     agents: { get: id => id === agent.id ? agent : undefined, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite' },
+    tools: { register() { return () => {} } },
   }
   await apply(ctx)
   const emit = (name, ...args) => listeners.get(name)(...args)
@@ -84,6 +85,7 @@ test('the catalog guard wraps preset listeners that add the catalog after next()
     },
     agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
+    tools: { register() { return () => {} } },
   }
   // The worker preset's tool-skill listener is mounted before this plugin and
   // appends the catalog on its way out.
@@ -154,6 +156,7 @@ test('web panels register on both the legacy requestRejection and the newer conn
         on() {},
         agents: { get: () => undefined, list: () => [] },
         agentPresets: { composedPreset: () => 'superagent-lite' },
+        tools: { register() { return () => {} } },
       }
       await apply(ctx)
       return routes
@@ -212,6 +215,7 @@ test('apply reclaims a stale running record without a live worker', async () => 
     on(name, handler) { listeners.set(name, handler) },
     agents: { get: () => undefined, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite' },
+    tools: { register() { return () => {} } },
   }
 
   await apply(ctx)

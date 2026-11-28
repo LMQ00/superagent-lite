@@ -33,6 +33,11 @@ const applied = new WeakSet()
 export async function apply(ctx) {
   if (applied.has(ctx)) return
   applied.add(ctx)
+  // The knowledge base is shared by the whole installation, so its read tools
+  // belong to the app context: every agent sees them, including agents whose
+  // preset does not include this plugin.
+  ctx.tools.register(createKnowledgeQueryTool())
+  ctx.tools.register(createKnowledgeGetTool())
   const hostPatch = await reconcileHostPatches(ctx)
   const catalogGuard = createWorkerSkillCatalogGuard(ctx, {
     authoredSkills: async agent => {
@@ -142,8 +147,6 @@ export async function apply(ctx) {
       if (agent.ctx.tools.register) {
         const projectRoot = helper.projectRoot
           ?? (await taskForSession(undefined, parentSession))?.projectRoot
-        agent.ctx.tools.register(createKnowledgeQueryTool(), { when: () => true })
-        agent.ctx.tools.register(createKnowledgeGetTool(), { when: () => true })
         if (helper.kind === 'memory') {
           agent.ctx.tools.register(createKnowledgeWriteTool(), { when: () => true })
         }
@@ -252,12 +255,6 @@ export async function apply(ctx) {
       when: () => !state.frozen && !reportOnly,
     })
     const activeWorker = candidate => candidate === agent && !state.frozen
-    const knowledge = agent.ctx.tools.register(createKnowledgeQueryTool(), {
-      when: ({ agent: candidate }) => candidate === agent,
-    })
-    const knowledgeGet = agent.ctx.tools.register(createKnowledgeGetTool(), {
-      when: ({ agent: candidate }) => candidate === agent,
-    })
     let memoryAttempted = false
     const message = agent.ctx.tools.register(createMessageRouterTool(ctx, agent, task.id, async (_text, exec) => {
       if (memoryAttempted || task.mode !== 'change' || !inCheckout()) return undefined
@@ -280,7 +277,7 @@ export async function apply(ctx) {
     })
     workers.set(agent.id, {
       taskId: task.id, state, session: agent.session,
-      dispose: () => { memory?.(); projectSkill?.(); knowledge(); knowledgeGet(); report(); message(); review(); merge(); checkout(); guard() },
+      dispose: () => { memory?.(); projectSkill?.(); report(); message(); review(); merge(); checkout(); guard() },
     })
     markers.set(agent.id, 'message_router')
   }
