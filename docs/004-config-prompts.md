@@ -74,7 +74,7 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 - skill 与知识分工：skill 只放可复用的固定流程或方法步骤；知识、事实、经验、结论和观察写全局知识库，不写成 skill。
 - 项目 skill 上限：提示词报告当前项目 skill 总数（包含不由 memory 管理的目录）和 10 个上限，要求达到上限时复用已有 memory 管理的项目 skill 名字返回完整新内容，不得新增第 11 个；写入路径同时强制执行该上限，超限时报错并整次不写字段和 skill，不产生半写入。
 - 项目 skill 的触发与上限：触发消息给出项目 skill 已用数量与 10 个上限，并逐条列出 skill 名称和作者（`- <name> (author: memory|none)`）；不注入路径、description、正文或 skill 根目录，catalog 已提供 description，memory 需要正文时按名调用 `skill` 工具，不用 `read` / `grep` 翻 skill 目录。达到上限时复用已有 memory 管理的项目 skill 名字，不新增第 11 个。
-- 全局知识库：只存可复用、广泛适用的知识；先用 `knowledge_query` 按关键词查（中英文分词，多词按命中关键词数排序）编号和上下文片段，需要时用 `knowledge_get` 按编号读完整条目，再用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写。
+- 全局知识库：只存可复用、广泛适用的知识；`knowledge_query` / `knowledge_get` 是应用级工具，所有角色（包括不使用本插件的预设）都能用，工具说明写明这是共享知识库并引导模型先查询；先用 `knowledge_query` 按关键词查（中英文分词，多词按命中关键词数排序）编号和上下文片段，需要时用 `knowledge_get` 按编号读完整条目，再由 memory 用 `knowledge_write` 新增、纠正或删除；只有 memory 角色能写。
 - memory 保存的 skill 在 frontmatter 带 `author: memory`：之后派发的 Worker/Reviewer 会看到新 description，已经发布过 catalog 的会话不接收这些 skill 新增、修改或删除引起的 catalog 更新。
 - 可以不加记忆，不把写入条数当指标；没有可复用的结论就不写，没用的知识只会污染知识库。
 - 返回每个要更新字段的完整文本，空字符串表示保持不变；数组只返回要创建或更新的 skill，空数组表示该作用域不变；skill 需要 name、description 和 content 都非空，同一作用域内名字不能重复。
@@ -105,7 +105,7 @@ Router persona 固定可见回复（`cordis.patch.yml:41-48`）：
 3. 工具机制写在工具描述里，不在 persona 里重复。
 4. 原样传递用户请求和明确说出的验收标准，不删减、不压缩、不加计划或需求清单。
 5. `COMPLETED` 只用于已审查且相关检查通过的实现，且不能在有依赖任务运行时报告。
-6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:225-244`、`src/review.js:44-91`）。
+6. 代码是执行者：派发守卫要求决定，Worktree 工具限制 Git 项目的编辑位置（非 Git 项目直接使用项目根），审查工具检查 commit 或工作区内容（`src/turn-guard.js:73-108`、`index.js:228-247`、`src/review.js:44-91`）。
 
 ## 装配顺序
 
@@ -123,7 +123,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 
 从强到弱：
 
-1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:225-244`、`src/helper-guard.js:84-131`、`src/git-actions.js:170-239`）。
+1. **代码门槛。** 参数校验、工具守卫、冻结点、只读 helper、状态检查和 Git 预检决定能发生什么，无论文字怎么写（`src/validation.js:3-18`、`index.js:228-247`、`src/helper-guard.js:84-131`、`src/git-actions.js:170-239`）。
 2. **Host 权限。** 挂载的工具集、沙箱策略、批准策略和子代理深度约束每个 Session。
 3. **预设 persona。** Router 的决定与回复规则，Worker 的身份。
 4. **工具描述和生成消息。** 它们告诉模型工具的用途和 Worker 必须做什么。
@@ -145,7 +145,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | Worker 设置 | `~/.dsh/superagent-lite/worker-settings.json` 中的 `workerModel` 和 `maxWorkers` | 启动新 worker 时读取；面板保存后立即影响之后的派发 |
 | 全局记忆与共享 skill | `~/.dsh/superagent-lite/memory/global.json` 中的 `userProfile`，以及 `author: memory` 的全局 skill（位于 `~/.agents/skills/<skill名>/SKILL.md`） | Router 插件装载时；Worker 和 Reviewer 创建时读取 catalog；由这些 skill 新增、修改或删除引起的 catalog 变化不热更新已有会话 |
 | 项目记忆与项目 skill | `~/.dsh/superagent-lite/memory/projects/<hash>.json` 中的 `responsibilities` 和 `positioning`，以及 `author: memory` 的项目 skill（位于 `<项目根>/.dsh/skills/<skill名>/SKILL.md`） | Worker 创建时、Reviewer 每次审查前读取；已运行的 Worker/Reviewer 会话不接收由这些 skill 变化引起的 catalog 更新 |
-| 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | `knowledge_query` / `knowledge_get` 每次查询时读取；`knowledge_write` 立即写回 |
+| 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | 应用级 `knowledge_query` / `knowledge_get` 每次查询时读取，所有角色可用；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` 和 `task/archive/sessions/<sha256(Session ID)>.md` | 每个 Worker 回合 `turn/end` 时写回合事件；memory 触发时写会话记录并只把路径交给 memory；其他模型工具没有专用读取入口，Git 与非 Git 项目位置相同 |
 
 Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:68-81`、`src/review.js:58-73`）。

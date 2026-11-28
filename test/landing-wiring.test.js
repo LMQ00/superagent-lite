@@ -54,6 +54,7 @@ function harness() {
     sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' }) },
     workingDirectory: { get: session => dirs.get(session.id), async set(agent, value) { dirs.set(agent.session.id, value) } },
     systemPrompt: { context: () => () => {} },
+    tools: { register() { return () => {} } },
   }
   return { ctx, listeners, agents, dirs }
 }

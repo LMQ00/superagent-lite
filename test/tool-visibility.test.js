@@ -51,6 +51,7 @@ function harness() {
     sandboxPolicy: { resolve: () => ({ mode: 'danger-full-access' }) },
     subprocess: { async resolveExecutable(name) { return name }, spawn() { throw new Error('not used') } },
     worktrees: { async create() { throw new Error('not used') } },
+    tools: { register() { return () => {} } },
     subagents: {
       resolveMaxDepth: () => 1,
       async startActivation(spec) { return { childId: spec.childId } },
