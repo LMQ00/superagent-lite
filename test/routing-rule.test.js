@@ -41,8 +41,8 @@ test('dispatch_worker corrects the request into fluent, logical sentences withou
   assert.match(dispatch.parameters.properties.task.description, /do not add features, requirements, or a plan the user did not mention/)
 })
 
-test('dispatch_worker makes answer, report, change, and merge first-class modes', () => {
-  assert.deepEqual(dispatch.parameters.properties.mode.enum, ['change', 'report', 'answer', 'merge'])
+test('dispatch_worker makes answer, report, change, merge, and remove first-class modes', () => {
+  assert.deepEqual(dispatch.parameters.properties.mode.enum, ['change', 'report', 'answer', 'merge', 'remove'])
   assert.deepEqual(dispatch.parameters.required, ['mode'])
   assert.match(dispatch.description, /mode=change when the request needs project files changed/)
   assert.match(dispatch.description, /report when answering requires a worker to inspect the repository/)
@@ -53,11 +53,15 @@ test('dispatch_worker makes answer, report, change, and merge first-class modes'
   assert.match(dispatch.description, /when a merge worker is already running for this project, dispatch appends the request to it instead of starting a second merge worker/)
   assert.match(dispatch.description, /no worker, worktree, or task is created/)
   assert.match(dispatch.description, /Merge requests are new work/)
+  assert.match(dispatch.description, /mode=remove only when the user explicitly asks to delete worker branches or worktrees/)
+  assert.match(dispatch.description, /refuses the base branch, a running task, a branch this plugin did not create, and a worktree with uncommitted changes/)
+  assert.match(dispatch.parameters.properties.mode.description, /remove: delete worker branches and their worktrees immediately, without a worker or task/)
+  assert.match(dispatch.parameters.properties.branches.description, /mode=merge or mode=remove/)
   assert.equal(dispatch.parameters.properties.delegate, undefined)
   assert.equal(dispatch.parameters.properties.reason, undefined)
 })
 
-test('the router persona names all four modes and defaults merges to a new worker', async () => {
+test('the router persona names all five modes and defaults merges to a new worker', async () => {
   const persona = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
   assert.match(persona, /Set dispatch_worker mode by need: answer/)
   assert.match(persona, /answer when the user only asks and the conversation already answers it/)
@@ -70,6 +74,8 @@ test('the router persona names all four modes and defaults merges to a new worke
   assert.match(persona, /when a merge worker is already running for this project, dispatch_worker appends the request to it instead of starting a second one/)
   assert.match(persona, /Never continue the task that owns a branch in order to merge it/)
   assert.match(persona, /continue_worker land=true authorizes only pushing or a pull request, not merging/)
+  assert.match(persona, /remove when the user explicitly asks to delete worker branches or worktrees/)
+  assert.match(persona, /A remove request is its own routing call/)
 })
 
 test('worker_status names every router-visible task state and one optional task', () => {

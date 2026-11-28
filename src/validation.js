@@ -1,9 +1,9 @@
 import { validateImagePaths } from './message-images.js'
 
-const MODES = ['change', 'report', 'answer', 'merge']
+const MODES = ['change', 'report', 'answer', 'merge', 'remove']
 const BRANCH_NAME = /^[A-Za-z0-9._/-]{1,200}$/
 const TASK_ID = /^[a-f0-9]{16}$/
-const MAX_MERGE_TARGETS = 20
+const MAX_TARGETS = 20
 const WORKTREE_NAME = /^[a-z]+(?:-[a-z0-9]+){0,3}$/
 
 function validateWorktreeName(value, mode) {
@@ -19,13 +19,13 @@ function validateWorktreeName(value, mode) {
   return name
 }
 
-function validateMergeTargets(value) {
+function validateTargets(value, mode) {
   if (!Array.isArray(value) || value.length === 0) throw new TypeError('branches must list at least one branch or task ID')
-  if (value.length > MAX_MERGE_TARGETS) throw new RangeError(`branches must list at most ${MAX_MERGE_TARGETS} targets`)
+  if (value.length > MAX_TARGETS) throw new RangeError(`branches must list at most ${MAX_TARGETS} targets`)
   const targets = value.map(target => typeof target === 'string' ? target.trim() : '')
   for (const target of targets) {
     if (!TASK_ID.test(target) && (!BRANCH_NAME.test(target) || target.startsWith('-'))) {
-      throw new TypeError('each merge target must be a branch name or a 16-character task ID')
+      throw new TypeError(`each ${mode} target must be a branch name or a 16-character task ID`)
     }
   }
   return [...new Set(targets)]
@@ -33,11 +33,17 @@ function validateMergeTargets(value) {
 
 export function validateDispatchArguments(args) {
   const mode = args?.mode
-  if (!MODES.includes(mode)) throw new TypeError('mode must be change, report, answer, or merge')
+  if (!MODES.includes(mode)) throw new TypeError('mode must be change, report, answer, merge, or remove')
   const images = validateImagePaths(args?.images)
   if (mode === 'answer') {
     if (images.length > 0) throw new TypeError('images need a worker message; mode=answer sends none')
     return { delegate: false, mode }
+  }
+  if (mode === 'remove') {
+    if (images.length > 0) throw new TypeError('images need a worker message; mode=remove sends none')
+    if (args.land !== undefined) throw new TypeError('land is only accepted for change, report, or merge tasks')
+    if (args.worktreeName !== undefined) throw new TypeError('worktreeName is only accepted for change and merge tasks')
+    return { delegate: false, mode, branches: validateTargets(args.branches, 'remove') }
   }
   if (typeof args.teamId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(args.teamId)) {
     throw new TypeError('teamId must use 1-64 letters, digits, dots, underscores, or hyphens')
@@ -55,10 +61,10 @@ export function validateDispatchArguments(args) {
     if (!land) throw new TypeError('merge tasks require land=true')
     return {
       delegate: true, title, teamId: args.teamId, task, mode, land, worktreeName,
-      branches: validateMergeTargets(args.branches), ...(images.length > 0 ? { images } : {}),
+      branches: validateTargets(args.branches, 'merge'), ...(images.length > 0 ? { images } : {}),
     }
   }
-  if (args.branches !== undefined) throw new TypeError('branches are only accepted for merge tasks')
+  if (args.branches !== undefined) throw new TypeError('branches are only accepted for merge and remove tasks')
   return {
     delegate: true, title, teamId: args.teamId, task, mode, land,
     ...(worktreeName ? { worktreeName } : {}), ...(images.length > 0 ? { images } : {}),

@@ -248,6 +248,11 @@ Bundle 的组成和提示词配置是 `cordis.patch.yml` 和源文件；面板�
 | `The worker worktree has uncommitted changes; commit or remove them before deleting the branch` | 删除分支前清理 worker Worktree |
 | `The worktree at <path> is not on the worker branch <branch>; remove it before deleting the branch` | 登记的工作树已切到别的分支；先移除该工作树再删除分支 |
 | `The worker branch is still checked out in the worktree at <path>; remove it before deleting the branch` | 分支被其他工作树检出；先移除那个工作树再删除分支 |
+| `Removing worker branches requires a git repository` | `mode=remove` 只适用于 Git 项目；非 Git 目录没有分支和 Worktree 可删 |
+| `Remove target task <id> does not belong to this project` | `mode=remove` 的 Task ID 必须属于当前项目；确认项目根或改用分支名 |
+| `The base branch "<branch>" cannot be removed` | `mode=remove` 不能删除当前检出的 base branch；改删 worker 分支 |
+| `The worktree at <path> was not created by this plugin; remove it manually` | 该分支在 `.agents/worktrees/` 之外的工作树检出；手动移除后再删分支 |
+| `The branch "<branch>" is not a worker branch created by this plugin` | 直接给的分支名不是 `sl-*` 且没有插件登记的 Worktree；删除插件创建的对象，或从面板处理 |
 | `The worker worktree at <path> still exists; remove it before deleting the branch` | `git worktree remove` 后工作树仍在；手动清理后再重试 |
 | `Could not remove the worker worktree at <path>: ...` | 工作树移除失败；按错误信息处理占用或权限问题后重试 |
 | `The worker is still running` | 删除时停止后 Worker 仍在运行；稍后重试停止或删除，或打开 Worker 会话检查 |

@@ -6,10 +6,10 @@
 
 | 区 | 装什么 | 位置 |
 | --- | --- | --- |
-| Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」，以及给 worker 附带本地图片的提示 | `cordis.patch.yml:21-48`，预设 `superagent-lite` 的 `persona.prefix` |
-| Worker persona | 一行身份和模型变量 | `cordis.patch.yml:91`，预设 `superagent-lite-worker` |
+| Router persona | 路由范围、客观回答、一次决定、回复格式、合并授权边界与「合并默认派新 worker」，以及给 worker 附带本地图片的提示 | `cordis.patch.yml:21-49`，预设 `superagent-lite` 的 `persona.prefix` |
+| Worker persona | 一行身份和模型变量 | `cordis.patch.yml:92`，预设 `superagent-lite-worker` |
 | 捆绑组成 | worktree 服务、两个预设、工具行、compaction | `cordis.patch.yml:1-134` |
-| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的四种取值、change/merge 的英文 `worktreeName`、merge 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:149-162`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
+| 路由工具文字 | `dispatch_worker`、`continue_worker` 和 `worker_status` 的描述和参数说明，包括 `mode` 的五种取值、change/merge 的英文 `worktreeName`、merge/remove 目标、显式 `land` 授权、`images` 本地图片路径，以及按排队、运行、已交付、已取消和失败查询任务；`continue_worker` 的排队「稍后再试」结果也在工具文字之外由代码返回 | `src/dispatch.js:246-266`、`src/continue.js:229-244`、`src/continue.js:275-277`、`src/worker-status.js` |
 | Router 每轮路由提醒 | 每个请求注入的路由决定提醒，以及给 worker 的任务文字要改正语病和没逻辑的表述、通顺有逻辑且保留原意、不增加修饰和用户未提到的功能 | `src/router-prompt.js:1-21`、`router.js:15` |
 | Worker 任务消息 | 头部、需求、change/report/merge 模式（report 段也要求按仓库 `AGENTS.md` 的约定执行，但不扩大只读授权）、`land` 条件规则、非 Git 项目的直接修改规则、change 模式先查知识库的要求、`images` 附加图片说明，以及 `Before` / `During` / `After` / `Reporting` 段 | `src/worker-prompt.js:1-154` |
 | 恢复消息 | 任务标识（Task ID、分支、Worktree、base）、不可变规则、标明为唯一权威指令的 `Follow-up`，以及条件式 `land` 规则；change 续派发先要求查询知识库，非 Git 项目改为项目目录和直接修改规则，report 任务改为只读检查、联网检索和 `report_task` 规则；`images` 按 Router 当前目录附加；仅检测到上下文压缩时回放需求 | `src/continue.js:83-190` |
@@ -34,7 +34,7 @@
 
 ## 路由模式
 
-`dispatch_worker` 的 `mode` 必填，四个值并列：
+`dispatch_worker` 的 `mode` 必填，五个值并列：
 
 | 模式 | 适用 | 结果 |
 | --- | --- | --- |
@@ -42,8 +42,9 @@
 | `report` | 用户只是询问，但回答需要查证仓库、运行只读命令，或联网检索/读取网页 | 创建 Task 和 report worker，在项目 checkout 只读检查，并可用只读的网页搜索、网页读取和知识库查询做调研，用 `report_task` 交回结论 |
 | `answer` | 用户只是询问，Router 凭知识或对话已经能回答 | Router 直接回答；不启动 worker、不建 Worktree、不写 Task 记录 |
 | `merge` | 用户明确授权合并已交付分支 | 创建 Task 和 merge worker；已有运行中的 merge worker 时把目标追加给同一个 Task，不另起 worker。先 `merge_branch` 合并目标分支，审查合并结果，再把 reviewed commit 合入 base branch；`land=true` 与 `branches` 必填 |
+| `remove` | 用户明确要求删除 worker 分支及其 worktree | Router 直接删除，不建 Task、不启动 worker；`branches` 必填，接受本项目的 Task ID，或本插件创建的 `sl-*` 分支 / `.agents/worktrees/` 下的 Worktree。base branch、运行中的任务、非本插件创建的分支、脏 Worktree 和被其他 Worktree 检出的分支拒绝 |
 
-判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。合并请求即使用户点名已有任务，也按新工作走 `mode=merge`，不续派原任务；已有运行中的 merge worker 时追加给它。判定只读输入本身，不先检查仓库。项目是否属于 Git 仓库不影响 change/report 的选择；派发时再检测，非 Git 项目自动走直接工作区路径，`merge` 和 `land=true` 会被拒绝。
+判定口径：先看是否需要改动项目文件；不需要改动再问回答是否已掌握；已掌握用 `answer`，需要查证用 `report`。用户明确要求清理分支或 Worktree 时用 `remove`，不要为了删除而派 change/merge worker。合并请求即使用户点名已有任务，也按新工作走 `mode=merge`，不续派原任务；已有运行中的 merge worker 时追加给它。判定只读输入本身，不先检查仓库。项目是否属于 Git 仓库不影响 change/report 的选择；派发时再检测，非 Git 项目自动走直接工作区路径，`merge`、`land=true` 和 `remove` 会被拒绝。
 
 ## 消息图片
 
@@ -51,13 +52,13 @@ Host `0.2.2-rc.5` 的消息内容支持图片块：`{ type: 'image', attachment:
 
 | 链路 | 工具参数 | 消息构造 | 模型要求 |
 | --- | --- | --- | --- |
-| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:216-228`、`src/launch-queue.js:150-162`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
-| router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:255`、`src/dispatch.js:68-103`） | 目标 worker 模型声明图片输入 |
+| router → worker 首次派发 | `dispatch_worker.images` | 附件引用写入 Task 的 `images`，启动时追加到 `startActivation` 的首条消息（`src/dispatch.js:322-334`、`src/launch-queue.js:150-162`） | worker 模型声明图片输入，否则 Host 拒绝启动并报 `MODEL_DOES_NOT_SUPPORT_IMAGES` |
+| router → worker 续派发/追加合并 | `continue_worker.images`、`dispatch_worker mode=merge` 的追加请求 | 追加到 `sendMessage` 的文本之后（`src/continue.js:255`、`src/dispatch.js:72-107`） | 目标 worker 模型声明图片输入 |
 | worker → router 报告 | `message_router.images` | 追加到报告文本之后（`src/message-router.js:23-24`） | router 模型声明图片输入 |
 | worker → router report 结论 | `report_task.images` | 追加到报告文本之后（`src/report-tool.js:37-38`） | router 模型声明图片输入 |
 | worker → review | `review_worker_commit.images` | 追加到审查提示词文本之后（`src/review.js:91-141`） | reviewer 模型声明图片输入 |
 
-数量、单张字节数、整条消息字节数、像素和格式由 Host 的附件服务校验；插件在保存前还会按 `imageLimits` 复核单条消息的图片数量和总字节。文件缺失、不是受支持图片或附件保存失败都会让工具调用失败，不发送半条消息（`src/message-images.js:54-90`）。`mode=answer` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:34-44`）。
+数量、单张字节数、整条消息字节数、像素和格式由 Host 的附件服务校验；插件在保存前还会按 `imageLimits` 复核单条消息的图片数量和总字节。文件缺失、不是受支持图片或附件保存失败都会让工具调用失败，不发送半条消息（`src/message-images.js:54-90`）。`mode=answer` 和 `mode=remove` 不产生 worker 消息，带 `images` 会被拒绝（`src/validation.js:38-47`）。
 
 ## Worker 状态查询
 
@@ -89,7 +90,7 @@ Worker 和 Reviewer 的 skill catalog 在会话内保持稳定：memory 写入 s
 
 ## 回复规则
 
-Router persona 固定可见回复（`cordis.patch.yml:41-48`）：
+Router persona 固定可见回复（`cordis.patch.yml:42-49`）：
 
 - Router 客观、按逻辑回答：评估并按原样转述请求，不附和、不称赞、不重述或改写用户观点；路由不添加需求、实现计划、验收标准或重复的政策清单。
 - 一句话给出结果和下一步：`Started: <具体改动>` 或 `<结果>；<下一步>`。写明具体对象和预期结果，不用笼统的「已处理」。
@@ -119,7 +120,7 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 5. Router 路由提醒：Router 预设以 order `175` 注册必需运行时上下文，每个请求提醒先做一次路由决定（`dispatch_worker`、`continue_worker`，只问任务状态时 `worker_status`），并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间、摘要和提醒是背景，不算新输入（`src/router-prompt.js:1-21`、`router.js:15`）。
 6. 会话消息：`buildWorkerPrompt` 生成的任务消息、`continue_worker` 的更新或恢复消息、`message_router` 的报告、reviewer 的审查请求、memory 的蒸馏请求、派发守卫的提醒、任务停止/排队开始的 `worker-status` 后台通知。任务消息、续派消息、报告和审查请求可以携带 `images` 指定的本地图片块。
 
-两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:49-52`、`cordis.patch.yml:92-95`、`cordis.patch.yml:80-86`、`src/worker-prompt.js:17-20`、`src/worker-prompt.js:37-63`）。
+两个预设都挂载 `@deepseek-ai/dsh-agent-instructions`，因此 Router 和 Worker 都读取 `AGENTS.md`。对 Router 来说它是仓库约定，不是任务；注入的指令本身不能授权推送或合并。Worker 任务消息（包括 report 只读任务）明确要求按这些约定执行，但约定不能扩大任务授权，也不能放宽 report 的只读边界（`cordis.patch.yml:25-26`、`cordis.patch.yml:50-53`、`cordis.patch.yml:93-96`、`cordis.patch.yml:81-87`、`src/worker-prompt.js:17-20`、`src/worker-prompt.js:37-63`）。
 
 ## 优先级
 
@@ -150,4 +151,4 @@ Host 拼装系统提示，再在模型调用前附上运行时上下文。插件
 | 全局知识库 | `~/.dsh/superagent-lite/memory/knowledge.json` | 应用级 `knowledge_query` / `knowledge_get` 每次查询时读取，所有角色可用；`knowledge_write` 立即写回 |
 | 原始归档 | `~/.dsh/superagent-lite/task/archive/<hash>.json` 和 `task/archive/sessions/<sha256(Session ID)>.md` | 每个 Worker 回合 `turn/end` 时写回合事件；memory 触发时写会话记录并只把路径交给 memory；其他模型工具没有专用读取入口，Git 与非 Git 项目位置相同 |
 
-Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:68-81`、`src/review.js:58-73`）。
+Task 保留派发时保存的需求。改提示词不会重写运行中或已结束的 Task；Reviewer 仍按保存的需求判断，follow-up 只作上下文（`src/dispatch.js:72-85`、`src/review.js:58-73`）。
