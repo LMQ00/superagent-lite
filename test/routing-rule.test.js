@@ -31,10 +31,14 @@ test('dispatch_worker sends overlapping work to its own worker instead of foldin
   assert.match(dispatch.description, /worktrees keep the edits separate/)
 })
 
-test('dispatch_worker relays the request without losing information', () => {
-  assert.match(dispatch.description, /without rewriting or paraphrasing it/)
-  assert.match(dispatch.description, /do not omit or compress its information/)
-  assert.match(dispatch.parameters.properties.task.description, /without omitting, rewriting or compressing its information/)
+test('dispatch_worker corrects the request into fluent, logical sentences without adding to it', () => {
+  assert.match(dispatch.description, /correct grammar, wording, and illogical phrasing into fluent, logical sentences/)
+  assert.match(dispatch.description, /keep the intent and information intact/)
+  assert.match(dispatch.description, /do not distort or embellish it/)
+  assert.match(dispatch.description, /do not add features, requirements, a plan, or acceptance criteria the user did not mention/)
+  assert.match(dispatch.parameters.properties.task.description, /in fluent, logical sentences/)
+  assert.match(dispatch.parameters.properties.task.description, /without changing the intent/)
+  assert.match(dispatch.parameters.properties.task.description, /do not add features, requirements, or a plan the user did not mention/)
 })
 
 test('dispatch_worker makes answer, report, change, and merge first-class modes', () => {
