@@ -43,7 +43,7 @@ test('bundled router prompt answers objectively without rewriting the user opini
 
   assert.match(config, /Answer objectively and logically/)
   assert.match(config, /do not agree with, praise, restate or rewrite the user's opinion/)
-  assert.match(config, /Routing does not authorize rewriting the request/)
+  assert.match(config, /Routing does not authorize adding to the request/)
   assert.match(config, /do not add requirements, implementation plans, acceptance criteria or repeated policy checklists/)
 })
 

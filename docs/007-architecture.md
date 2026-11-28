@@ -4,7 +4,7 @@
 
 ## 核心流程
 
-Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具和全局记忆上下文。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-393`、`router.js:1-9`）。
+Host 插件 `index.js` 管理 Worker 生命周期、记忆注入和面板路由；Router 插件 `router.js` 注册路由工具、状态查询工具、全局记忆上下文和每轮路由提醒。merge 任务的目标分支合入由 `src/merge-tool.js` 执行，最终合入 base branch 仍走 Worker 的 shell 落地围栏。两个入口都通过 `ctx` 使用 DSH 服务，源文件不 import DSH 包（`index.js:1-393`、`router.js:1-16`）。
 
 ```mermaid
 flowchart TB
@@ -28,6 +28,7 @@ flowchart TB
   B --> C[client.js 面板]
   C -->|merge、publish、review、delete-branch、delete-task| B
   R --> TG[src/turn-guard.js]
+  R --> RP[src/router-prompt.js]
   W -->|最终报告| ME[src/memory.js]
   W -->|每轮 turn/end| AR[(原始归档)]
   W -->|触发时写入会话记录| AR
@@ -49,7 +50,7 @@ Host 生命周期入口。注册主体是幂等的 `activate`：`agent/created`�
 
 ### `router.js`
 
-装载时先刷新并注册全局记忆上下文，再注册 `dispatch_worker`、`continue_worker` 和 `worker_status`。Router 只读取全局记忆；Router 预设的 skill 根也只保留全局 skill 根。`worker_status` 只查询本 Router Session 派发的任务，不派发工作（`src/worker-status.js`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:107-283`）。它不持有 Task 记录。
+装载时先刷新并注册全局记忆上下文，再注册 `dispatch_worker`、`continue_worker` 和 `worker_status`。它还把路由提醒注册为 order `175` 的必需运行时上下文：每个请求提醒先做一次路由决定，并要求交给 worker 的任务文字改正语病和没逻辑的表述，通顺有逻辑、保留原意、不曲解、不增加修饰或用户没提到的功能；报告、状态通知、时间和摘要属于背景，不算新输入（`src/router-prompt.js:1-21`、`router.js:15`）。Router 只读取全局记忆；Router 预设的 skill 根也只保留全局 skill 根。`worker_status` 只查询本 Router Session 派发的任务，不派发工作（`src/worker-status.js`）。`dispatch_worker` 的 `mode=merge` 把目标分支解析后写入 Task 的 `mergeBranches`：同一 Router Session 和 Project 没有运行中的 merge worker 时启动一个新的；有则把目标追加到该 Task 并给 worker 发送 follow-up（`src/dispatch.js:107-283`）。它不持有 Task 记录。
 
 ### `src/memory.js`
 
@@ -217,6 +218,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `src/memory-panel.js` | 提供 owner-only 记忆端点：GET 返回全局记忆、所请求项目的记忆、全局/项目 skill 和全局知识库条目；DELETE 校验删除目标并删除单个记忆字段、memory 管理的 skill 或知识条目。 |
 | `src/branches-panel.js` | 提供 owner-only 分支 / Worktree 端点：GET 返回本插件创建的 Worktree 与 `sl-*` 分支；DELETE 按 `kind` 删除 Worktree（保留分支）、一步删除 Worktree 和分支，或删除没有 Worktree 检出的分支。 |
 | `src/message-router.js` | 把 Worker 的最终结论发给 Router。 |
+| `src/router-prompt.js` | 定义并注册每个 Router 请求注入的路由提醒：先做一次路由决定（派发、续派或状态查询）、报告和状态通知算背景，以及交给 worker 的任务文字要改正语病和没逻辑的表述、通顺有逻辑且保留原意、不增加修饰或用户没提到的功能；以 order `175` 的必需运行时上下文注册，由 `router.js` 装在 Router 预设上。 |
 | `src/process.js` | 以过滤环境和有界输出运行 git 与 gh。 |
 | `src/report-tool.js` | 以结论和证据结束 report 任务；Git 项目校验 HEAD 和 checkout，非 Git 项目直接交付。 |
 | `src/review.js` | 检查已提交 diff 或非 Git 工作区内容，运行独立 Reviewer，接收 `submit_review` 并记录裁决。 |
@@ -274,6 +276,7 @@ merge worker 的 `merge_branch` 工具。它只接受 Task 的 `mergeBranches` �
 | `test/report-only.test.js` | report 任务的完成、联网检索与只读查询工具放行、写文件/提交/弄脏 checkout 拒绝、伪造 Worktree 拒绝、报告提示词，以及 `mode=answer` 无 Task/Worker/命令副作用。 |
 | `test/review-scope.test.js` | Reviewer 可自由读取，改变分支的 git 命令被拒，diff/改动文件/非 Git 项目文件算证据。 |
 | `test/review.test.js` | Reviewer 提示词不带 diff、无证据裁决被拒、读改动文件算证据，以及非 Git 工作区审查。 |
+| `test/router-prompt.test.js` | 路由提醒的内容（每个输入一次决定、报告和状态通知算背景、任务文字改正语病和没逻辑的表述且不曲解不增加），以及由 `router.js` 以必需运行时上下文注册。 |
 | `test/routing-rule.test.js` | 路由工具把不同目标挡在 `continue_worker` 外，persona 与工具描述说明四种 mode、`worker_status` 和状态通知。 |
 | `test/status.test.js` | 六个面板状态、优先级、非 Git 任务审查通过即完成和审查索引。 |
 | `test/task-store.test.js` | Task 记录私有写入、Session 反查、删除记录与映射、停止为 `cancelled` 终态与幂等、路径形 ID 拒绝。 |
