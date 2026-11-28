@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { listCancelledTasks, listTasks } from './task-store.js'
+import { belongsToProject, routerDirectory } from './project-scope.js'
 
 const TASK_ID = /^[a-f0-9]{16}$/
 const STATUS_SOURCE = 'superagent-lite-worker-status'
@@ -54,15 +55,15 @@ export function workerStatusReport(tasks, cancelled = []) {
   return lines.join('\n')
 }
 
-export function createWorkerStatusTool() {
+export function createWorkerStatusTool(ctx) {
   return {
     name: 'worker_status',
-    description: 'Report the current workers and tasks dispatched by this Router Session. It lists queued, running, delivered, cancelled, and failed tasks with their task ID, title, team, mode, worker Session, and lifecycle status; pass taskId to inspect one task. Use it for a status question instead of dispatching. A task stopped from the panel and a queued worker that starts also arrive as background worker-status notices.',
+    description: 'Report the current workers and tasks dispatched by this Router Session in its current project. It lists queued, running, delivered, cancelled, and failed tasks with their task ID, title, team, mode, worker Session, and lifecycle status; pass taskId to inspect one task. Use it for a status question instead of dispatching. A task stopped from the panel and a queued worker that starts also arrive as background worker-status notices.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        taskId: { type: 'string', description: 'Optional 16-character task ID to inspect one task dispatched by this Router Session.' },
+        taskId: { type: 'string', description: 'Optional 16-character task ID to inspect one task dispatched by this Router Session in its current project.' },
       },
     },
     output: { schema: { type: 'string' }, render: (_args, text) => [{ type: 'text', text }] },
@@ -73,13 +74,15 @@ export function createWorkerStatusTool() {
       if (taskId !== undefined && !TASK_ID.test(taskId)) {
         throw new TypeError('taskId must be a 16-character lowercase hexadecimal task ID')
       }
+      const directory = routerDirectory(ctx, exec.agent)
       const [tasks, cancelled] = await Promise.all([listTasks(), listCancelledTasks()])
-      const active = tasks.filter(task => task.parentSessionId === routerSessionId)
+      const active = tasks.filter(task => task.parentSessionId === routerSessionId && belongsToProject(task, directory))
       const currentIds = new Set(active.map(task => task.id))
-      const stopped = cancelled.filter(task => task.parentSessionId === routerSessionId && !currentIds.has(task.id))
+      const stopped = cancelled.filter(task =>
+        task.parentSessionId === routerSessionId && belongsToProject(task, directory) && !currentIds.has(task.id))
       if (taskId === undefined) return workerStatusReport(active, stopped)
       const task = active.find(record => record.id === taskId) ?? stopped.find(record => record.id === taskId)
-      if (!task) throw new Error('Task does not belong to this Router Session')
+      if (!task) throw new Error('Task does not belong to this Router Session and project')
       return `${LABELS[workerCategory(task)]}:\n${statusLine(task)}`
     },
   }
@@ -91,6 +94,7 @@ export function createWorkerStatusTool() {
 export function notifyWorkerStatus(ctx, task, status) {
   const parent = ctx?.agents?.get?.(task?.parentSessionId)
   if (!parent || typeof parent.inject !== 'function') return false
+  if (!belongsToProject(task, routerDirectory(ctx, parent))) return false
   const title = oneLine(task.title) || 'untitled'
   const outcome = status === 'cancelled'
     ? `task ${task.id} ("${title}") was cancelled; its worker was stopped and its concurrency slot is free`

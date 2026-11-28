@@ -50,6 +50,28 @@ async function followUpTexts(id) {
   return ((await readTask(id)).followUps ?? []).map(item => item.text)
 }
 
+test('continue_worker refuses a task owned by another project of this router Session', async () => {
+  const { createContinueTool } = await import('../src/continue.js')
+  const id = '50000000000000fe'
+  await taskFixture(id)
+  const other = join(home, '..', 'continue-other-project')
+  await mkdir(other, { recursive: true })
+  try {
+    const sends = []
+    const ctx = { ...context(sends, 'running'), workingDirectory: { get: () => other } }
+    await assert.rejects(
+      createContinueTool(ctx).execute(
+        { taskId: id, task: 'Extend it.' },
+        { agent: { id: 'router' }, signal: new AbortController().signal },
+      ),
+      /does not belong to this router Session and project/,
+    )
+    assert.deepEqual(sends, [])
+  } finally {
+    await rm(other, { recursive: true, force: true })
+  }
+})
+
 test('continue_worker records an explicit landing authorization on the task', async () => {
   const { createContinueTool } = await import('../src/continue.js')
   const { readTask } = await import('../src/task-store.js')
