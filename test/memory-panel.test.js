@@ -50,7 +50,10 @@ test('the memory panel reads the memory and knowledge of the requested project',
       return {
         global: { userProfile: 'Prefers terse reports.' },
         project: { projectRoot, responsibilities: 'Keep notes accurate.', positioning: 'Local tooling.' },
-        knowledge: [{ id: 'k1', text: 'Run tests.', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }],
+        knowledge: {
+          global: [{ id: 'k1', text: 'Run tests.', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }],
+          project: [{ id: 'k2', text: 'This project uses alpha.', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }],
+        },
       }
     },
   })
@@ -62,7 +65,10 @@ test('the memory panel reads the memory and knowledge of the requested project',
   assert.deepEqual(JSON.parse(result.body), {
     global: { userProfile: 'Prefers terse reports.' },
     project: { projectRoot, responsibilities: 'Keep notes accurate.', positioning: 'Local tooling.' },
-    knowledge: [{ id: 'k1', text: 'Run tests.', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }],
+    knowledge: {
+      global: [{ id: 'k1', text: 'Run tests.', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }],
+      project: [{ id: 'k2', text: 'This project uses alpha.', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' }],
+    },
   })
 })
 
@@ -71,13 +77,15 @@ test('the memory panel serves the global scope when no project is given', async 
   const handler = createMemoryPanelHandler(owner(), {
     read: async projectRoot => {
       reads.push(projectRoot)
-      return { global: { userProfile: 'Global only.' }, knowledge: [] }
+      return { global: { userProfile: 'Global only.' }, knowledge: { global: [], project: [] } }
     },
   })
   const result = await request(handler)
   assert.equal(result.status, 200)
   assert.deepEqual(reads, [undefined])
-  assert.deepEqual(JSON.parse(result.body), { global: { userProfile: 'Global only.' }, knowledge: [] })
+  assert.deepEqual(JSON.parse(result.body), {
+    global: { userProfile: 'Global only.' }, knowledge: { global: [], project: [] },
+  })
 })
 
 test('the memory panel rejects invalid project roots and unsupported methods', async () => {
@@ -111,6 +119,7 @@ test('the memory panel reads the default store without exposing write paths', as
     project: { responsibilities: 'Keep the panel accurate.', positioning: 'Small local plugin.' },
   })
   await store.addKnowledge('Run npm test before reporting.')
+  await store.addKnowledge('This project uses the alpha layout.', { scope: 'project', projectRoot })
   const handler = createMemoryPanelHandler(owner())
   const result = await request(handler, 'GET', `/superagent-lite/memory?projectRoot=${encodeURIComponent(projectRoot)}`)
   const body = JSON.parse(result.body)
@@ -119,12 +128,13 @@ test('the memory panel reads the default store without exposing write paths', as
   assert.deepEqual(body.project, {
     projectRoot, responsibilities: 'Keep the panel accurate.', positioning: 'Small local plugin.',
   })
-  assert.equal(body.knowledge.length, 1)
-  assert.equal(body.knowledge[0].text, 'Run npm test before reporting.')
+  assert.equal(body.knowledge.global.length, 1)
+  assert.equal(body.knowledge.global[0].text, 'Run npm test before reporting.')
+  assert.deepEqual(body.knowledge.project.map(entry => entry.text), ['This project uses the alpha layout.'])
 
   const globalOnly = JSON.parse((await request(handler)).body)
   assert.deepEqual(globalOnly.global, { userProfile: 'Prefers concise answers.' })
-  assert.deepEqual(globalOnly.knowledge, body.knowledge)
+  assert.deepEqual(globalOnly.knowledge, { global: body.knowledge.global, project: [] })
 })
 
 test('the memory panel refuses non-owner deletes without touching memory', async () => {
@@ -147,6 +157,9 @@ test('the memory panel rejects malformed delete requests before deleting anythin
     '/superagent-lite/memory',
     '/superagent-lite/memory?kind=other',
     '/superagent-lite/memory?kind=knowledge',
+    '/superagent-lite/memory?kind=knowledge&id=1',
+    '/superagent-lite/memory?kind=knowledge&scope=bad&id=1',
+    '/superagent-lite/memory?kind=knowledge&scope=project&id=1',
     '/superagent-lite/memory?kind=memory&field=userProfile',
     '/superagent-lite/memory?kind=memory&scope=global',
     '/superagent-lite/memory?kind=memory&scope=global&field=responsibilities',
@@ -179,7 +192,10 @@ test('the memory panel deletes memory fields, memory skills and knowledge entrie
       { kind: 'skill', scope: 'global', projectRoot: undefined, name: 'superagent-shared-memory' }],
     [`/superagent-lite/memory?kind=skill&scope=project&projectRoot=${encodeURIComponent(projectRoot)}&name=superagent-project-memory`,
       { kind: 'skill', scope: 'project', projectRoot, name: 'superagent-project-memory' }],
-    ['/superagent-lite/memory?kind=knowledge&id=7', { kind: 'knowledge', id: '7' }],
+    ['/superagent-lite/memory?kind=knowledge&scope=global&id=7',
+      { kind: 'knowledge', scope: 'global', projectRoot: undefined, id: '7' }],
+    [`/superagent-lite/memory?kind=knowledge&scope=project&projectRoot=${encodeURIComponent(projectRoot)}&id=8`,
+      { kind: 'knowledge', scope: 'project', projectRoot, id: '8' }],
   ]
   for (const [url, expected] of urls) {
     const result = await request(handler, 'DELETE', url)
@@ -210,6 +226,9 @@ test('deleting saved memory removes it from the panel view and from knowledge qu
   await store.writeSkill('global', projectRoot, { name: 'delete-shared-skill', description: 'Shared skill to delete.', content: 'Body.' })
   await store.writeSkill('project', projectRoot, { name: 'delete-project-skill', description: 'Project skill to delete.', content: 'Body.' })
   const knowledge = await store.addKnowledge('Delete this knowledge entry.')
+  const projectKnowledge = await store.addKnowledge('Delete this project knowledge entry.', {
+    scope: 'project', projectRoot,
+  })
   const handler = createMemoryPanelHandler(owner())
   const query = `${encodeURIComponent(projectRoot)}`
 
@@ -218,7 +237,8 @@ test('deleting saved memory removes it from the panel view and from knowledge qu
     `/superagent-lite/memory?kind=memory&scope=project&projectRoot=${query}&field=responsibilities`,
     '/superagent-lite/memory?kind=skill&scope=global&name=delete-shared-skill',
     `/superagent-lite/memory?kind=skill&scope=project&projectRoot=${query}&name=delete-project-skill`,
-    `/superagent-lite/memory?kind=knowledge&id=${knowledge.entry.id}`,
+    `/superagent-lite/memory?kind=knowledge&scope=global&id=${knowledge.entry.id}`,
+    `/superagent-lite/memory?kind=knowledge&scope=project&projectRoot=${query}&id=${projectKnowledge.entry.id}`,
   ]) {
     assert.equal((await request(handler, 'DELETE', url)).status, 200, url)
   }
@@ -228,7 +248,8 @@ test('deleting saved memory removes it from the panel view and from knowledge qu
   assert.equal(view.project.responsibilities, '')
   assert.equal(view.project.positioning, 'Keep this positioning.')
   assert.deepEqual(view.skills, { global: [], project: [] })
-  assert.equal(view.knowledge.some(entry => entry.id === knowledge.entry.id), false)
+  assert.equal(view.knowledge.global.some(entry => entry.id === knowledge.entry.id), false)
+  assert.equal(view.knowledge.project.length, 0)
   assert.equal(await store.readSkill('global', projectRoot, 'delete-shared-skill'), undefined)
   assert.equal(await store.readSkill('project', projectRoot, 'delete-project-skill'), undefined)
 

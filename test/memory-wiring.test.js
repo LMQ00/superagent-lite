@@ -30,7 +30,7 @@ async function taskForWorker(taskId, workerId, mode = 'change', { worktree = tru
   return projectRoot
 }
 
-async function workerWiring(workerId, projectRoot, structured, { fail = false, beforeCreate } = {}) {
+async function workerWiring(workerId, projectRoot, structured, { fail = false, beforeCreate, workingDirectory } = {}) {
   const { apply } = await import('../index.js')
   const listeners = new Map()
   const activations = []
@@ -58,7 +58,7 @@ async function workerWiring(workerId, projectRoot, structured, { fail = false, b
     agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset: () => 'superagent-lite-worker' },
     tools: { register(tool, options) { globalTools.push({ tool, options }); return () => {} } },
-    workingDirectory: { get: () => projectRoot },
+    workingDirectory: { get: () => workingDirectory ?? projectRoot },
     worktrees: {
       async create(_agent, { name }) {
         return { path: projectRoot, branch: name, baseCommit: 'b'.repeat(40), repositoryRoot: projectRoot }
@@ -353,6 +353,21 @@ test('a report worker gets the same project and global memory and project skill 
   assert.equal(wiring.registered.some(tool => tool.name === 'extract_memory'), false)
 })
 
+test('app-wide knowledge reads use the task project instead of a worker worktree path', async () => {
+  const workerId = 'worker-knowledge-scope'
+  const projectRoot = await taskForWorker('ae'.repeat(8), workerId)
+  const worktree = join(home, 'worker-knowledge-worktree')
+  const { createMemoryStore } = await import('../src/memory.js')
+  const store = createMemoryStore()
+  await store.addKnowledge('This task project uses the scoped layout.', {
+    scope: 'project', projectRoot,
+  })
+  const wiring = await workerWiring(workerId, projectRoot, memoryFields(), { workingDirectory: worktree })
+  const query = wiring.globalTools.find(entry => entry.tool.name === 'knowledge_query').tool
+  const exec = { agent: wiring.agent, signal: new AbortController().signal }
+  assert.match(await query.execute({ query: 'scoped' }, exec), /#project:1 This task project uses the scoped layout\./)
+})
+
 test('a worker turn archives the complete turn under the task directory', async () => {
   const workerId = 'worker-c'
   const projectRoot = await taskForWorker('c'.repeat(16), workerId)
@@ -459,6 +474,7 @@ test('a memory helper adds the write tool while every role already has the knowl
 
 test('knowledge read tools are registered on the app context for every role and preset', async () => {
   const { apply } = await import('../index.js')
+  const projectRoot = join(home, 'app-context-project')
   const listeners = new Map()
   const globalTools = []
   const ctx = {
@@ -468,6 +484,7 @@ test('knowledge read tools are registered on the app context for every role and 
     on(name, handler) { listeners.set(name, handler) },
     agents: { get() {}, list: () => [] },
     agentPresets: { composedPreset() {} },
+    workingDirectory: { get: () => projectRoot },
     tools: { register(tool, options) { globalTools.push({ tool, options }); return () => {} } },
   }
   await apply(ctx)
@@ -479,9 +496,25 @@ test('knowledge read tools are registered on the app context for every role and 
   assert.equal(query.options?.when, undefined)
   assert.equal(get.options?.when, undefined)
   assert.match(query.tool.description, /local knowledge base/)
-  assert.match(query.tool.description, /shared long-term knowledge base for every role and agent preset/)
+  assert.match(query.tool.description, /shared global knowledge base for every project/)
+  assert.match(query.tool.description, /current project's own knowledge base/)
   assert.match(query.tool.description, /Call this tool whenever saved reusable knowledge might help/)
   assert.match(get.tool.description, /local knowledge base/)
+
+  const { createMemoryStore } = await import('../src/memory.js')
+  const store = createMemoryStore()
+  await store.addKnowledge('Global app-context fact.')
+  await store.addKnowledge('This project uses the app-context layout.', {
+    scope: 'project', projectRoot,
+  })
+  const exec = {
+    agent: { id: 'foreign-preset-agent', session: { header: {} } },
+    signal: new AbortController().signal,
+  }
+  assert.match(await query.tool.execute({ query: 'app-context' }, exec),
+    new RegExp('#project:\\d+ This project uses the app-context layout\\.'))
+  assert.match(await get.tool.execute({ ids: ['project:1'] }, exec),
+    new RegExp('#project:1 This project uses the app-context layout\\.'))
   const foreign = {
     id: 'foreign-preset-agent',
     session: { id: 'foreign-preset-agent', header: { origin: 'subagent', parentSession: 'other-router' } },

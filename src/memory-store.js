@@ -152,12 +152,22 @@ function knowledgeEntry(entry) {
   }
 }
 
-function knowledgeFrom(doc) {
+function knowledgeFrom(doc, projectRoot) {
   if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.version !== VERSION) {
     throw new Error('Invalid or unsupported knowledge base')
   }
+  if (projectRoot !== undefined && doc.projectRoot !== projectRoot) {
+    throw new Error('Stored project knowledge belongs to a different project root')
+  }
   if (!Array.isArray(doc.entries)) throw new Error('Invalid knowledge base entries')
   return doc.entries.map(knowledgeEntry)
+}
+
+function knowledgeRef(value) {
+  if (typeof value !== 'string') throw new TypeError('Knowledge entry requires a valid id')
+  const match = /^(global|project):(.+)$/.exec(value)
+  if (match) return { scope: match[1], id: knowledgeId(match[2]) }
+  return { id: knowledgeId(value) }
 }
 
 const KNOWLEDGE_SNIPPET_CONTEXT = 120
@@ -308,8 +318,19 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     return join(memoryRoot, 'projects', `${createHash('sha256').update(projectRoot).digest('hex')}.json`)
   }
 
-  function knowledgePath() {
-    return join(memoryRoot, 'knowledge.json')
+  function knowledgePath(projectRoot) {
+    if (projectRoot === undefined) return join(memoryRoot, 'knowledge.json')
+    return join(memoryRoot, 'knowledge', `${createHash('sha256').update(projectRoot).digest('hex')}.json`)
+  }
+
+  function knowledgeRoot(scope, projectRoot) {
+    if (scope === 'global') return undefined
+    if (scope !== 'project') throw new TypeError('Knowledge scope must be global or project')
+    if (typeof projectRoot !== 'string' || !projectRoot || projectRoot.includes('\0') ||
+        !isAbsolute(projectRoot)) {
+      throw new TypeError('Project knowledge requires an absolute project root')
+    }
+    return resolve(projectRoot)
   }
 
   function skillRoot(scope, projectRoot) {
@@ -393,29 +414,60 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     throw new TypeError('Memory scope must be global or project')
   }
 
-  async function readKnowledge() {
-    const doc = await readDocument(knowledgePath())
-    return doc === undefined ? [] : knowledgeFrom(doc)
+  async function readKnowledgeFile(projectRoot) {
+    const doc = await readDocument(knowledgePath(projectRoot))
+    return doc === undefined ? [] : knowledgeFrom(doc, projectRoot)
   }
 
-  async function mutateKnowledge(change) {
-    const path = knowledgePath()
+  async function readKnowledge() {
+    return readKnowledgeFile(undefined)
+  }
+
+  async function readProjectKnowledge(projectRoot) {
+    return readKnowledgeFile(knowledgeRoot('project', projectRoot))
+  }
+
+  async function readKnowledgeBases(projectRoot) {
+    const resolved = projectRoot === undefined ? undefined : knowledgeRoot('project', projectRoot)
+    const [global, project] = await Promise.all([
+      readKnowledgeFile(undefined),
+      resolved === undefined ? [] : readKnowledgeFile(resolved),
+    ])
+    return { global, project }
+  }
+
+  async function mutateKnowledge(scope, projectRoot, change) {
+    const resolved = knowledgeRoot(scope, projectRoot)
+    const path = knowledgePath(resolved)
     return serialize(path, async () => {
       const doc = await readDocument(path)
-      const entries = doc === undefined ? [] : knowledgeFrom(doc)
+      const entries = doc === undefined ? [] : knowledgeFrom(doc, resolved)
       const result = change(entries)
-      if (result.changed) await writeDocument(path, { version: VERSION, entries: result.entries })
+      if (result.changed) {
+        await writeDocument(path, resolved === undefined
+          ? { version: VERSION, entries: result.entries }
+          : { version: VERSION, projectRoot: resolved, entries: result.entries })
+      }
       return result.value
     })
   }
 
-  async function addKnowledge(value) {
+  function knowledgeIdInScope(id, scope) {
+    const ref = knowledgeRef(id)
+    if (ref.scope !== undefined && ref.scope !== scope) {
+      throw new Error(`Knowledge entry "${id}" belongs to the ${ref.scope} knowledge base`)
+    }
+    return ref.id
+  }
+
+  async function addKnowledge(value, { scope = 'global', projectRoot } = {}) {
     const text = knowledgeText(value)
-    return mutateKnowledge(entries => {
+    return mutateKnowledge(scope, projectRoot, entries => {
       const existing = entries.find(entry => entry.text === text)
       if (existing) return { changed: false, entries, value: { entry: existing, duplicate: true } }
       if (entries.length >= MAX_KNOWLEDGE_ENTRIES) {
-        throw new RangeError(`Knowledge base is limited to ${MAX_KNOWLEDGE_ENTRIES} entries`)
+        const label = scope === 'project' ? 'Project knowledge' : 'Global knowledge'
+        throw new RangeError(`${label} is limited to ${MAX_KNOWLEDGE_ENTRIES} entries`)
       }
       const now = new Date().toISOString()
       const entry = { id: nextKnowledgeId(entries), text, createdAt: now, updatedAt: now }
@@ -423,10 +475,10 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function updateKnowledge(id, value) {
-    const entryId = knowledgeId(id)
+  async function updateKnowledge(id, value, { scope = 'global', projectRoot } = {}) {
+    const entryId = knowledgeIdInScope(id, scope)
     const text = knowledgeText(value)
-    return mutateKnowledge(entries => {
+    return mutateKnowledge(scope, projectRoot, entries => {
       const index = entries.findIndex(entry => entry.id === entryId)
       if (index < 0) throw new Error(`Knowledge entry "${entryId}" was not found`)
       if (entries.some(entry => entry.id !== entryId && entry.text === text)) {
@@ -440,9 +492,9 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function deleteKnowledge(id) {
-    const entryId = knowledgeId(id)
-    return mutateKnowledge(entries => {
+  async function deleteKnowledge(id, { scope = 'global', projectRoot } = {}) {
+    const entryId = knowledgeIdInScope(id, scope)
+    return mutateKnowledge(scope, projectRoot, entries => {
       const index = entries.findIndex(entry => entry.id === entryId)
       if (index < 0) throw new Error(`Knowledge entry "${entryId}" was not found`)
       const entry = entries[index]
@@ -450,7 +502,7 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     })
   }
 
-  async function searchKnowledge(query = '', limit = 10) {
+  async function searchKnowledge(query = '', limit = 10, { projectRoot } = {}) {
     if (typeof query !== 'string') throw new TypeError('Knowledge query must be a string')
     if (query.length > 500) throw new TypeError('Knowledge query must contain at most 500 characters')
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > KNOWLEDGE_QUERY_LIMIT) {
@@ -460,8 +512,9 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     // A lone keyword keeps the old substring behavior, including English
     // compounds; multi-keyword queries match whole words to avoid noise.
     const substring = terms.length === 1
-    const entries = await readKnowledge()
-    return entries
+    const { global, project } = await readKnowledgeBases(projectRoot)
+    return [...global.map(entry => ({ ...entry, scope: 'global' })),
+      ...project.map(entry => ({ ...entry, scope: 'project' }))]
       .map(entry => ({ entry, matched: terms.filter(term => knowledgeTermIndex(entry.text, term, substring) >= 0) }))
       .filter(result => terms.length === 0 || result.matched.length > 0)
       .sort((a, b) => b.matched.length - a.matched.length ||
@@ -470,11 +523,22 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
       .map(({ entry, matched }) => ({ ...entry, snippet: knowledgeSnippet(entry.text, matched[0], substring) }))
   }
 
-  async function getKnowledge(ids) {
+  async function getKnowledge(ids, { projectRoot } = {}) {
     if (!Array.isArray(ids) || ids.length === 0) throw new TypeError('Knowledge entry ids are required')
-    const entryIds = ids.map(knowledgeId)
-    const entries = new Map((await readKnowledge()).map(entry => [entry.id, entry]))
-    return entryIds.map(id => ({ id, entry: entries.get(id) }))
+    const refs = ids.map(knowledgeRef)
+    const { global, project } = await readKnowledgeBases(projectRoot)
+    const entries = {
+      global: new Map(global.map(entry => [entry.id, entry])),
+      project: new Map(project.map(entry => [entry.id, entry])),
+    }
+    return refs.map(ref => {
+      if (ref.scope !== undefined) {
+        return { ...ref, entry: entries[ref.scope].get(ref.id) }
+      }
+      if (entries.global.has(ref.id)) return { id: ref.id, scope: 'global', entry: entries.global.get(ref.id) }
+      if (entries.project.has(ref.id)) return { id: ref.id, scope: 'project', entry: entries.project.get(ref.id) }
+      return { id: ref.id, entry: undefined }
+    })
   }
 
   async function readSkill(scope, projectRoot, name) {
@@ -681,6 +745,8 @@ export function createMemoryStore(directory = join(homedir(), '.dsh', 'superagen
     writeMemory,
     deleteMemoryField,
     readKnowledge,
+    readProjectKnowledge,
+    readKnowledgeBases,
     addKnowledge,
     updateKnowledge,
     deleteKnowledge,

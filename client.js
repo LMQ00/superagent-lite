@@ -47,12 +47,14 @@ window.__ModuleLoader__.load({
         saveSettings: 'Save', settingsInvalid: 'Enter a provider and model, or leave all three model fields blank.',
         queued: 'Queued',
         memoryTab: 'Memory', memoryTitle: 'Memory',
-        memoryIntro: 'View and delete saved project memory, memory-managed skills and the global knowledge base. The memory role maintains them when a task ends.',
+        memoryIntro: 'View and delete saved project memory, memory-managed skills and global/project knowledge. The memory role maintains them when a task ends.',
         memoryProjectLabel: 'Project', memoryGlobal: 'Global memory', memoryProject: 'Project memory',
-        memoryKnowledge: 'Global knowledge base', memoryUserProfile: 'User profile',
+        memoryKnowledge: 'Global knowledge base', memoryProjectKnowledge: 'Project knowledge base',
+        memoryUserProfile: 'User profile',
         memoryResponsibilities: 'Responsibilities', memoryPositioning: 'Positioning',
         memoryGlobalSkills: 'Global skills', memoryProjectSkills: 'Project skills',
         memoryNotSaved: 'Not saved', memoryEmptyKnowledge: 'No knowledge entries yet.',
+        memoryEmptyProjectKnowledge: 'No project knowledge entries yet.',
         memoryLoadFailed: 'Could not load memory. Try refreshing.',
         memoryNoProject: 'No task identifies a project yet; only global memory and knowledge are shown.',
         memoryDelete: 'Delete', memoryDeleteTitle: 'Delete memory content',
@@ -65,6 +67,7 @@ window.__ModuleLoader__.load({
         memoryNoMatch: 'No memory content matches the search.',
         memoryGlobalHint: 'Shared by all projects.', memoryProjectHint: 'Scoped to the current project.',
         memoryKnowledgeHint: 'Shared by all projects and queried on demand.',
+        memoryProjectKnowledgeHint: 'Saved for this project only and queried on demand.',
         memoryExpand: 'Show more', memoryCollapse: 'Show less',
         branchesTab: 'Branches', branchesTitle: 'Branches / worktrees',
         branchesIntro: 'Lists only the worktrees this plugin created under .agents/worktrees and its sl-* worker branches. Your own branches, other worktrees and master never appear here.',
@@ -127,12 +130,13 @@ window.__ModuleLoader__.load({
         saveSettings: '保存', settingsInvalid: '请填写服务商和模型，或把三个模型字段都留空。',
         queued: '排队中',
         memoryTab: '记忆系统', memoryTitle: '记忆系统',
-        memoryIntro: '查看并删除保存的项目记忆、由 memory 管理的 skill 和全局知识库。记忆由 memory 角色在任务收尾时写入。',
+        memoryIntro: '查看并删除保存的项目记忆、由 memory 管理的 skill 和全局/项目知识库。记忆由 memory 角色在任务收尾时写入。',
         memoryProjectLabel: '项目', memoryGlobal: '全局记忆', memoryProject: '项目记忆',
-        memoryKnowledge: '全局知识库', memoryUserProfile: '用户画像',
+        memoryKnowledge: '全局知识库', memoryProjectKnowledge: '项目知识库', memoryUserProfile: '用户画像',
         memoryResponsibilities: '责任', memoryPositioning: '定位',
         memoryGlobalSkills: '全局 skill', memoryProjectSkills: '项目 skill',
         memoryNotSaved: '未保存', memoryEmptyKnowledge: '暂无知识库条目。',
+        memoryEmptyProjectKnowledge: '暂无项目知识库条目。',
         memoryLoadFailed: '无法加载记忆，请重试。',
         memoryNoProject: '当前没有任务可确定项目，只显示全局记忆和知识库。',
         memoryDelete: '删除', memoryDeleteTitle: '删除记忆内容',
@@ -145,6 +149,7 @@ window.__ModuleLoader__.load({
         memoryNoMatch: '没有匹配关键词的记忆内容。',
         memoryGlobalHint: '所有项目共享。', memoryProjectHint: '仅在当前项目生效。',
         memoryKnowledgeHint: '所有项目共享，按需查询。',
+        memoryProjectKnowledgeHint: '仅保存给当前项目，按需查询。',
         memoryExpand: '展开', memoryCollapse: '收起',
         branchesTab: '分支 / worktree', branchesTitle: '分支 / worktree',
         branchesIntro: '只列出本插件在 .agents/worktrees 下创建的 worktree 和 sl-* 工作分支；你自己的分支、其他 worktree 和 master 不会出现在这里。',
@@ -411,7 +416,9 @@ window.__ModuleLoader__.load({
       const [settingsNotice, setSettingsNotice] = useState('')
       const [memoryProject, setMemoryProject] = useState('')
       const [memoryPhase, setMemoryPhase] = useState('loading')
-      const [memory, setMemory] = useState({ global: {}, knowledge: [], skills: { global: [], project: [] } })
+      const [memory, setMemory] = useState({
+        global: {}, knowledge: { global: [], project: [] }, skills: { global: [], project: [] },
+      })
       const [memoryError, setMemoryError] = useState('')
       const [memoryNotice, setMemoryNotice] = useState('')
       const [memoryDialog, setMemoryDialog] = useState(null)
@@ -503,7 +510,9 @@ window.__ModuleLoader__.load({
             })
             if (!response.ok) throw new Error('Memory unavailable')
             const value = await response.json()
-            if (!value || typeof value.global !== 'object' || value.global === null || !Array.isArray(value.knowledge)) {
+            if (!value || typeof value.global !== 'object' || value.global === null ||
+                !value.knowledge || typeof value.knowledge !== 'object' ||
+                !Array.isArray(value.knowledge.global) || !Array.isArray(value.knowledge.project)) {
               throw new Error('Invalid memory view')
             }
             if (controller.signal.aborted) return
@@ -515,10 +524,15 @@ window.__ModuleLoader__.load({
                 description: skill.description,
                 content: typeof skill.content === 'string' ? skill.content : '',
               }))
+            const knowledgeList = list => (Array.isArray(list) ? list : [])
+              .filter(entry => entry && typeof entry.id === 'string' && typeof entry.text === 'string')
             setMemory({
               global: value.global,
               project: value.project && typeof value.project === 'object' ? value.project : undefined,
-              knowledge: value.knowledge.filter(entry => entry && typeof entry.id === 'string' && typeof entry.text === 'string'),
+              knowledge: {
+                global: knowledgeList(value.knowledge.global),
+                project: knowledgeList(value.knowledge.project),
+              },
               skills: { global: skillList(skills.global), project: skillList(skills.project) },
             })
             setMemoryPhase('ready')
@@ -752,7 +766,14 @@ window.__ModuleLoader__.load({
           }
           setMemory(current => {
             if (target.kind === 'knowledge') {
-              return { ...current, knowledge: (current.knowledge ?? []).filter(entry => entry.id !== target.id) }
+              const scope = target.scope === 'project' ? 'project' : 'global'
+              return {
+                ...current,
+                knowledge: {
+                  ...current.knowledge,
+                  [scope]: (current.knowledge?.[scope] ?? []).filter(entry => entry.id !== target.id),
+                },
+              }
             }
             if (target.kind === 'skill') {
               return {
@@ -1325,8 +1346,8 @@ window.__ModuleLoader__.load({
             })),
           open && hasContent && h('p', { className: 'sl-memory-entry__content' }, skill.content))
       }
-      const memoryEntry = entry => {
-        const key = `knowledge:${entry.id}`
+      const memoryEntry = (entry, scope) => {
+        const key = `knowledge:${scope}:${entry.id}`
         const open = memoryExpanded[key] === true
         const updated = displayTime(entry.updatedAt)
         const long = isLongMemoryText(entry.text)
@@ -1335,7 +1356,10 @@ window.__ModuleLoader__.load({
             h('p', {
               className: `sl-memory-entry__text${long && !open ? ' sl-memory-entry__text--clamped' : ''}`,
             }, entry.text),
-            memoryDeleteButton({ kind: 'knowledge', id: entry.id, label: `#${entry.id}` })),
+            memoryDeleteButton({
+              kind: 'knowledge', scope, id: entry.id, label: `#${entry.id}`,
+              ...(scope === 'project' ? { projectRoot: memoryProject } : {}),
+            })),
           (updated || long) && h('div', { className: 'sl-memory-entry__meta' },
             updated && h('span', { className: 'sl-lv' },
               h('span', { className: 'sl-lv__label' }, t('updated')),
@@ -1359,8 +1383,10 @@ window.__ModuleLoader__.load({
         const query = memoryQuery.trim().toLowerCase()
         const matches = (...values) => query === '' ||
           values.some(value => typeof value === 'string' && value.toLowerCase().includes(query))
-        const knowledge = (Array.isArray(memory.knowledge) ? memory.knowledge : [])
+        const knowledgeOf = scope => (Array.isArray(memory.knowledge?.[scope]) ? memory.knowledge[scope] : [])
           .filter(entry => matches(entry.text, entry.id))
+        const globalKnowledge = knowledgeOf('global')
+        const projectKnowledge = knowledgeOf('project')
         const globalSkills = (Array.isArray(skills.global) ? skills.global : [])
           .filter(skill => matches(skill.name, skill.description, skill.content))
         const projectSkills = (Array.isArray(skills.project) ? skills.project : [])
@@ -1380,7 +1406,7 @@ window.__ModuleLoader__.load({
           target: { kind: 'memory', scope: 'project', projectRoot: memoryProject, field: 'positioning', label: t('memoryPositioning') },
         }].filter(field => matches(field.value)) : []
         const matchesAny = globalFields.length + globalSkills.length + projectFields.length +
-          projectSkills.length + knowledge.length > 0
+          projectSkills.length + globalKnowledge.length + projectKnowledge.length > 0
         return h('div', { className: 'sl-body', role: 'tabpanel', 'aria-labelledby': memoryTabId },
           h('div', { className: 'sl-filters' },
             h('label', { className: 'sl-memory__search' },
@@ -1420,11 +1446,18 @@ window.__ModuleLoader__.load({
                   h('h3', { className: 'sl-memory-skills__title' }, t('memoryProjectSkills')),
                   h('ul', { className: 'sl-list' },
                     ...projectSkills.map(skill => memorySkillEntry(skill, 'project'))))),
-              (!query || knowledge.length > 0) && memorySection(
-                'memoryKnowledge', 'memoryKnowledgeHint', knowledge.length,
-                knowledge.length === 0
+              (!query || globalKnowledge.length > 0) && memorySection(
+                'memoryKnowledge', 'memoryKnowledgeHint', globalKnowledge.length,
+                globalKnowledge.length === 0
                   ? h('p', { className: 'sl-memory__hint', role: 'status' }, t('memoryEmptyKnowledge'))
-                  : h('ul', { className: 'sl-list' }, ...knowledge.map(memoryEntry))))))
+                  : h('ul', { className: 'sl-list' },
+                    ...globalKnowledge.map(entry => memoryEntry(entry, 'global')))),
+              project && (!query || projectKnowledge.length > 0) && memorySection(
+                'memoryProjectKnowledge', 'memoryProjectKnowledgeHint', projectKnowledge.length,
+                projectKnowledge.length === 0
+                  ? h('p', { className: 'sl-memory__hint', role: 'status' }, t('memoryEmptyProjectKnowledge'))
+                  : h('ul', { className: 'sl-list' },
+                    ...projectKnowledge.map(entry => memoryEntry(entry, 'project')))))))
       }
       const memoryDialogView = () => {
         if (!memoryDialog) return null

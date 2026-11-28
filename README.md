@@ -38,15 +38,15 @@ npm i @lmq00/superagent-lite
 
 ## 记忆
 
-记忆分全局和项目两层，项目记忆按项目根隔离，不跨项目混用；知识库是全局的，所有项目共用。Router 只注入全局记忆；Worker（包括 report、merge 这类只读或受控 worker）和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
+记忆分全局和项目两层，项目记忆按项目根隔离，不跨项目混用；知识库也分全局和项目两层，全局知识所有项目共用，项目知识只在所属项目可见。Router 只注入全局记忆；Worker（包括 report、merge 这类只读或受控 worker）和 Reviewer 同时注入所属项目的项目记忆和全局记忆。
 
 - 全局记忆保存用户画像和多个所有项目共用的 skill；项目记忆保存职责、定位和最多 10 个适用于当前项目与职责的 skill。职责和定位是小段固定注入的内容；每个 skill 只把 description 放进 skill catalog，完整内容按需用 `skill` 工具加载。memory 角色触发时同样只依赖这个 catalog：需要某个 skill 时按名调用 `skill` 工具；触发消息只列 skill 名称和作者（`author: memory` 或 `none`），不写路径、description 或正文，也不用 read/glob/grep 翻 skill 目录。
-- 记忆内容按用途分工：知识、事实、经验、结论和观察写进全局知识库；skill 只放可复用的固定流程或方法步骤。项目 skill 同时最多 10 个，达到上限后 memory 不能再新建：写入路径会拒绝并返回明确错误，提示词要求复用已有 memory 管理的项目 skill 名字返回完整新内容，或把内容写进知识库；超出上限的那次提取不会写入任何记忆字段或 skill。
+- 记忆内容按用途分工：知识、事实、经验、结论和观察写进知识库，广泛适用的写全局知识库，只属于当前项目的写项目知识库；skill 只放可复用的固定流程或方法步骤。项目 skill 同时最多 10 个，达到上限后 memory 不能再新建：写入路径会拒绝并返回明确错误，提示词要求复用已有 memory 管理的项目 skill 名字返回完整新内容，或把内容写进知识库；超出上限的那次提取不会写入任何记忆字段或 skill。
 - 每个 skill 用自己的名字和目录：全局 skill 写在 `~/.agents/skills/<skill名>/SKILL.md`，项目 skill 写在 `<项目根>/.dsh/skills/<skill名>/SKILL.md`。memory 写入的 skill 在 frontmatter 里带 `author: memory`；同名冲突不会覆盖不由 memory 管理的 skill。项目 skill 由 Worker 作用域的 provider 从项目 checkout 读取，Worker、Reviewer 和 memory 角色能在 catalog 里看到它们的 description；Router 不扫描项目 skill。项目 skill 目录会写进 `.git/info/exclude`，避免弄脏需要保持干净的项目 checkout。不同项目的记忆是分开的。
 - 既有的 `superagent-project-memory` 和 `superagent-shared-memory` 继续可用：它们按旧名字读取，下一次 memory 写入时会补上 `author: memory`。其他按内容命名的新 skill 各自独立并存。
 - 记忆写入的 skill 只对之后新派发的 Worker 和 Reviewer 生效。已运行或已结束的 Worker/Reviewer 会话保留自己启动时的 skill catalog，不会因为 memory 写入而收到 catalog 变更提醒并继续行动。归属按 skill 文件里的作者判断：新增、修改或删除的 skill 全部带 `author: memory` 时，这次 catalog 变化不注入已有会话；判定只看会话（agent）和 skill 作者，与任务状态无关，running、报告 BLOCKED、resuming、awaiting-merge 的会话都不注入。作者缺失的 skill 按普通 skill 处理，变化照常发布。
-- 知识库是全局的，只存可复用、广泛适用的知识，内容不注入角色上下文。`knowledge_query` 和 `knowledge_get` 是应用级工具，所有角色（Router、Worker、Reviewer、memory，以及不使用本插件的预设）都能用：`knowledge_query` 按关键词查询，英文按单词、中文按相邻两字切分，多词查询按命中的关键词数量排序，单个关键词仍按子串匹配以兼容旧查询，结果带编号和匹配关键词前后的上下文片段；`knowledge_get` 再按编号读取完整条目。工具说明写明这是共享知识库并引导模型先查询。只有 memory 角色能用 `knowledge_write` 新增、纠正或删除；安装 owner 也可以在面板里删除单条知识，删除后查询不再返回该条目。知识库保存在 `~/.dsh/superagent-lite/memory/knowledge.json`。
-- 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。memory 不再收到整段对话：触发消息只给会话记录的可读路径和任务、角色、分支等元信息，项目 skill 已用数量与 10 个上限，以及每条 skill 的名称和作者（`author: memory` 或 `none`）；不写路径、description 或正文，不给 skill 根目录。skill 的 description 仍由会话里的 catalog 提供，memory 需要完整内容时按名调用 `skill` 工具（`src/memory.js:201-243`、`src/helper-guard.js:5-20`）。项目 skill 达到 10 个时，提示词要求复用已有 memory 管理的项目 skill 名字，不新增第 11 个。memory 自己用 `read` / `grep` 按需读取会话记录后返回需要更新的记忆字段；插件只写回发生变化的字段和 skill。没有可复用的结论就不写，也不把写入条数当指标；记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。没用的知识只会污染知识库，宁可不写。
+- 知识库分全局和项目两层，内容都不注入角色上下文。全局知识库存可复用、广泛适用的知识，保存在 `~/.dsh/superagent-lite/memory/knowledge.json`；项目知识库按项目根隔离，保存在 `~/.dsh/superagent-lite/memory/knowledge/<sha256(项目根)>.json`。`knowledge_query` 和 `knowledge_get` 是应用级工具，所有角色（Router、Worker、Reviewer、memory，以及不使用本插件的预设）都能用：`knowledge_query` 按角色当前所属项目解析项目知识库，再与全局知识库合并查询；英文按单词、中文按相邻两字切分，多词查询按命中的关键词数量排序，单个关键词仍按子串匹配以兼容旧查询，结果带 `#global:<id>` / `#project:<id>` 限定编号和匹配关键词前后的上下文片段；`knowledge_get` 按限定编号读取完整条目。工具说明写明两个作用域并引导模型先查询。只有 memory 角色能用 `knowledge_write`，新增、纠正或删除时必须指定 `scope=global|project`，项目作用域按当前项目解析；安装 owner 也可以在面板里删除单条知识，删除后查询不再返回该条目。
+- 每个 change 任务收尾时，`message_router` 发送最终报告后会触发一次 memory 角色。memory 不再收到整段对话：触发消息只给会话记录的可读路径和任务、角色、分支等元信息，项目 skill 已用数量与 10 个上限，以及每条 skill 的名称和作者（`author: memory` 或 `none`）；不写路径、description 或正文，不给 skill 根目录。skill 的 description 仍由会话里的 catalog 提供，memory 需要完整内容时按名调用 `skill` 工具（`src/memory.js:219-252`、`src/helper-guard.js:5-20`）。项目 skill 达到 10 个时，提示词要求复用已有 memory 管理的项目 skill 名字，不新增第 11 个。memory 自己用 `read` / `grep` 按需读取会话记录后返回需要更新的记忆字段；插件只写回发生变化的字段和 skill。没有可复用的结论就不写，也不把写入条数当指标；记忆写入遵守「宁缺毋滥、长期主义」：不重复记录，及时纠正，不保存一次性进度、状态、计数、密码、密钥、token、凭据或个人数据。没用的知识只会污染知识库，宁可不写。
 - memory 读取的会话记录写在 `~/.dsh/superagent-lite/task/archive/sessions/<sha256(Session ID)>.md`，在触发时由 Host 写入完整会话和最终报告工具名；Worker 每一轮的原始事件仍按回合归档在 `~/.dsh/superagent-lite/task/archive/`，保留 Session 序号和轮内编号。归档只由 Host 写入，只有 memory 角色拿到记录路径并读取，其他模型工具没有专用读取入口。
 
 ## 面板
@@ -76,15 +76,15 @@ npm i @lmq00/superagent-lite
 
 ## 记忆系统
 
-「记忆系统」标签页展示全局/项目记忆、memory 管理的全局/项目 skill 和全局知识库，只允许安装 owner 查看和删除。
+「记忆系统」标签页展示全局/项目记忆、memory 管理的全局/项目 skill 和全局/项目知识库，只允许安装 owner 查看和删除。
 
-- 顶部有搜索框，按关键词本地过滤全局/项目记忆字段、skill 的名字、description 和正文、知识库条目；输入只过滤已加载内容，不清空数据、不发请求、不刷新页面，无匹配时显示空状态。
+- 顶部有搜索框，按关键词本地过滤全局/项目记忆字段、skill 的名字、description 和正文、全局/项目知识库条目；输入只过滤已加载内容，不清空数据、不发请求、不刷新页面，无匹配时显示空状态。
 - 项目下拉框选择当前项目，默认选中最近更新的任务所属项目。项目记忆显示责任和定位，全局记忆显示用户画像；空字段标记「未保存」。
-- 页面按「全局记忆」「项目记忆」「全局知识库」分成带标题、说明和计数的卡片；长记忆字段和知识条目默认截断，按「展开」看全文。
+- 页面按「全局记忆」「项目记忆」「全局知识库」「项目知识库」分成带标题、说明和计数的卡片；长记忆字段和知识条目默认截断，按「展开」看全文。
 - 全局和项目分组各列出由 memory 管理的 skill（frontmatter 带 `author: memory`，旧固定名字在迁移前也显示）；每个 skill 默认折叠，只显示名字和 description，点击摘要才展开完整正文，并可单独删除。删除会移除该 skill 的目录和 `SKILL.md`，不动其他 skill。
-- 知识库是全局的，不随项目切换；按条目展示保存的长期结论和更新时间，条目多时在面板内滚动，不离开面板。
-- 每段记忆字段、memory 管理的 skill 和知识条目都有行内「删除」入口，确认后只删除该条内容并就地更新标签页，不刷新页面。删除知识后 `knowledge_query` 不再返回该条目；删除 skill 后之后新派发的会话不再看到它。
-- 记忆、skill 和知识都由 memory 角色在任务收尾时写入；面板只提供逐条删除，没有写入和编辑入口。没有任务可确定项目时只显示全局记忆、全局 skill 和知识库。
+- 全局知识库不随项目切换；项目知识库跟随项目下拉框，只显示所属项目的条目。两者都按条目展示保存的长期结论和更新时间，条目多时在面板内滚动，不离开面板。
+- 每段记忆字段、memory 管理的 skill 和全局/项目知识条目都有行内「删除」入口，确认后只删除该条内容并就地更新标签页，不刷新页面。删除知识后 `knowledge_query` 不再返回该条目；删除 skill 后之后新派发的会话不再看到它。
+- 记忆、skill 和知识都由 memory 角色在任务收尾时写入；面板只提供逐条删除，没有写入和编辑入口。没有任务可确定项目时只显示全局记忆、全局 skill 和全局知识库。
 
 ## 当前限制
 
