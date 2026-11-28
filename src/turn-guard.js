@@ -4,7 +4,7 @@ const ROUTER_PRESET = 'superagent-lite'
 const DECISION_TOOLS = new Set(['dispatch_worker', 'continue_worker', 'worker_status'])
 const MAX_REMINDERS = 2
 const REMINDER_SOURCE = 'superagent-lite-reminder'
-const REMINDER = '[superagent-lite] 系统提醒，不是新的用户输入：这轮输入还没有调度决定。现在调用 dispatch_worker 并写明 mode=change（改项目文件）、mode=report（只查证并交回结论）、mode=answer（直接回答、不派 worker）或 mode=merge（用新 worker 合并已交付分支），或对既有未发布任务调用 continue_worker；只询问 worker 或任务状态时调用 worker_status。给出最终回答前必须先决定。'
+const REMINDER = '[superagent-lite] 系统提醒，不是新的用户输入：这轮输入还没有调度决定。现在调用 dispatch_worker 并写明 mode=change（改项目文件）、mode=report（只查证并交回结论）、mode=answer（直接回答、不派 worker）、mode=merge（用新 worker 合并已交付分支）或 mode=remove（删除 worker 分支和 worktree），或对既有未发布任务调用 continue_worker；只询问 worker 或任务状态时调用 worker_status。给出最终回答前必须先决定。'
 
 export function createDispatchGuard(ctx) {
   const calls = new Map()

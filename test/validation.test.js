@@ -7,10 +7,11 @@ test('mode=answer answers directly and needs no title, team, task, or reason', (
   assert.deepEqual(validateDispatchArguments({ mode: 'answer', title: 'ignored' }), { delegate: false, mode: 'answer' })
 })
 
-test('mode is required and limited to change, report, answer, and merge', () => {
+test('mode is required and limited to change, report, answer, merge, and remove', () => {
   assert.throws(() => validateDispatchArguments({}), /mode/)
   assert.throws(() => validateDispatchArguments({ delegate: false, reason: 'old interface' }), /mode/)
   assert.throws(() => validateDispatchArguments({ mode: 'docs' }), /mode/)
+  assert.throws(() => validateDispatchArguments({ mode: 'remove' }), /branches/)
 })
 
 test('change and report require title, team and task', () => {
@@ -75,5 +76,22 @@ test('merge dispatches require land, targets, and keep branches in order without
     ...args,
     branches: ['sl-one', 'a4939a132f499bb4', 'sl-one'],
   }).branches, ['sl-one', 'a4939a132f499bb4'])
-  assert.throws(() => validateDispatchArguments({ ...args, mode: 'change', branches: ['sl-one'] }), /only accepted for merge/)
+  assert.throws(() => validateDispatchArguments({ ...args, mode: 'change', branches: ['sl-one'] }), /only accepted for merge and remove/)
+})
+
+test('mode=remove needs only branches and keeps target order without duplicates', () => {
+  assert.deepEqual(validateDispatchArguments({
+    mode: 'remove',
+    branches: ['sl-one', 'a4939a132f499bb4', 'sl-one'],
+  }), {
+    delegate: false,
+    mode: 'remove',
+    branches: ['sl-one', 'a4939a132f499bb4'],
+  })
+  assert.throws(() => validateDispatchArguments({ mode: 'remove', branches: [] }), /branches/)
+  assert.throws(() => validateDispatchArguments({ mode: 'remove', branches: ['bad branch'] }), /remove target/)
+  assert.throws(() => validateDispatchArguments({ mode: 'remove', branches: ['-bad'] }), /remove target/)
+  assert.throws(() => validateDispatchArguments({ mode: 'remove', branches: ['sl-one'], images: ['shot.png'] }), /mode=remove/)
+  assert.throws(() => validateDispatchArguments({ mode: 'remove', branches: ['sl-one'], land: true }), /land/)
+  assert.throws(() => validateDispatchArguments({ mode: 'remove', branches: ['sl-one'], worktreeName: 'remove-one' }), /worktreeName/)
 })
